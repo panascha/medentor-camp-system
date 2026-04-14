@@ -61,35 +61,81 @@ window.setMode = (mode) => {
     if (selectedStudent) selectStudent(selectedStudent.id);
 };
 
-// ฟังก์ชันอัปเดต Live Scoreboard (แสดง 10 รายการล่าสุด)
+// [1] ฟังก์ชันอัปเดตตาราง Live Board พร้อมปุ่มลบ
 function updateLiveBoard() {
     const board = document.getElementById('live-score-board');
+    const user = checkAuth(); // ดึงข้อมูลสตาฟปัจจุบัน
 
-    // กรองเอาเฉพาะคนที่มีคะแนนแล้ว
     const scored = allStudents.filter(s => (s.pretest?.total > 0 || s.posttest?.total > 0));
-
-    // เรียงลำดับ (ในที่นี้เราใช้ลำดับการกรอกล่าสุดจาก Firebase)
     const lastTen = scored.slice(-10).reverse();
 
     if (lastTen.length === 0) {
-        board.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูลการบันทึก</td></tr>`;
+        board.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>`;
         return;
     }
 
     board.innerHTML = lastTen.map(s => {
-        const modeLabel = s.posttest?.total > 0 ? 'Post-test' : 'Pre-test';
-        const total = s.posttest?.total || s.pretest?.total || 0;
-        const color = modeLabel === 'Post-test' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700';
+        // เช็คว่ามีคะแนนโหมดไหนบ้าง (แสดงอันล่าสุด)
+        const mode = s.posttest?.total > 0 ? 'posttest' : 'pretest';
+        const data = s[mode];
+        const isOwner = data.recordedBy === (user.nickname || user.fullName);
+        const isAdmin = user.role === 'Admin';
+
         return `
-            <tr class="hover:bg-slate-50 transition-colors animate-fade-in">
+            <tr class="hover:bg-slate-50 transition-colors">
                 <td class="p-4 font-mono font-bold">${s.id}</td>
                 <td class="p-4 font-bold text-slate-700">${s.fullName}</td>
-                <td class="p-4"><span class="px-2 py-1 rounded bg-slate-100 text-[10px] font-bold">บ้าน ${s.house}</span></td>
-                <td class="p-4"><span class="px-2 py-1 rounded text-[10px] font-bold ${color}">${modeLabel}</span></td>
-                <td class="p-4 text-center font-black text-lg text-slate-800">${total}</td>
+                <td class="p-4 text-xs">${mode.toUpperCase()}</td>
+                <td class="p-4 text-center font-black">${data.total}</td>
+                <td class="p-4 text-xs text-slate-400 italic">${data.recordedBy || '-'}</td>
+                <td class="p-4 text-right">
+                    ${(isAdmin || isOwner) ? `
+                        <button onclick="window.deleteScore('${s.id}', '${mode}')" class="text-red-400 hover:text-red-600 p-2 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    ` : '<span class="text-slate-300">🔒</span>'}
+                </td>
             </tr>
         `;
     }).join('');
+}
+
+// [2] ฟังก์ชันลบคะแนน (เรียกใช้โดย Admin หรือ เจ้าของ)
+window.deleteScore = async function (studentId, mode) {
+    const result = await Swal.fire({
+        title: 'ยืนยันการลบคะแนน?',
+        text: `คะแนนของรหัส ${studentId} ในโหมด ${mode} จะถูกลบถาวรทั้งในระบบและใน Google Sheet`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'ลบเลย',
+        cancelButtonText: 'ยกเลิก'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            // 1. ลบจาก Firebase
+            const scoreRef = ref(db, `students/${studentId}/${mode}`);
+            await set(scoreRef, null); // ลบโหนดนั้นทิ้ง
+
+            // 2. ลบจาก Google Sheet (ยิงไปบอก GAS)
+            fetch(CONFIG.appscriptUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({
+                    action: 'deleteScore',
+                    id: studentId,
+                    mode: mode
+                })
+            });
+
+            Swal.fire('ลบข้อมูลเรียบร้อย', '', 'success');
+        } catch (e) {
+            Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้', 'error');
+        }
+    }
 }
 
 // ซิงค์ข้อมูลจาก Firebase ลงในช่อง Input (ถ้าไม่ได้กำลังพิมพ์อยู่)
@@ -171,7 +217,18 @@ function updateTotalPreview() {
     const b = parseFloat(document.getElementById('s-bio').value) || 0;
     const d = parseFloat(document.getElementById('s-dent').value) || 0;
     const m = parseFloat(document.getElementById('s-med').value) || 0;
-    document.getElementById('total-preview').innerText = p + c + b + d + m;
+
+    const total = p + c + b + d + m;
+    const display = document.getElementById('total-preview');
+    display.innerText = total;
+
+    // ถ้าคะแนนรวมเกิน 60 ให้เปลี่ยนเป็นสีแดงและแจ้งเตือน
+    if (total > 60) {
+        display.classList.add('text-red-600', 'animate-bounce');
+        showToast("คะแนนรวมเกิน 60 คะแนน!", "error");
+    } else {
+        display.classList.remove('text-red-600', 'animate-bounce');
+    }
 }
 
 // ผูก Event การคำนวณเข้ากับทุกช่อง Input
@@ -231,9 +288,15 @@ window.submitScore = async function () {
         try {
             const staff = checkAuth();
 
+            // Staff Info ที่จะบันทึกลง Firebase และส่งไป Google Sheets ด้วย
+            const scoreDataWithStaff = {
+                ...finalScores,
+                recordedBy: staff.nickname || staff.fullName
+            };
+
             // A. บันทึกลง Firebase (Real-time)
             const scoreRef = ref(db, `students/${selectedStudent.id}/${currentMode}`);
-            await set(scoreRef, finalScores);
+            await set(scoreRef, scoreDataWithStaff);
 
             // B. ส่งลง Google Sheets (Background Sync)
             fetch(CONFIG.appscriptUrl, {
@@ -275,35 +338,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// รายชื่อ ID ของช่องกรอกคะแนนตามลำดับ
-const scoreInputIds = ['s-phy', 's-chem', 's-bio', 's-dent', 's-med'];
+const inputMapping = {
+    's-phy': 'physic',
+    's-chem': 'chemistry',
+    's-bio': 'biology',
+    's-dent': 'introdent',
+    's-med': 'intromed'
+};
+
+const scoreInputIds = Object.keys(inputMapping);
 
 scoreInputIds.forEach((id, index) => {
     const input = document.getElementById(id);
 
-    // 1. กระโดดอัตโนมัติเมื่อพิมพ์ครบ 2 หลัก
     input.addEventListener('input', (e) => {
+        const limitKey = inputMapping[id];
+        const limit = LIMITS[limitKey];
         const value = e.target.value;
-        // ถ้าพิมพ์เลข 2 หลัก (เช่น 10, 12, 15) ให้กระโดดไปช่องถัดไป
-        if (value.length >= 2) {
+        const numValue = parseFloat(value);
+
+        // 1. ถ้าคะแนนเกินลิมิตวิชา ให้เปลี่ยนเป็นสีแดงและแจ้งเตือน
+        if (numValue > limit) {
+            input.classList.add('text-red-600', 'font-bold', 'border-red-500');
+            showToast(`วิชานี้คะแนนเต็มคือ ${limit} คะแนนเท่านั้น!`, "error");
+        } else {
+            input.classList.remove('text-red-600', 'font-bold', 'border-red-500');
+        }
+
+        // 2. ระบบ Auto-tab (ย้ายไปช่องถัดไป)
+        let shouldJump = false;
+        // กรณี Bio (6 คะแนน) พิมพ์ตัวเดียวแล้วโดดเลยถ้าไม่เกินลิมิต
+        if (id === 's-bio' && value.length >= 1 && numValue <= limit) {
+            shouldJump = true;
+        }
+        // กรณีวิชาอื่น (10-15 คะแนน) ต้องพิมพ์ 2 หลักถึงจะโดด
+        else if (value.length >= 2 && numValue <= limit) {
+            shouldJump = true;
+        }
+
+        if (shouldJump) {
             const nextId = scoreInputIds[index + 1];
             if (nextId) {
-                document.getElementById(nextId).focus();
-                document.getElementById(nextId).select(); // ให้คลุมดำตัวเลขเก่าด้วยเพื่อให้พิมพ์ทับได้เลย
+                const nextEl = document.getElementById(nextId);
+                nextEl.focus();
+                nextEl.select();
             }
         }
+
+        updateTotalPreview();
     });
 
-    // 2. กระโดดเมื่อกดปุ่ม Enter
+    // ระบบกด Enter เพื่อไปช่องถัดไป
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-            e.preventDefault(); // ป้องกันการเผลอกด Submit ฟอร์ม
+            e.preventDefault();
             const nextId = scoreInputIds[index + 1];
             if (nextId) {
                 document.getElementById(nextId).focus();
                 document.getElementById(nextId).select();
             } else {
-                // ถ้าเป็นช่องสุดท้าย (IntroMed) ให้กดบันทึกเลย
                 window.submitScore();
             }
         }
