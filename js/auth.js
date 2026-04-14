@@ -73,5 +73,5 @@ function checkAuth() {
 
 function logout() {
     localStorage.removeItem("userSession");
-    window.location.href = "login.html";
+    window.location.href = "index.html";
 }

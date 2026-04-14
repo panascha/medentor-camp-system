@@ -67,7 +67,9 @@ function updateLiveBoard() {
     const board = document.getElementById('live-score-board');
     const user = checkAuth(); // ดึงข้อมูลสตาฟปัจจุบัน
 
-    const scored = allStudents.filter(s => (s.pretest?.total > 0 || s.posttest?.total > 0));
+    const scored = allStudents.filter(s =>
+        (s.pretest && s.pretest.recordedBy) || (s.posttest && s.posttest.recordedBy)
+    );
     const lastTen = scored.slice(-10).reverse();
 
     if (lastTen.length === 0) {
@@ -188,7 +190,7 @@ document.getElementById('input-name').oninput = (e) => {
             // --- ปรับปรุงการเช็คคะแนนให้แม่นยำขึ้น ---
             // เช็คทั้งใน s.pretest หรือ s['pretest'] และต้องมีค่า total
             const scoreObj = s[currentMode];
-            const hasScore = scoreObj && typeof scoreObj.total === 'number' && scoreObj.total > 0;
+            const hasScore = scoreObj && scoreObj.recordedBy; 
             const scoreValue = hasScore ? scoreObj.total : 0;
 
             const badge = hasScore
@@ -235,7 +237,7 @@ function selectStudent(id) {
 
     // --- ส่วนที่เพิ่มใหม่: แสดง Badge สถานะคะแนน ---
     const scoreObj = selectedStudent[currentMode];
-    const hasScore = scoreObj && typeof scoreObj.total === 'number' && scoreObj.total > 0;
+    const hasScore = scoreObj && scoreObj.recordedBy; // มีข้อมูลคะแนนและมีคนบันทึกแล้วหรือไม่
     const badgeContainer = document.getElementById('display-status-badge');
 
     if (hasScore) {

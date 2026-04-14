@@ -5,116 +5,207 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Medentor Camp</title>
+    <!-- Google Fonts: Prompt -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <!-- Tailwind CSS  -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="../js/auth.js"></script>
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+        }
+
+        .login-card {
+            animation: slideUp 0.6s ease-out;
+            backdrop-filter: blur(10px);
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .tab-active {
+            color: #2563eb;
+            background: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+
+        .input-focus {
+            transition: all 0.3s ease;
+        }
+
+        .input-focus:focus {
+            transform: translateY(-2px);
+        }
+    </style>
 </head>
 
-<body class="bg-slate-100 flex items-center justify-center min-h-screen p-4">
+<body class="flex items-center justify-center min-h-screen p-4 overflow-x-hidden">
 
-    <div class="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl">
-        <div class="flex flex-col items-center mb-6">
-            <img src="../assets/logo.png" alt="Logo" class="h-20 w-20 object-contain mb-2 drop-shadow-md">
-            <h2 class="text-2xl font-bold text-slate-800">เข้าสู่ระบบ</h2>
-            <p class="text-slate-400 text-xs">MEDENTOR CAMP</p>
+    <div class="login-card max-w-md w-full bg-white/90 p-8 rounded-[2rem] shadow-2xl border border-white/50">
+
+        <!-- Header Section -->
+        <div class="flex flex-col items-center mb-8">
+            <div class="bg-blue-50 p-4 rounded-3xl mb-4 shadow-inner">
+                <img src="../assets/logo.png" alt="Logo" class="h-16 w-16 object-contain drop-shadow-lg">
+            </div>
+            <h2 class="text-3xl font-black text-slate-800 tracking-tight">เข้าสู่ระบบ</h2>
+            <p class="text-slate-400 text-xs mt-1 font-bold uppercase tracking-widest">Medentor Camp System</p>
         </div>
 
-        <!-- Tab Menu -->
-        <div class="flex mb-6 bg-gray-100 p-1 rounded-lg">
+        <!-- Tab Menu (Only Student & Staff) -->
+        <div class="flex mb-8 bg-slate-100 p-1.5 rounded-2xl">
             <button onclick="showTab('student')" id="btn-student"
-                class="flex-1 py-2 rounded-md text-sm font-bold bg-white shadow text-blue-600">นักเรียน</button>
+                class="flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 tab-active">นักเรียน</button>
             <button onclick="showTab('staff')" id="btn-staff"
-                class="flex-1 py-2 rounded-md text-sm font-bold text-gray-500">สตาฟ</button>
-            <button onclick="showTab('reset')" id="btn-reset"
-                class="flex-1 py-2 rounded-md text-sm font-bold text-gray-500">ลืมรหัส</button>
+                class="flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 text-slate-500">พี่สตาฟ</button>
         </div>
 
         <!-- [Form] Student Login -->
-        <div id="form-student" class="space-y-4">
-            <input type="text" id="std-id" placeholder="รหัสประจำตัวน้อง (เช่น 101)"
-                class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-            <input type="text" id="std-house" placeholder="บ้านที่อยู่ (เช่น 1 หรือ 2)"
-                class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-            <input type="text" id="std-nick" placeholder="ชื่อเล่น"
-                class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+        <div id="form-student" class="space-y-4 transition-all duration-500">
+            <div class="group">
+                <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">รหัสประจำตัว</label>
+                <input type="text" id="std-id" placeholder="ตัวอย่าง: 101"
+                    class="input-focus w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500">
+            </div>
+            <div class="group">
+                <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">บ้านที่อยู่</label>
+                <input type="text" id="std-house" placeholder="บ้านหมายเลข 1-8"
+                    class="input-focus w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500">
+            </div>
+            <div class="group">
+                <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">ชื่อเล่น</label>
+                <input type="text" id="std-nick" placeholder="ชื่อเล่นภาษาไทย"
+                    class="input-focus w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500">
+            </div>
             <button onclick="doStudentLogin()"
-                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold transition">เข้าสู่ระบบ
-                (นักเรียน)</button>
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-bold text-lg shadow-lg shadow-blue-200 transition-all active:scale-95">
+                เข้าร่วมน้องค่าย
+            </button>
         </div>
 
         <!-- [Form] Staff Login -->
-        <div id="form-staff" class="space-y-4 hidden">
-            <input type="text" id="staff-id" placeholder="รหัสนักศึกษาพี่สตาฟ"
-                class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
-            <input type="password" id="staff-pw" placeholder="รหัสผ่าน"
-                class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+        <div id="form-staff" class="space-y-4 hidden transition-all duration-500">
+            <div class="group">
+                <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">รหัสนักศึกษา (StudentID)</label>
+                <input type="text" id="staff-id" placeholder="ระบุรหัสประจำตัวพี่สตาฟ"
+                    class="input-focus w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500">
+            </div>
+            <div class="group">
+                <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">รหัสผ่าน</label>
+                <input type="password" id="staff-pw" placeholder="••••••••"
+                    class="input-focus w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500">
+            </div>
+            <div class="text-right">
+                <button onclick="showResetForm()"
+                    class="text-xs font-bold text-purple-600 hover:underline">ลืมรหัสผ่านใช่หรือไม่?</button>
+            </div>
             <button onclick="doStaffLogin()"
-                class="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg font-bold transition">เข้าสู่ระบบ
-                (สตาฟ)</button>
+                class="w-full bg-purple-600 hover:bg-purple-700 text-white py-4 rounded-2xl font-bold text-lg shadow-lg shadow-purple-200 transition-all active:scale-95">
+                จัดการระบบค่าย
+            </button>
         </div>
 
-        <!-- [Form] Reset Password (Staff Only) -->
-        <div id="form-reset" class="space-y-3 hidden">
-            <p class="text-[10px] text-red-500 text-center font-bold uppercase italic">
-                ยืนยันตัวตนพี่สตาฟเพื่อเปลี่ยนรหัส</p>
-            <input type="text" id="re-id" placeholder="StudentID" class="w-full p-2 border rounded text-sm">
-            <input type="text" id="re-name" placeholder="ชื่อ-นามสกุล (ตามฐานข้อมูล)"
-                class="w-full p-2 border rounded text-sm">
-            <input type="text" id="re-nick" placeholder="ชื่อเล่น" class="w-full p-2 border rounded text-sm">
+        <!-- [Form] Reset Password (Inline for Staff) -->
+        <div id="form-reset" class="space-y-4 hidden animate-pulse">
+            <div class="bg-orange-50 p-4 rounded-2xl border border-orange-100 mb-4">
+                <p class="text-[10px] text-orange-600 text-center font-black uppercase tracking-widest">
+                    🔐 ยืนยันตัวตนพี่สตาฟเพื่อเปลี่ยนรหัส
+                </p>
+            </div>
+            <input type="text" id="re-id" placeholder="StudentID"
+                class="w-full p-3 bg-slate-50 border rounded-xl text-sm">
+            <input type="text" id="re-name" placeholder="ชื่อ-นามสกุล"
+                class="w-full p-3 bg-slate-50 border rounded-xl text-sm">
+            <input type="text" id="re-nick" placeholder="ชื่อเล่น"
+                class="w-full p-3 bg-slate-50 border rounded-xl text-sm">
             <div class="grid grid-cols-2 gap-2">
-                <input type="text" id="re-year" placeholder="ชั้นปี (1/2)" class="w-full p-2 border rounded text-sm">
-                <input type="text" id="re-fac" placeholder="คณะ (MD/Dent)" class="w-full p-2 border rounded text-sm">
+                <input type="text" id="re-year" placeholder="ปี (1/2)"
+                    class="w-full p-3 bg-slate-50 border rounded-xl text-sm">
+                <input type="text" id="re-fac" placeholder="คณะ (MD/Dent)"
+                    class="w-full p-3 bg-slate-50 border rounded-xl text-sm">
             </div>
             <input type="password" id="re-newpw" placeholder="ตั้งรหัสผ่านใหม่"
-                class="w-full p-2 border rounded text-sm bg-yellow-50">
-            <button onclick="doResetPassword()"
-                class="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-bold transition">เปลี่ยนรหัสผ่าน</button>
+                class="w-full p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm font-bold">
+            <div class="flex gap-2">
+                <button onclick="showTab('staff')"
+                    class="flex-1 bg-slate-200 text-slate-600 py-3 rounded-xl font-bold text-sm">ยกเลิก</button>
+                <button onclick="doResetPassword()"
+                    class="flex-[2] bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-bold text-sm">เปลี่ยนรหัสทันที</button>
+            </div>
         </div>
     </div>
 
     <script>
         function showTab(type) {
-            const tabs = ['student', 'staff', 'reset'];
-            tabs.forEach(t => {
-                document.getElementById('form-' + t).classList.add('hidden');
-                document.getElementById('btn-' + t).className = "flex-1 py-2 rounded-md text-sm font-bold text-gray-500";
-            });
+            const forms = ['student', 'staff', 'reset'];
+            forms.forEach(f => document.getElementById('form-' + f).classList.add('hidden'));
+
+            // UI Update
+            const btnStd = document.getElementById('btn-student');
+            const btnStaff = document.getElementById('btn-staff');
+
+            if (type === 'student') {
+                btnStd.className = "flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 tab-active";
+                btnStaff.className = "flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 text-slate-500";
+            } else if (type === 'staff') {
+                btnStaff.className = "flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 tab-active text-purple-600";
+                btnStd.className = "flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 text-slate-500";
+            }
 
             document.getElementById('form-' + type).classList.remove('hidden');
-            let activeColor = type === 'student' ? 'text-blue-600 bg-white shadow' :
-                type === 'staff' ? 'text-purple-600 bg-white shadow' :
-                    'text-orange-600 bg-white shadow';
-            document.getElementById('btn-' + type).className = "flex-1 py-2 rounded-md text-sm font-bold " + activeColor;
+        }
+
+        function showResetForm() {
+            document.getElementById('form-staff').classList.add('hidden');
+            document.getElementById('form-reset').classList.remove('hidden');
         }
 
         async function doStudentLogin() {
-                const res = await loginStudent(
-                    document.getElementById('std-id').value,
-                    document.getElementById('std-house').value,
-                    document.getElementById('std-nick').value
-                );
-                if (res.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'ยินดีต้อนรับน้องๆ!',
-                        text: 'กำลังเข้าสู่ระบบกิจกรรม...',
-                        timer: 1500,
-                        showConfirmButton: false
-                    }).then(() => window.location.href = "../index.html");
-                } else {
-                    Swal.fire('เข้าสู่ระบบไม่สำเร็จ', res.message, 'error');
-                }
+            const res = await loginStudent(
+                document.getElementById('std-id').value,
+                document.getElementById('std-house').value,
+                document.getElementById('std-nick').value
+            );
+            if (res.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'ยินดีต้อนรับน้องๆ!',
+                    text: 'กำลังเข้าสู่ระบบกิจกรรม...',
+                    timer: 1500,
+                    showConfirmButton: false
+                }).then(() => window.location.href = "../index.html");
+            } else {
+                Swal.fire('ข้อมูลไม่ถูกต้อง', res.message, 'error');
             }
+        }
 
         async function doStaffLogin() {
             const res = await loginStaff(
                 document.getElementById('staff-id').value,
                 document.getElementById('staff-pw').value
             );
-            if (res.success) window.location.href = "../index.html";
-            else alert(res.message);
+            if (res.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'พี่สตาฟเข้าสู่ระบบสำเร็จ',
+                    timer: 1000,
+                    showConfirmButton: false
+                }).then(() => window.location.href = "../index.html");
+            } else {
+                Swal.fire('เข้าสู่ระบบไม่สำเร็จ', res.message, 'error');
+            }
         }
 
         async function doResetPassword() {
@@ -127,9 +218,11 @@
                 document.getElementById('re-newpw').value
             );
             if (res.success) {
-                alert("เปลี่ยนรหัสสำเร็จ! กรุณาเข้าสู่ระบบด้วยรหัสใหม่");
+                Swal.fire('สำเร็จ!', 'เปลี่ยนรหัสผ่านแล้ว กรุณาเข้าสู่ระบบอีกครั้ง', 'success');
                 showTab('staff');
-            } else alert(res.message);
+            } else {
+                Swal.fire('ยืนยันตัวตนไม่สำเร็จ', res.message, 'error');
+            }
         }
     </script>
 </body>
