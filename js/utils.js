@@ -11,7 +11,7 @@ function showToast(message, type = 'success') {
 function setupFuzzySearch(studentList) {
     const options = {
         keys: ['fullName', 'nickname', 'id'],
-        threshold: 0.4 // ยิ่งน้อยยิ่งต้องแม่นยำ (0.0 - 1.0)
+        threshold: 0.3 // ยิ่งน้อยยิ่งต้องแม่นยำ (0.0 - 1.0)
     };
     return new Fuse(studentList, options);
 }

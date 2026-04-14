@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>จัดห้องเรียน - Admin Only</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Library สำหรับลากวาง -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+        }
+
+        .room-column {
+            min-height: 200px;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-100 min-h-screen">
+    <nav class="bg-white p-4 shadow-sm mb-6">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <a href="../index.html" class="text-blue-600 font-bold">← กลับหน้าหลัก</a>
+            <h1 class="text-xl font-bold">ระบบจัดห้องเรียน (Admin)</h1>
+            <button onclick="saveSorting()"
+                class="bg-green-600 text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-green-700">บันทึกลงฐานข้อมูล</button>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4">
+        <!-- Controls -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm mb-8 flex flex-wrap gap-4 items-end">
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1">จำนวนห้องที่ต้องการ</label>
+                <input type="number" id="room-count" value="4" class="p-2 border rounded-lg w-24">
+            </div>
+            <button onclick="applySnakeSort()" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">จัดแบบ
+                Snake Sort (คละเก่ง)</button>
+            <p class="text-xs text-slate-400 italic">* อ้างอิงจากคะแนน Pretest Total</p>
+        </div>
+
+        <!-- Room Container -->
+        <div id="rooms-wrapper" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+            <!-- ห้องต่างๆ จะถูกสร้างที่นี่ด้วย JS -->
+        </div>
+    </div>
+
+    <script src="../js/firebase-config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/utils.js"></script>
+    <script>
+        let students = [];
+
+        // ตรวจสอบสิทธิ์ Admin ทันที
+        const user = checkAuth();
+        if (!user || user.role !== 'Admin') {
+            alert('พื้นที่นี้จำกัดเฉพาะ Admin เท่านั้น');
+            window.location.href = '../index.html';
+        }
+
+        async function loadStudents() {
+            const resp = await fetch(`${CONFIG.firebaseURL}students.json`);
+            const data = await resp.json();
+            students = Object.values(data).map(s => ({
+                id: s.id,
+                name: s.fullName,
+                house: s.house,
+                score: s.pretest ? (s.pretest.total || 0) : 0
+            }));
+            renderRooms(document.getElementById('room-count').value);
+        }
+
+        function renderRooms(count) {
+            const wrapper = document.getElementById('rooms-wrapper');
+            wrapper.innerHTML = '';
+            for (let i = 1; i <= count; i++) {
+                wrapper.innerHTML += `
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="bg-slate-800 text-white p-3 flex justify-between">
+                            <span class="font-bold">ห้องเรียน ${i}</span>
+                            <span id="count-room-${i}" class="text-xs opacity-70">0 คน</span>
+                        </div>
+                        <div id="room-${i}" class="room-column p-4 space-y-2 bg-slate-50" data-room="${i}"></div>
+                    </div>
+                `;
+            }
+            // Initialize Sortable for each room
+            document.querySelectorAll('.room-column').forEach(el => {
+                new Sortable(el, { group: 'rooms', animation: 150, onEnd: updateStats });
+            });
+        }
+
+        function applySnakeSort() {
+            const roomCount = parseInt(document.getElementById('room-count').value);
+            renderRooms(roomCount);
+
+            // 1. เรียงคะแนนจากมากไปน้อย
+            const sorted = [...students].sort((a, b) => b.score - a.score);
+
+            // 2. Snake Sort Algorithm
+            let rooms = Array.from({ length: roomCount }, () => []);
+            let forward = true;
+            let index = 0;
+
+            sorted.forEach(s => {
+                rooms[index].push(s);
+                if (forward) {
+                    if (index === roomCount - 1) forward = false;
+                    else index++;
+                } else {
+                    if (index === 0) forward = true;
+                    else index--;
+                }
+            });
+
+            // 3. Render นักเรียนเข้าห้อง
+            rooms.forEach((roomStudents, i) => {
+                const roomEl = document.getElementById(`room-${i + 1}`);
+                roomStudents.forEach(s => {
+                    roomEl.innerHTML += createStudentCard(s);
+                });
+            });
+            updateStats();
+        }
+
+        function createStudentCard(s) {
+            return `
+                <div class="student-card bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-move hover:border-blue-400 transition-colors" data-id="${s.id}">
+                    <div class="flex justify-between items-start">
+                        <span class="font-bold text-sm">${s.name}</span>
+                        <span class="text-[10px] bg-blue-100 text-blue-700 px-2 rounded-full">${s.score} pts</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 italic">ID: ${s.id} | บ้าน ${s.house}</div>
+                </div>
+            `;
+        }
+
+        function updateStats() {
+            document.querySelectorAll('.room-column').forEach(room => {
+                const count = room.children.length;
+                document.getElementById(`count-room-${room.dataset.room}`).innerText = `${count} คน`;
+            });
+        }
+
+        async function saveSorting() {
+            const sortingData = {};
+            document.querySelectorAll('.room-column').forEach(room => {
+                const roomId = room.dataset.room;
+                Array.from(room.children).forEach(card => {
+                    const stdId = card.dataset.id;
+                    sortingData[stdId] = roomId;
+                });
+            });
+
+            // อัปเดต ClassID ลง Firebase ของแต่ละคน
+            try {
+                showToast("กำลังบันทึกข้อมูล...");
+                for (let id in sortingData) {
+                    await fetch(`${CONFIG.firebaseURL}students/${id}/classID.json`, {
+                        method: 'PUT',
+                        body: JSON.stringify(sortingData[id])
+                    });
+                }
+                showToast("จัดห้องเรียนสำเร็จ!");
+            } catch (e) {
+                showToast("ผิดพลาดในการบันทึก", "error");
+            }
+        }
+
+        window.onload = loadStudents;
+    </script>
+</body>
+
+</html>
