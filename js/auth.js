@@ -59,7 +59,7 @@ async function resetStaffPassword(id, name, nick, year, faculty, newPassword) {
             });
             fetch(CONFIG.appscriptUrl, {
                 method: "POST",
-                mode: "no-cors",
+                // mode: "no-cors",
                 body: JSON.stringify({
                     action: "updateStaffPassword",
                     key: CONFIG.syncKey,
