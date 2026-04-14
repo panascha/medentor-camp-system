@@ -1,10 +1,11 @@
 // ตั้งค่า Firebase URL (ดึงจาก config ที่คุณตั้งไว้)
 const firebaseDbUrl = "https://medentor-response-project-default-rtdb.asia-southeast1.firebasedatabase.app/";
+const fbSecret = "GFPzk3iqvQr2J5nh1fmAkCJQ1iSkyhn4lZU1YOpK"; 
 
 // --- [1] Login สำหรับนักเรียน (ID, House, Nickname) ---
 async function loginStudent(id, house, nickname) {
     try {
-        const response = await fetch(`${firebaseDbUrl}students/${id}.json`);
+        const response = await fetch(`${firebaseDbUrl}students/${id}.json?auth=${fbSecret}`);
         const student = await response.json();
 
         if (student && 
@@ -25,7 +26,7 @@ async function loginStudent(id, house, nickname) {
 // --- [2] Login สำหรับสตาฟ (StudentID, Password) ---
 async function loginStaff(studentID, password) {
     try {
-        const response = await fetch(`${firebaseDbUrl}staff/${studentID}.json`);
+        const response = await fetch(`${firebaseDbUrl}staff/${studentID}.json?auth=${fbSecret}`);
         const staff = await response.json();
 
         if (staff && staff.password === password) {
@@ -43,7 +44,7 @@ async function loginStaff(studentID, password) {
 // --- [3] เปลี่ยนรหัสผ่านสตาฟ ---
 async function resetStaffPassword(id, name, nick, year, faculty, newPassword) {
     try {
-        const response = await fetch(`${firebaseDbUrl}staff/${id}.json`);
+        const response = await fetch(`${firebaseDbUrl}staff/${id}.json?auth=${fbSecret}`);
         const staff = await response.json();
 
         if (staff && 
@@ -52,10 +53,21 @@ async function resetStaffPassword(id, name, nick, year, faculty, newPassword) {
             staff.year.toString() === year.toString() && 
             staff.faculty === faculty) {
             
-            await fetch(`${firebaseDbUrl}staff/${id}/password.json`, {
+            await fetch(`${firebaseDbUrl}staff/${id}/password.json?auth=${fbSecret}`, {
                 method: "PUT",
                 body: JSON.stringify(newPassword)
             });
+            fetch(CONFIG.appscriptUrl, {
+                method: "POST",
+                mode: "no-cors",
+                body: JSON.stringify({
+                    action: "updateStaffPassword",
+                    key: CONFIG.syncKey,
+                    id: id,
+                    newPassword: newPassword
+                })
+            });
+
             return { success: true };
         } else {
             return { success: false, message: "ข้อมูลยืนยันตัวตนไม่ถูกต้อง" };

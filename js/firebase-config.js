@@ -1,9 +1,7 @@
 const CONFIG = {
-    // URL ของ Firebase Realtime Database
     firebaseURL: "https://medentor-response-project-default-rtdb.asia-southeast1.firebasedatabase.app/",
-
-    // URL ของ Google Apps Script (Deployment ID) ที่ใช้ Sync ลง Sheet
-    appscriptUrl: "https://script.google.com/macros/s/AKfycbyFQbhhOC4CY6lOKKi8vjULEoC1lJpq4qG5rCR5bbLbUrPlvlGFyehFT9F05L-rg4Yw/exec",
-
-    campYear: "2026"
+    appscriptUrl: "https://script.google.com/macros/s/AKfycby_oIjXqLbOpC30s5JYxbywpX1DQkZPRcEUu7F7tjBsJkOro1WpKucxEnU1VutspoI/exec",
+    campYear: "2026",
+    // รหัสลับสำหรับยืนยันตัวตนกับ Apps Script
+    syncKey: "MEDENTOR_SECRET_2026"
 };

@@ -507,7 +507,11 @@
                 fetch(CONFIG.appscriptUrl, {
                     method: 'POST',
                     mode: 'no-cors',
-                    body: JSON.stringify({ action: 'syncClassID', data: sortingData })
+                    body: JSON.stringify({ 
+                        action: 'syncClassID',
+                        key: CONFIG.syncKey,
+                        data: sortingData 
+                    })
                 });
 
                 Swal.fire('สำเร็จ!', 'ข้อมูลห้องเรียนถูกบันทึกเรียบร้อยแล้ว', 'success');

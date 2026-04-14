@@ -129,6 +129,7 @@ window.deleteScore = async function (studentId, mode) {
                 mode: 'no-cors',
                 body: JSON.stringify({
                     action: 'deleteScore',
+                    key: CONFIG.syncKey,
                     id: studentId,
                     mode: mode
                 })
@@ -352,6 +353,7 @@ window.submitScore = async function () {
                 mode: 'no-cors',
                 body: JSON.stringify({
                     action: 'recordScore',
+                    key: CONFIG.syncKey,
                     id: selectedStudent.id,
                     mode: currentMode,
                     scores: finalScores,
