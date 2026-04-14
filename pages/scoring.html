@@ -72,9 +72,13 @@
             <div class="flex items-center gap-4 mb-6 p-4 bg-blue-50 rounded-xl">
                 <div class="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-xl"
                     id="display-id"></div>
-                <div>
-                    <h2 class="font-bold text-lg text-slate-800" id="display-name">เลือกนักเรียน</h2>
-                    <p class="text-sm text-slate-500" id="display-house">บ้าน: -</p>
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <h2 class="font-bold text-lg text-slate-800 truncate" id="display-name">เลือกนักเรียน</h2>
+                        <!-- เพิ่ม ID นี้เพื่อแสดง Badge -->
+                        <div id="display-status-badge"></div>
+                    </div>
+                    <p class="text-sm text-slate-500 truncate" id="display-house">บ้าน: -</p>
                 </div>
             </div>
 
@@ -139,7 +143,7 @@
                             <tr>
                                 <th class="p-4 border-b">ID</th>
                                 <th class="p-4 border-b">ชื่อนักเรียน</th>
-                                <th class="p-4 border-b">Pre-test/Post-test</th>
+                                <th class="p-4 border-b">Pretest/Posttest</th>
                                 <th class="p-4 border-b text-center">คะแนนรวม</th>
                                 <th class="p-4 border-b">ผู้บันทึก</th>
                                 <th class="p-4 border-b text-right">จัดการ</th>

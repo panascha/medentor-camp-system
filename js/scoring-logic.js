@@ -25,6 +25,7 @@ const LIMITS = {
 const studentsRef = ref(db, 'students');
 onValue(studentsRef, (snapshot) => {
     const data = snapshot.val();
+    // console.log("Firebase Data Update:", data);
     if (data) {
         // แปลง Object เป็น Array เพื่อใช้กับ Fuse.js และ Table
         allStudents = Object.keys(data).map(id => ({
@@ -173,16 +174,40 @@ document.getElementById('input-id').oninput = (e) => {
 document.getElementById('input-name').oninput = (e) => {
     const query = e.target.value;
     const box = document.getElementById('suggest-box');
-    if (query.length < 2) { box.classList.add('hidden'); return; }
+
+    if (query.length < 2) {
+        box.classList.add('hidden');
+        return;
+    }
 
     const results = fuse.search(query);
     if (results.length > 0) {
-        box.innerHTML = results.slice(0, 5).map(res => `
-            <div onclick="handleSelectSuggestion('${res.item.id}')" class="p-4 hover:bg-blue-50 cursor-pointer border-b last:border-0">
-                <p class="font-bold text-slate-800">${res.item.fullName} (${res.item.id})</p>
-                <p class="text-xs text-slate-500 italic">บ้าน ${res.item.house} | ${res.item.nickname}</p>
-            </div>
-        `).join('');
+        box.innerHTML = results.slice(0, 5).map(res => {
+            const s = res.item;
+
+            // --- ปรับปรุงการเช็คคะแนนให้แม่นยำขึ้น ---
+            // เช็คทั้งใน s.pretest หรือ s['pretest'] และต้องมีค่า total
+            const scoreObj = s[currentMode];
+            const hasScore = scoreObj && typeof scoreObj.total === 'number' && scoreObj.total > 0;
+            const scoreValue = hasScore ? scoreObj.total : 0;
+
+            const badge = hasScore
+                ? `<span class="whitespace-nowrap bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-full font-bold shadow-sm border border-green-200">✅ บันทึกแล้ว (${scoreValue})</span>`
+                : `<span class="whitespace-nowrap bg-slate-100 text-slate-400 text-[10px] px-2 py-1 rounded-full font-bold border border-slate-200">⏳ ยังไม่มีคะแนน</span>`;
+
+            return `
+                <div onclick="handleSelectSuggestion('${s.id}')" 
+                     class="p-4 hover:bg-blue-50 cursor-pointer border-b last:border-0 flex justify-between items-center gap-4 transition-all">
+                    <div class="min-w-0 flex-1">
+                        <p class="font-bold text-slate-800 truncate">${s.fullName} (${s.id})</p>
+                        <p class="text-xs text-slate-500 truncate italic">บ้าน ${s.house} | ${s.nickname}</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        ${badge}
+                    </div>
+                </div>
+            `;
+        }).join('');
         box.classList.remove('hidden');
     } else {
         box.classList.add('hidden');
@@ -200,10 +225,31 @@ function selectStudent(id) {
     selectedStudent = allStudents.find(s => s.id === id);
     if (!selectedStudent) return;
 
+    // แสดงฟอร์ม
     document.getElementById('score-form').classList.remove('hidden');
+
+    // อัปเดตข้อความพื้นฐาน
     document.getElementById('display-id').innerText = selectedStudent.id;
     document.getElementById('display-name').innerText = selectedStudent.fullName;
     document.getElementById('display-house').innerText = `บ้าน: ${selectedStudent.house} | ${selectedStudent.school}`;
+
+    // --- ส่วนที่เพิ่มใหม่: แสดง Badge สถานะคะแนน ---
+    const scoreObj = selectedStudent[currentMode];
+    const hasScore = scoreObj && typeof scoreObj.total === 'number' && scoreObj.total > 0;
+    const badgeContainer = document.getElementById('display-status-badge');
+
+    if (hasScore) {
+        badgeContainer.innerHTML = `
+            <span class="inline-flex items-center bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm animate-fade-in">
+                ✅ บันทึกแล้ว (${scoreObj.total}/60)
+            </span>`;
+    } else {
+        badgeContainer.innerHTML = `
+            <span class="inline-flex items-center bg-slate-400 text-white text-[10px] px-2 py-0.5 rounded-full font-bold opacity-50">
+                ⏳ ยังไม่มีคะแนน
+            </span>`;
+    }
+    // -------------------------------------------
 
     syncInputsWithFirebase(selectedStudent);
 }
