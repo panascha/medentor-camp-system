@@ -91,12 +91,15 @@
             </div>
             <button onclick="doStudentLogin()"
                 class="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-bold text-lg shadow-lg shadow-blue-200 transition-all active:scale-95">
-                เข้าร่วมน้องค่าย
+                เข้าสู่ระบบ
             </button>
         </div>
 
         <!-- [Form] Staff Login -->
         <div id="form-staff" class="space-y-4 hidden transition-all duration-500">
+            <p class="text-[13px] text-red-500">
+            สำหรับสตาฟที่เข้าครั้งแรกรหัสผ่านคือ <b>รหัสนักศึกษา</b> อย่าลืมเปลี่ยนรหัสผ่านหลังจากเข้าสู่ระบบครั้งแรกเพื่อความปลอดภัยของบัญชี
+            </p>
             <div class="group">
                 <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">รหัสนักศึกษา (StudentID)</label>
                 <input type="text" id="staff-id" placeholder="ระบุรหัสประจำตัวพี่สตาฟ"
@@ -104,8 +107,20 @@
             </div>
             <div class="group">
                 <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">รหัสผ่าน</label>
-                <input type="password" id="staff-pw" placeholder="••••••••"
-                    class="input-focus w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500">
+                <div class="relative">
+                    <input type="password" id="staff-pw" placeholder="••••••••"
+                        class="input-focus w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500">
+                    <button type="button" onclick="togglePassword('staff-pw')"
+                        class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-purple-600 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div class="text-right">
                 <button onclick="showResetForm()"
@@ -113,12 +128,12 @@
             </div>
             <button onclick="doStaffLogin()"
                 class="w-full bg-purple-600 hover:bg-purple-700 text-white py-4 rounded-2xl font-bold text-lg shadow-lg shadow-purple-200 transition-all active:scale-95">
-                จัดการระบบค่าย
+                เข้าสู่ระบบ
             </button>
         </div>
 
         <!-- [Form] Reset Password (Inline for Staff) -->
-        <div id="form-reset" class="space-y-4 hidden animate-pulse">
+        <div id="form-reset" class="space-y-4 hidden">
             <div class="bg-orange-50 p-4 rounded-2xl border border-orange-100 mb-4">
                 <p class="text-[10px] text-orange-600 text-center font-black uppercase tracking-widest">
                     🔐 ยืนยันตัวตนพี่สตาฟเพื่อเปลี่ยนรหัส
@@ -136,8 +151,12 @@
                 <input type="text" id="re-fac" placeholder="คณะ (MD/Dent)"
                     class="w-full p-3 bg-slate-50 border rounded-xl text-sm">
             </div>
-            <input type="password" id="re-newpw" placeholder="ตั้งรหัสผ่านใหม่"
-                class="w-full p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm font-bold">
+            <div class="space-y-2">
+                <input type="password" id="re-newpw" placeholder="ตั้งรหัสผ่านใหม่"
+                    class="w-full p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-yellow-500 outline-none">
+                <input type="password" id="re-confirmpw" placeholder="ยืนยันรหัสผ่านใหม่อีกครั้ง"
+                    class="w-full p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-yellow-500 outline-none">
+            </div>
             <div class="flex gap-2">
                 <button onclick="showTab('staff')"
                     class="flex-1 bg-slate-200 text-slate-600 py-3 rounded-xl font-bold text-sm">ยกเลิก</button>
@@ -208,22 +227,47 @@
             }
         }
 
-        async function doResetPassword() {
-            const res = await resetStaffPassword(
-                document.getElementById('re-id').value,
-                document.getElementById('re-name').value,
-                document.getElementById('re-nick').value,
-                document.getElementById('re-year').value,
-                document.getElementById('re-fac').value,
-                document.getElementById('re-newpw').value
-            );
-            if (res.success) {
-                Swal.fire('สำเร็จ!', 'เปลี่ยนรหัสผ่านแล้ว กรุณาเข้าสู่ระบบอีกครั้ง', 'success');
-                showTab('staff');
-            } else {
-                Swal.fire('ยืนยันตัวตนไม่สำเร็จ', res.message, 'error');
+        function togglePassword(inputId) {
+                const input = document.getElementById(inputId);
+                input.type = input.type === 'password' ? 'text' : 'password';
             }
-        }
+
+        async function doResetPassword() {
+                const newPw = document.getElementById('re-newpw').value;
+                const confirmPw = document.getElementById('re-confirmpw').value;
+
+                // ตรวจสอบว่ากรอกรหัสผ่านหรือไม่
+                if (!newPw || !confirmPw) {
+                    Swal.fire('กรุณากรอกข้อมูล', 'กรุณาระบุรหัสผ่านใหม่ทั้ง 2 ช่อง', 'warning');
+                    return;
+                }
+
+                // ตรวจสอบรหัสผ่าน 2 รอบ
+                if (newPw !== confirmPw) {
+                    Swal.fire('รหัสผ่านไม่ตรงกัน', 'กรุณาตรวจสอบการกรอกรหัสผ่านใหม่อีกครั้ง', 'error');
+                    return;
+                }
+
+                // ถ้าผ่านเงื่อนไข ให้ส่งไปบันทึก
+                const res = await resetStaffPassword(
+                    document.getElementById('re-id').value,
+                    document.getElementById('re-name').value,
+                    document.getElementById('re-nick').value,
+                    document.getElementById('re-year').value,
+                    document.getElementById('re-fac').value,
+                    newPw
+                );
+
+                if (res.success) {
+                    Swal.fire('สำเร็จ!', 'เปลี่ยนรหัสผ่านแล้ว กรุณาเข้าสู่ระบบอีกครั้ง', 'success');
+                    // ล้างค่าในช่องกรอก
+                    document.getElementById('re-newpw').value = "";
+                    document.getElementById('re-confirmpw').value = "";
+                    showTab('staff');
+                } else {
+                    Swal.fire('ยืนยันตัวตนไม่สำเร็จ', res.message, 'error');
+                }
+            }
     </script>
 </body>
 
