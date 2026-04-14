@@ -1,63 +1,140 @@
-// ตัวแปรภายในหน้า
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getDatabase, ref, onValue, set, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+// 1. Initialize Firebase
+const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
+const db = getDatabase(app);
+
+// 2. Local State
 let currentMode = 'pretest';
 let allStudents = [];
 let fuse;
 let selectedStudent = null;
 
-// [1] เริ่มต้น: เช็คสิทธิ์และโหลดรายชื่อนักเรียน
-document.addEventListener('DOMContentLoaded', async () => {
-    // เช็คสิทธิ์สตาฟ
-    const user = checkAuth();
-    if (!user || user.userType !== 'staff') {
-        window.location.href = '../pages/login.html';
-        return;
-    }
+// 3. Question Limits (Validation)
+const LIMITS = {
+    physic: 15,
+    chemistry: 15,
+    biology: 6,
+    introdent: 12,
+    intromed: 12,
+    total: 60
+};
 
-    try {
-        // ดึงข้อมูลนักเรียนจาก Firebase
-        const response = await fetch(`${CONFIG.firebaseURL}students.json`);
-        const data = await response.json();
+// --- [A] Real-time Listener: ดึงข้อมูลและอัปเดตหน้าจออัตโนมัติ ---
+const studentsRef = ref(db, 'students');
+onValue(studentsRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+        // แปลง Object เป็น Array เพื่อใช้กับ Fuse.js และ Table
+        allStudents = Object.keys(data).map(id => ({
+            id: id,
+            ...data[id]
+        }));
 
-        if (data) {
-            allStudents = Object.values(data);
-            // ตั้งค่า Fuzzy Search (เรียกจาก utils.js)
-            fuse = setupFuzzySearch(allStudents);
-        } else {
-            showToast("ไม่พบข้อมูลนักเรียนในระบบ", "error");
+        // อัปเดตระบบค้นหา
+        fuse = setupFuzzySearch(allStudents);
+
+        // อัปเดตตาราง Live Board (10 คนล่าสุด)
+        updateLiveBoard();
+
+        // หากมีการเลือกนักเรียนอยู่ ให้คะแนนในช่อง Input เปลี่ยนตาม (กรณีสตาฟคนอื่นช่วยกรอก)
+        if (selectedStudent) {
+            const updatedData = allStudents.find(s => s.id === selectedStudent.id);
+            if (updatedData) {
+                selectedStudent = updatedData; // อัปเดตข้อมูลในตัวแปร
+                syncInputsWithFirebase(updatedData);
+            }
         }
-    } catch (e) {
-        showToast("เชื่อมต่อฐานข้อมูลล้มเหลว", "error");
-        console.error(e);
     }
 });
 
-// [2] ระบบค้นหาด้วย ID
+// --- [B] UI Management ---
+
+// ฟังก์ชันสลับโหมด Pre-test / Post-test
+window.setMode = (mode) => {
+    currentMode = mode;
+    const isPre = mode === 'pretest';
+    document.getElementById('btn-pre').className = isPre ? 'flex-1 py-3 rounded-xl font-bold transition-all border-2 border-blue-600 bg-blue-600 text-white' : 'flex-1 py-3 rounded-xl font-bold transition-all border-2 border-slate-200 text-slate-400';
+    document.getElementById('btn-post').className = !isPre ? 'flex-1 py-3 rounded-xl font-bold transition-all border-2 border-blue-600 bg-blue-600 text-white' : 'flex-1 py-3 rounded-xl font-bold transition-all border-2 border-slate-200 text-slate-400';
+
+    if (selectedStudent) selectStudent(selectedStudent.id);
+};
+
+// ฟังก์ชันอัปเดต Live Scoreboard (แสดง 10 รายการล่าสุด)
+function updateLiveBoard() {
+    const board = document.getElementById('live-score-board');
+
+    // กรองเอาเฉพาะคนที่มีคะแนนแล้ว
+    const scored = allStudents.filter(s => (s.pretest?.total > 0 || s.posttest?.total > 0));
+
+    // เรียงลำดับ (ในที่นี้เราใช้ลำดับการกรอกล่าสุดจาก Firebase)
+    const lastTen = scored.slice(-10).reverse();
+
+    if (lastTen.length === 0) {
+        board.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูลการบันทึก</td></tr>`;
+        return;
+    }
+
+    board.innerHTML = lastTen.map(s => {
+        const modeLabel = s.posttest?.total > 0 ? 'Post-test' : 'Pre-test';
+        const total = s.posttest?.total || s.pretest?.total || 0;
+        const color = modeLabel === 'Post-test' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700';
+        return `
+            <tr class="hover:bg-slate-50 transition-colors animate-fade-in">
+                <td class="p-4 font-mono font-bold">${s.id}</td>
+                <td class="p-4 font-bold text-slate-700">${s.fullName}</td>
+                <td class="p-4"><span class="px-2 py-1 rounded bg-slate-100 text-[10px] font-bold">บ้าน ${s.house}</span></td>
+                <td class="p-4"><span class="px-2 py-1 rounded text-[10px] font-bold ${color}">${modeLabel}</span></td>
+                <td class="p-4 text-center font-black text-lg text-slate-800">${total}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// ซิงค์ข้อมูลจาก Firebase ลงในช่อง Input (ถ้าไม่ได้กำลังพิมพ์อยู่)
+function syncInputsWithFirebase(student) {
+    const scoreData = student[currentMode] || {};
+    const inputs = {
+        's-phy': scoreData.physic,
+        's-chem': scoreData.chemistry,
+        's-bio': scoreData.biology,
+        's-dent': scoreData.introdent,
+        's-med': scoreData.intromed
+    };
+
+    for (const [id, val] of Object.entries(inputs)) {
+        const el = document.getElementById(id);
+        if (document.activeElement !== el) { // ถ้าไม่ได้ Focus ช่องนี้อยู่ ให้เปลี่ยนค่า
+            el.value = (val !== undefined) ? val : "";
+        }
+    }
+    updateTotalPreview();
+}
+
+// --- [C] Search Logic ---
+
+// ค้นหาด้วย ID
 document.getElementById('input-id').oninput = (e) => {
     const id = e.target.value.trim();
-    const student = allStudents.find(s => s.id === id);
-    if (student) {
-        selectStudent(student);
-        document.getElementById('input-name').value = student.fullName;
+    if (allStudents.some(s => s.id === id)) {
+        selectStudent(id);
+        document.getElementById('input-name').value = selectedStudent.fullName;
     }
 };
 
-// [3] ระบบค้นหาด้วยชื่อ (Fuzzy Search)
+// ค้นหาด้วยชื่อ (Fuzzy)
 document.getElementById('input-name').oninput = (e) => {
     const query = e.target.value;
     const box = document.getElementById('suggest-box');
-
-    if (query.length < 2) {
-        box.classList.add('hidden');
-        return;
-    }
+    if (query.length < 2) { box.classList.add('hidden'); return; }
 
     const results = fuse.search(query);
     if (results.length > 0) {
         box.innerHTML = results.slice(0, 5).map(res => `
-            <div onclick="handleSelectSuggestion('${res.item.id}')" 
-                 class="p-4 hover:bg-blue-50 cursor-pointer border-b last:border-0 transition-colors">
+            <div onclick="handleSelectSuggestion('${res.item.id}')" class="p-4 hover:bg-blue-50 cursor-pointer border-b last:border-0">
                 <p class="font-bold text-slate-800">${res.item.fullName} (${res.item.id})</p>
-                <p class="text-xs text-slate-500 italic">บ้าน ${res.item.house} | ชื่อเล่น: ${res.item.nickname}</p>
+                <p class="text-xs text-slate-500 italic">บ้าน ${res.item.house} | ${res.item.nickname}</p>
             </div>
         `).join('');
         box.classList.remove('hidden');
@@ -66,150 +143,99 @@ document.getElementById('input-name').oninput = (e) => {
     }
 };
 
-// ฟังก์ชันเมื่อคลิกเลือกจากรายการแนะนำ
-function handleSelectSuggestion(id) {
-    const student = allStudents.find(s => s.id === id);
-    if (student) {
-        selectStudent(student);
-        document.getElementById('input-id').value = student.id;
-        document.getElementById('input-name').value = student.fullName;
-        document.getElementById('suggest-box').classList.add('hidden');
-    }
-}
+window.handleSelectSuggestion = (id) => {
+    selectStudent(id);
+    document.getElementById('input-id').value = id;
+    document.getElementById('input-name').value = selectedStudent.fullName;
+    document.getElementById('suggest-box').classList.add('hidden');
+};
 
-// [4] ฟังก์ชันเลือกนักเรียนและแสดงแบบฟอร์มคะแนน
-async function selectStudent(student) {
-    selectedStudent = student;
+function selectStudent(id) {
+    selectedStudent = allStudents.find(s => s.id === id);
+    if (!selectedStudent) return;
+
     document.getElementById('score-form').classList.remove('hidden');
+    document.getElementById('display-id').innerText = selectedStudent.id;
+    document.getElementById('display-name').innerText = selectedStudent.fullName;
+    document.getElementById('display-house').innerText = `บ้าน: ${selectedStudent.house} | ${selectedStudent.school}`;
 
-    // แสดงข้อมูลพื้นฐาน
-    document.getElementById('display-id').innerText = student.id;
-    document.getElementById('display-name').innerText = student.fullName;
-    document.getElementById('display-house').innerText = `บ้าน: ${student.house} | โรงเรียน: ${student.school || '-'}`;
-
-    // ดึงคะแนนเก่า (ถ้ามี) มาโชว์ในช่อง Input
-    const existingScores = student[currentMode] || {};
-    document.getElementById('s-phy').value = existingScores.physic || "";
-    document.getElementById('s-chem').value = existingScores.chemistry || "";
-    document.getElementById('s-bio').value = existingScores.biology || "";
-    document.getElementById('s-dent').value = existingScores.introdent || "";
-    document.getElementById('s-med').value = existingScores.intromed || "";
+    syncInputsWithFirebase(selectedStudent);
 }
 
-// [5] ฟังก์ชันเปลี่ยนโหมด Pre-test / Post-test
-function setMode(mode) {
-    currentMode = mode;
-    const isPre = mode === 'pretest';
+// --- [D] Validation & Submission ---
 
-    // ปรับ UI ปุ่ม
-    document.getElementById('btn-pre').className = isPre ? 'flex-1 py-3 rounded-xl font-bold border-2 border-blue-600 bg-blue-600 text-white' : 'flex-1 py-3 rounded-xl font-bold border-2 border-slate-200 text-slate-400';
-    document.getElementById('btn-post').className = !isPre ? 'flex-1 py-3 rounded-xl font-bold border-2 border-blue-600 bg-blue-600 text-white' : 'flex-1 py-3 rounded-xl font-bold border-2 border-slate-200 text-slate-400';
-
-    // ถ้าเลือกนักเรียนอยู่ ให้รีโหลดคะแนนของโหมดนั้นๆ
-    if (selectedStudent) {
-        selectStudent(selectedStudent);
-    }
+// คำนวณคะแนนรวมแบบ Real-time บนหน้าจอ
+function updateTotalPreview() {
+    const p = parseFloat(document.getElementById('s-phy').value) || 0;
+    const c = parseFloat(document.getElementById('s-chem').value) || 0;
+    const b = parseFloat(document.getElementById('s-bio').value) || 0;
+    const d = parseFloat(document.getElementById('s-dent').value) || 0;
+    const m = parseFloat(document.getElementById('s-med').value) || 0;
+    document.getElementById('total-preview').innerText = p + c + b + d + m;
 }
 
-const scoreInputs = ['s-phy', 's-chem', 's-bio', 's-dent', 's-med'];
-scoreInputs.forEach(id => {
-    document.getElementById(id).addEventListener('input', () => {
-        let total = 0;
-        scoreInputs.forEach(sid => {
-            total += parseFloat(document.getElementById(sid).value) || 0;
-        });
-        document.getElementById('total-preview').innerText = total;
-    });
+// ผูก Event การคำนวณเข้ากับทุกช่อง Input
+['s-phy', 's-chem', 's-bio', 's-dent', 's-med'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updateTotalPreview);
 });
 
-// [6] บันทึกคะแนน
-async function submitScore() {
-    if (!selectedStudent) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'ยังไม่ได้เลือกนักเรียน',
-            text: 'กรุณาค้นหาและเลือกนักเรียนก่อนบันทึกคะแนน',
-            confirmButtonColor: '#3085d6'
-        });
+window.submitScore = async function () {
+    if (!selectedStudent) return;
+
+    // 1. รวบรวมข้อมูลและ Check ว่ากรอกครบหรือไม่
+    const scores = {
+        physic: document.getElementById('s-phy').value,
+        chemistry: document.getElementById('s-chem').value,
+        biology: document.getElementById('s-bio').value,
+        introdent: document.getElementById('s-dent').value,
+        intromed: document.getElementById('s-med').value
+    };
+
+    // ตรวจสอบว่ามีช่องว่างไหม
+    if (Object.values(scores).some(v => v === "")) {
+        Swal.fire("กรอกข้อมูลไม่ครบ", "กรุณาใส่คะแนนให้ครบทุกวิชา (ถ้าขาดสอบให้ใส่ 0)", "error");
         return;
     }
 
-    // 1. ดึงค่าจาก Input
-    const fields = [
-        { id: 's-phy', name: 'Physics', limit: 15 },
-        { id: 's-chem', name: 'Chemistry', limit: 15 },
-        { id: 's-bio', name: 'Biology', limit: 6 },
-        { id: 's-dent', name: 'IntroDent', limit: 12 },
-        { id: 's-med', name: 'IntroMed', limit: 12 }
-    ];
+    // แปลงเป็น Number
+    const finalScores = {
+        physic: parseFloat(scores.physic),
+        chemistry: parseFloat(scores.chemistry),
+        biology: parseFloat(scores.biology),
+        introdent: parseFloat(scores.introdent),
+        intromed: parseFloat(scores.intromed)
+    };
 
-    let scores = {};
-    let isIncomplete = false;
-
-    // 2. ตรวจสอบว่ากรอกครบทุกช่องหรือไม่
-    fields.forEach(field => {
-        const value = document.getElementById(field.id).value;
-        if (value === "") {
-            isIncomplete = true;
-            document.getElementById(field.id).classList.add('border-red-500');
-        } else {
-            document.getElementById(field.id).classList.remove('border-red-500');
-            scores[field.id.replace('s-', '')] = parseFloat(value);
+    // 2. ตรวจสอบคะแนนเกิน
+    for (const [key, val] of Object.entries(finalScores)) {
+        if (val > LIMITS[key]) {
+            Swal.fire("คะแนนเกินจริง", `วิชา ${key} คะแนนเต็มคือ ${LIMITS[key]}`, "error");
+            return;
         }
-    });
-
-    if (isIncomplete) {
-        Swal.fire({
-            icon: 'error',
-            title: 'ข้อมูลไม่ครบ!',
-            text: 'กรุณากรอกคะแนนให้ครบทุกวิชา (ถ้าขาดสอบหรือได้ศูนย์ให้ใส่ 0)',
-            confirmButtonColor: '#d33'
-        });
-        return;
     }
 
-    // 3. ตรวจสอบคะแนนเกิน
-    const overLimit = fields.find(f => scores[f.id.replace('s-', '')] > f.limit);
-    if (overLimit) {
-        Swal.fire({
-            icon: 'error',
-            title: 'คะแนนเกินจริง!',
-            text: `วิชา ${overLimit.name} คะแนนเต็มคือ ${overLimit.limit}`,
-            confirmButtonColor: '#d33'
-        });
-        return;
-    }
+    finalScores.total = Object.values(finalScores).reduce((a, b) => a + b, 0);
 
-    // 4. คำนวณผลรวม
-    scores.total = Object.values(scores).reduce((a, b) => a + b, 0);
-
-    // 5. ยืนยันการบันทึกด้วย SweetAlert2
+    // 3. ยืนยันการบันทึก
     const result = await Swal.fire({
-        title: 'ยืนยันการบันทึก?',
-        html: `ต้องการบันทึกคะแนนของ <b>${selectedStudent.fullName}</b><br>คะแนนรวมทั้งหมด <b>${scores.total} / 60</b>`,
+        title: 'ยืนยันบันทึกคะแนน?',
+        html: `คุณกำลังบันทึกคะแนนของ <b>${selectedStudent.fullName}</b><br>คะแนนรวม: <b>${finalScores.total} / 60</b>`,
         icon: 'question',
         showCancelButton: true,
         confirmButtonColor: '#22c55e',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'ใช่, บันทึกเลย',
-        cancelButtonText: 'ตรวจสอบอีกครั้ง'
+        confirmButtonText: 'บันทึกเลย',
+        cancelButtonText: 'ยกเลิก'
     });
 
     if (result.isConfirmed) {
-        const staff = checkAuth();
-        const btn = document.getElementById('btn-save');
-
         try {
-            btn.innerText = "กำลังบันทึก...";
-            btn.disabled = true;
+            const staff = checkAuth();
 
-            // บันทึกลง Firebase
-            await fetch(`${CONFIG.firebaseURL}students/${selectedStudent.id}/${currentMode}.json`, {
-                method: 'PUT',
-                body: JSON.stringify(scores)
-            });
+            // A. บันทึกลง Firebase (Real-time)
+            const scoreRef = ref(db, `students/${selectedStudent.id}/${currentMode}`);
+            await set(scoreRef, finalScores);
 
-            // ส่งลง Google Sheets
+            // B. ส่งลง Google Sheets (Background Sync)
             fetch(CONFIG.appscriptUrl, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -217,45 +243,69 @@ async function submitScore() {
                     action: 'recordScore',
                     id: selectedStudent.id,
                     mode: currentMode,
-                    scores: scores,
+                    scores: finalScores,
                     recordedBy: staff.nickname || staff.fullName
                 })
             });
 
-            Swal.fire({
-                icon: 'success',
-                title: 'สำเร็จ!',
-                text: 'บันทึกคะแนนและประวัติเรียบร้อยแล้ว',
-                timer: 1500,
-                showConfirmButton: false
-            });
-
+            showToast(`บันทึกคะแนนของ ${selectedStudent.nickname} สำเร็จ!`);
             resetForm();
 
-        } catch (error) {
-            Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
-        } finally {
-            btn.innerText = "บันทึกคะแนนลงระบบ";
-            btn.disabled = false;
+        } catch (e) {
+            Swal.fire("ผิดพลาด", "ไม่สามารถเชื่อมต่อฐานข้อมูลได้", "error");
         }
     }
-}
+};
 
-// ฟังก์ชันล้างฟอร์ม
 function resetForm() {
     document.getElementById('score-form').classList.add('hidden');
     document.getElementById('input-id').value = "";
     document.getElementById('input-name').value = "";
-    document.querySelectorAll('#score-form input[type="number"]').forEach(input => input.value = "");
+    document.querySelectorAll('#score-form input').forEach(i => i.value = "");
     document.getElementById('total-preview').innerText = "0";
     selectedStudent = null;
-    document.getElementById('input-id').focus(); // พร้อมกรอกคนถัดไป
+    document.getElementById('input-id').focus();
 }
 
-document.querySelectorAll('#score-form input').forEach((input, index, inputs) => {
-    input.addEventListener('input', () => {
-        if (input.value.length >= 2) { // ถ้ากรอกเลข 2 หลัก ให้เลื่อนไปช่องถัดไป
-            if (inputs[index + 1]) inputs[index + 1].focus();
+// Initial Check
+document.addEventListener('DOMContentLoaded', () => {
+    const user = checkAuth();
+    if (!user || user.userType !== 'staff') {
+        window.location.href = '../pages/login.html';
+    }
+});
+
+// รายชื่อ ID ของช่องกรอกคะแนนตามลำดับ
+const scoreInputIds = ['s-phy', 's-chem', 's-bio', 's-dent', 's-med'];
+
+scoreInputIds.forEach((id, index) => {
+    const input = document.getElementById(id);
+
+    // 1. กระโดดอัตโนมัติเมื่อพิมพ์ครบ 2 หลัก
+    input.addEventListener('input', (e) => {
+        const value = e.target.value;
+        // ถ้าพิมพ์เลข 2 หลัก (เช่น 10, 12, 15) ให้กระโดดไปช่องถัดไป
+        if (value.length >= 2) {
+            const nextId = scoreInputIds[index + 1];
+            if (nextId) {
+                document.getElementById(nextId).focus();
+                document.getElementById(nextId).select(); // ให้คลุมดำตัวเลขเก่าด้วยเพื่อให้พิมพ์ทับได้เลย
+            }
+        }
+    });
+
+    // 2. กระโดดเมื่อกดปุ่ม Enter
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // ป้องกันการเผลอกด Submit ฟอร์ม
+            const nextId = scoreInputIds[index + 1];
+            if (nextId) {
+                document.getElementById(nextId).focus();
+                document.getElementById(nextId).select();
+            } else {
+                // ถ้าเป็นช่องสุดท้าย (IntroMed) ให้กดบันทึกเลย
+                window.submitScore();
+            }
         }
     });
 });

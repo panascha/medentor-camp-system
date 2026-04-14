@@ -118,12 +118,56 @@
                 บันทึกคะแนนลงระบบ
             </button>
         </div>
+
+        <!-- Live Scoreboard -->
+        <div class="max-w-4xl mx-auto p-4 md:p-8 mt-4">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-slate-800 p-4 flex justify-between items-center text-white">
+                    <h2 class="font-bold flex items-center gap-2">
+                        <span class="relative flex h-3 w-3">
+                            <span
+                                class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                        </span>
+                        คะแนนที่บันทึกล่าสุด (Real-time)
+                    </h2>
+                    <span class="text-[10px] uppercase tracking-widest opacity-60">Live Scoreboard</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-bold">
+                            <tr>
+                                <th class="p-4 border-b">ID</th>
+                                <th class="p-4 border-b">ชื่อนักเรียน</th>
+                                <th class="p-4 border-b">บ้าน</th>
+                                <th class="p-4 border-b">โหมด</th>
+                                <th class="p-4 border-b text-center">คะแนนรวม</th>
+                            </tr>
+                        </thead>
+                        <tbody id="live-score-board" class="text-sm divide-y divide-slate-100">
+                            <!-- ข้อมูลจะถูกเติมที่นี่โดย JS แบบ Real-time -->
+                            <tr>
+                                <td colspan="5" class="p-8 text-center text-slate-400 italic">กำลังเชื่อมต่อฐานข้อมูล...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
+    <script type="importmap">
+        {
+            "imports": {
+                "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js",
+                "firebase/database": "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js"
+            }
+        }
+        </script>
     <script src="../js/firebase-config.js"></script>
     <script src="../js/auth.js"></script>
     <script src="../js/utils.js"></script>
-    <script src="../js/scoring-logic.js"></script>
+    <script type="module" src="../js/scoring-logic.js"></script>
 </body>
 
 </html>
