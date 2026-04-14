@@ -111,74 +111,151 @@ function setMode(mode) {
     }
 }
 
+const scoreInputs = ['s-phy', 's-chem', 's-bio', 's-dent', 's-med'];
+scoreInputs.forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+        let total = 0;
+        scoreInputs.forEach(sid => {
+            total += parseFloat(document.getElementById(sid).value) || 0;
+        });
+        document.getElementById('total-preview').innerText = total;
+    });
+});
+
 // [6] บันทึกคะแนน
 async function submitScore() {
     if (!selectedStudent) {
-        showToast("กรุณาเลือกนักเรียนก่อนบันทึก", "error");
+        Swal.fire({
+            icon: 'warning',
+            title: 'ยังไม่ได้เลือกนักเรียน',
+            text: 'กรุณาค้นหาและเลือกนักเรียนก่อนบันทึกคะแนน',
+            confirmButtonColor: '#3085d6'
+        });
         return;
     }
 
-    // รวบรวมคะแนน
-    const scores = {
-        physic: parseFloat(document.getElementById('s-phy').value) || 0,
-        chemistry: parseFloat(document.getElementById('s-chem').value) || 0,
-        biology: parseFloat(document.getElementById('s-bio').value) || 0,
-        introdent: parseFloat(document.getElementById('s-dent').value) || 0,
-        intromed: parseFloat(document.getElementById('s-med').value) || 0
-    };
+    // 1. ดึงค่าจาก Input
+    const fields = [
+        { id: 's-phy', name: 'Physics', limit: 15 },
+        { id: 's-chem', name: 'Chemistry', limit: 15 },
+        { id: 's-bio', name: 'Biology', limit: 6 },
+        { id: 's-dent', name: 'IntroDent', limit: 12 },
+        { id: 's-med', name: 'IntroMed', limit: 12 }
+    ];
 
-    // คำนวณคะแนนรวม
-    scores.total = scores.physic + scores.chemistry + scores.biology + scores.introdent + scores.intromed;
+    let scores = {};
+    let isIncomplete = false;
 
-    const staff = checkAuth(); // ดึงข้อมูลสตาฟที่ล็อกอินอยู่
+    // 2. ตรวจสอบว่ากรอกครบทุกช่องหรือไม่
+    fields.forEach(field => {
+        const value = document.getElementById(field.id).value;
+        if (value === "") {
+            isIncomplete = true;
+            document.getElementById(field.id).classList.add('border-red-500');
+        } else {
+            document.getElementById(field.id).classList.remove('border-red-500');
+            scores[field.id.replace('s-', '')] = parseFloat(value);
+        }
+    });
 
-    try {
-        // แสดงสถานะ Loading (Optional)
-        const btn = document.getElementById('btn-save');
-        btn.innerText = "กำลังบันทึก...";
-        btn.disabled = true;
-
-        // 1. บันทึกลง Firebase (Real-time)
-        const fbUrl = `${CONFIG.firebaseURL}students/${selectedStudent.id}/${currentMode}.json`;
-        await fetch(fbUrl, {
-            method: 'PUT',
-            body: JSON.stringify(scores)
+    if (isIncomplete) {
+        Swal.fire({
+            icon: 'error',
+            title: 'ข้อมูลไม่ครบ!',
+            text: 'กรุณากรอกคะแนนให้ครบทุกวิชา (ถ้าขาดสอบหรือได้ศูนย์ให้ใส่ 0)',
+            confirmButtonColor: '#d33'
         });
+        return;
+    }
 
-        // 2. ส่งข้อมูลไป Google Sheets (Background)
-        // ไม่ใช้ await เพื่อไม่ให้หน้าเว็บค้างถ้าระบบ Sheet ช้า
-        fetch(CONFIG.appscriptUrl, {
-            method: 'POST',
-            mode: 'no-cors', // ป้องกันปัญหา CORS กับ Google Apps Script
-            cache: 'no-cache',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'recordScore',
-                id: selectedStudent.id,
-                mode: currentMode,
-                scores: scores,
-                recordedBy: staff.nickname || staff.fullName
-            })
+    // 3. ตรวจสอบคะแนนเกิน
+    const overLimit = fields.find(f => scores[f.id.replace('s-', '')] > f.limit);
+    if (overLimit) {
+        Swal.fire({
+            icon: 'error',
+            title: 'คะแนนเกินจริง!',
+            text: `วิชา ${overLimit.name} คะแนนเต็มคือ ${overLimit.limit}`,
+            confirmButtonColor: '#d33'
         });
+        return;
+    }
 
-        showToast(`บันทึกคะแนน ${currentMode} ของ ${selectedStudent.nickname || selectedStudent.fullName} สำเร็จ!`);
+    // 4. คำนวณผลรวม
+    scores.total = Object.values(scores).reduce((a, b) => a + b, 0);
 
-        // ล้างฟอร์ม
-        resetForm();
+    // 5. ยืนยันการบันทึกด้วย SweetAlert2
+    const result = await Swal.fire({
+        title: 'ยืนยันการบันทึก?',
+        html: `ต้องการบันทึกคะแนนของ <b>${selectedStudent.fullName}</b><br>คะแนนรวมทั้งหมด <b>${scores.total} / 60</b>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#22c55e',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'ใช่, บันทึกเลย',
+        cancelButtonText: 'ตรวจสอบอีกครั้ง'
+    });
 
-    } catch (e) {
-        showToast("เกิดข้อผิดพลาดในการบันทึกข้อมูล", "error");
-        console.error(e);
-    } finally {
+    if (result.isConfirmed) {
+        const staff = checkAuth();
         const btn = document.getElementById('btn-save');
-        btn.innerText = "บันทึกคะแนนลงระบบ";
-        btn.disabled = false;
+
+        try {
+            btn.innerText = "กำลังบันทึก...";
+            btn.disabled = true;
+
+            // บันทึกลง Firebase
+            await fetch(`${CONFIG.firebaseURL}students/${selectedStudent.id}/${currentMode}.json`, {
+                method: 'PUT',
+                body: JSON.stringify(scores)
+            });
+
+            // ส่งลง Google Sheets
+            fetch(CONFIG.appscriptUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({
+                    action: 'recordScore',
+                    id: selectedStudent.id,
+                    mode: currentMode,
+                    scores: scores,
+                    recordedBy: staff.nickname || staff.fullName
+                })
+            });
+
+            Swal.fire({
+                icon: 'success',
+                title: 'สำเร็จ!',
+                text: 'บันทึกคะแนนและประวัติเรียบร้อยแล้ว',
+                timer: 1500,
+                showConfirmButton: false
+            });
+
+            resetForm();
+
+        } catch (error) {
+            Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
+        } finally {
+            btn.innerText = "บันทึกคะแนนลงระบบ";
+            btn.disabled = false;
+        }
     }
 }
 
+// ฟังก์ชันล้างฟอร์ม
 function resetForm() {
     document.getElementById('score-form').classList.add('hidden');
     document.getElementById('input-id').value = "";
     document.getElementById('input-name').value = "";
+    document.querySelectorAll('#score-form input[type="number"]').forEach(input => input.value = "");
+    document.getElementById('total-preview').innerText = "0";
     selectedStudent = null;
+    document.getElementById('input-id').focus(); // พร้อมกรอกคนถัดไป
 }
+
+document.querySelectorAll('#score-form input').forEach((input, index, inputs) => {
+    input.addEventListener('input', () => {
+        if (input.value.length >= 2) { // ถ้ากรอกเลข 2 หลัก ให้เลื่อนไปช่องถัดไป
+            if (inputs[index + 1]) inputs[index + 1].focus();
+        }
+    });
+});

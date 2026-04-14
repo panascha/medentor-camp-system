@@ -5,6 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Medentor Camp</title>
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Tailwind CSS  -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="../js/auth.js"></script>
 </head>
@@ -87,14 +90,23 @@
         }
 
         async function doStudentLogin() {
-            const res = await loginStudent(
-                document.getElementById('std-id').value,
-                document.getElementById('std-house').value,
-                document.getElementById('std-nick').value
-            );
-            if (res.success) window.location.href = "student.html";
-            else alert(res.message);
-        }
+                const res = await loginStudent(
+                    document.getElementById('std-id').value,
+                    document.getElementById('std-house').value,
+                    document.getElementById('std-nick').value
+                );
+                if (res.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'ยินดีต้อนรับน้องๆ!',
+                        text: 'กำลังเข้าสู่ระบบกิจกรรม...',
+                        timer: 1500,
+                        showConfirmButton: false
+                    }).then(() => window.location.href = "../index.html");
+                } else {
+                    Swal.fire('เข้าสู่ระบบไม่สำเร็จ', res.message, 'error');
+                }
+            }
 
         async function doStaffLogin() {
             const res = await loginStaff(
