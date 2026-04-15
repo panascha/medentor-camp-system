@@ -141,10 +141,15 @@
                     <table class="w-full text-left border-collapse">
                         <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-bold">
                             <tr>
-                                <th class="p-4 border-b">ID</th>
+                                <th class="p-4 border-b cursor-pointer hover:bg-slate-100 transition-colors" onclick="toggleSort('id')">
+                                    ID <span id="sort-icon-id" class="ml-1 text-[10px]">↕️</span>
+                                </th>
                                 <th class="p-4 border-b">ชื่อนักเรียน</th>
-                                <th class="p-4 border-b">Pretest/Posttest</th>
-                                <th class="p-4 border-b text-center">คะแนนรวม</th>
+                                <th class="p-4 border-b text-center">โหมด</th>
+                                <th class="p-4 border-b text-center cursor-pointer hover:bg-slate-100 transition-colors"
+                                    onclick="toggleSort('score')">
+                                    คะแนนรวม <span id="sort-icon-score" class="ml-1 text-[10px]">↕️</span>
+                                </th>
                                 <th class="p-4 border-b">ผู้บันทึก</th>
                                 <th class="p-4 border-b text-right">จัดการ</th>
                             </tr>
@@ -171,7 +176,7 @@
         </script>
     <script src="../js/firebase-config.js"></script>
     <script src="../js/auth.js"></script>
-    <script src="../js/utils.js"></script>
+    <script type="module"src="../js/utils.js"></script>
     <script type="module" src="../js/scoring-logic.js"></script>
 </body>
 

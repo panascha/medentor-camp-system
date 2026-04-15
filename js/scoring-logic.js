@@ -1,15 +1,26 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, get, set, update, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, get, set, onValue, goOnline, goOffline } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 // 1. Initialize Firebase
 const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
 const db = getDatabase(app);
 
+if (typeof window.setupConnectionManager === 'function') {
+    window.setupConnectionManager(db);
+} else {
+    // ถ้า utils.js ยังโหลดไม่เสร็จ ให้รอ 100ms แล้วเรียกใหม่
+    setTimeout(() => window.setupConnectionManager && window.setupConnectionManager(db), 100);
+}
+
 // 2. Local State
 let currentMode = 'pretest';
 let allStudents = [];
+let profiles = {};
 let fuse;
 let selectedStudent = null;
+let currentSortKey = 'id'; // 'id' หรือ 'score'
+let currentSortDir = 'asc'; // 'asc' หรือ 'desc'
+
 
 // 3. Question Limits (Validation)
 const LIMITS = {
@@ -24,30 +35,27 @@ const LIMITS = {
 // --- [A] Real-time Listener: ดึงข้อมูลและอัปเดตหน้าจออัตโนมัติ ---
 async function loadStudentsData() {
     try {
-        // 1. ดึงโปรไฟล์ (ดึงครั้งเดียว)
+        // 1. ดึงโปรไฟล์ทั้งหมดครั้งเดียว (ข้อมูลเล็กมาก)
         const profilesSnapshot = await get(ref(db, 'students'));
-        const profiles = profilesSnapshot.val() || {};
+        profiles = profilesSnapshot.val() || {};
 
-        // 2. ติดตามกิ่งคะแนน (Real-time)
+        // 2. ติดตามกิ่งคะแนนแบบ Real-time (กิ่งที่เปลี่ยนแปลงบ่อย)
         onValue(ref(db, 'scores'), (scoresSnapshot) => {
             const scores = scoresSnapshot.val() || {};
 
-            // 3. รวมข้อมูล: เอาโปรไฟล์เป็นตัวตั้ง แล้วเอาคะแนนไปแปะ
-            allStudents = Object.keys(profiles).map(id => {
-                return {
-                    id: id,
-                    ...profiles[id],
-                    pretest: scores[id]?.pretest || null, // ใช้ ?. เพื่อกัน Error ถ้ายังไม่มีคะแนน
-                    posttest: scores[id]?.posttest || null
-                };
-            });
+            // 3. รวมโปรไฟล์เข้ากับคะแนนล่าสุด
+            allStudents = Object.keys(profiles).map(id => ({
+                id: id,
+                ...profiles[id],
+                pretest: scores[id]?.pretest || null,
+                posttest: scores[id]?.posttest || null
+            }));
 
-            // อัปเดต Search Engine
-            fuse = setupFuzzySearch(allStudents);
+            // อัปเดตระบบค้นหาและตาราง
+            if (!fuse) fuse = setupFuzzySearch(allStudents);
+            else fuse.setCollection(allStudents);
 
-            // 4. สั่งวาดตาราง Live Board ใหม่ทุกครั้งที่คะแนนเปลี่ยน
             updateLiveBoard();
-            console.log("Live Board Updated with", allStudents.length, "students");
         });
     } catch (error) {
         console.error("Load Error:", error);
@@ -69,6 +77,16 @@ window.setMode = (mode) => {
     if (selectedStudent) selectStudent(selectedStudent.id);
 };
 
+// ฟังก์ชันสลับการเรียงลำดับใน Live Board
+window.toggleSort = (key) => {
+    if (currentSortKey === key) {
+        currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortKey = key;
+        currentSortDir = 'asc';
+    }
+    updateLiveBoard();
+};
 // [1] ฟังก์ชันอัปเดตตาราง Live Board พร้อมปุ่มลบ
 function updateLiveBoard() {
     const board = document.getElementById('live-score-board');
@@ -76,24 +94,38 @@ function updateLiveBoard() {
 
     const user = checkAuth();
 
-    // ปรับ Filter: ให้เอาคนที่มีคะแนนรวม > 0 มาแสดงด้วย แม้ไม่มีชื่อคนบันทึก
-    const scored = allStudents.filter(s =>
-        (s.pretest && (s.pretest.recordedBy || s.pretest.total > 0)) ||
-        (s.posttest && (s.posttest.recordedBy || s.posttest.total > 0))
+    // 1. Filter: กรองเอาเฉพาะคนที่มีคะแนนใน "Mode ปัจจุบัน"
+    let displayData = allStudents.filter(s =>
+        s[currentMode] && (s[currentMode].recordedBy || s[currentMode].total > 0)
     );
 
-    const lastTen = scored.slice(-10).reverse();
+    // 2. Sort: เรียงลำดับตาม Key และ Direction ที่เลือก
+    displayData.sort((a, b) => {
+        let valA, valB;
+        if (currentSortKey === 'score') {
+            valA = a[currentMode]?.total || 0;
+            valB = b[currentMode]?.total || 0;
+        } else {
+            // เรียงตาม ID (แปลงเป็นตัวเลขเพื่อความถูกต้อง)
+            valA = parseInt(a.id);
+            valB = parseInt(b.id);
+        }
 
-    if (lastTen.length === 0) {
-        board.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 italic">ยังไม่มีข้อมูล</td></tr>`;
+        if (currentSortDir === 'asc') return valA - valB;
+        return valB - valA;
+    });
+
+    // แสดงผลข้อมูล (เอาแค่ 10-20 คน หรือทั้งหมดก็ได้ตามต้องการ ในที่นี้เอาทั้งหมดที่กรองได้)
+    if (displayData.length === 0) {
+        board.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 italic">ยังไม่มีข้อมูลในโหมด ${currentMode.toUpperCase()}</td></tr>`;
         return;
     }
 
-    board.innerHTML = lastTen.map(s => {
-        // เลือกโหมดที่จะแสดง (ถ้ามี Posttest > 0 ให้โชว์ Posttest)
-        const mode = (s.posttest && s.posttest.total > 0) ? 'posttest' : 'pretest';
-        const data = s[mode];
+    // อัปเดตไอคอนใน Header (ถ้ามี) - เราจะไปแก้ HTML ในขั้นต่อไป
+    updateSortIcons();
 
+    board.innerHTML = displayData.map(s => {
+        const data = s[currentMode];
         const isOwner = data.recordedBy === (user.nickname || user.fullName);
         const isAdmin = user.role === 'Admin';
 
@@ -105,8 +137,8 @@ function updateLiveBoard() {
                     <div class="text-[10px] text-slate-400 uppercase">บ้าน ${s.house}</div>
                 </td>
                 <td class="p-4">
-                    <span class="px-2 py-1 rounded-md text-[10px] font-bold ${mode === 'pretest' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}">
-                        ${mode.toUpperCase()}
+                    <span class="px-2 py-1 rounded-md text-[10px] font-bold ${currentMode === 'pretest' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}">
+                        ${currentMode.toUpperCase()}
                     </span>
                 </td>
                 <td class="p-4 text-center font-black text-lg">${data.total}</td>
@@ -116,7 +148,7 @@ function updateLiveBoard() {
                 </td>
                 <td class="p-4 text-right">
                     ${(isAdmin || isOwner || !data.recordedBy) ? `
-                        <button onclick="window.deleteScore('${s.id}', '${mode}')" class="text-red-400 hover:text-red-600 p-2 transition-colors">
+                        <button onclick="window.deleteScore('${s.id}', '${currentMode}')" class="text-red-400 hover:text-red-600 p-2 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
@@ -126,6 +158,15 @@ function updateLiveBoard() {
             </tr>
         `;
     }).join('');
+}
+
+function updateSortIcons() {
+    const idIcon = document.getElementById('sort-icon-id');
+    const scoreIcon = document.getElementById('sort-icon-score');
+    if (!idIcon || !scoreIcon) return;
+
+    idIcon.innerText = currentSortKey === 'id' ? (currentSortDir === 'asc' ? '🔼' : '🔽') : '↕️';
+    scoreIcon.innerText = currentSortKey === 'score' ? (currentSortDir === 'asc' ? '🔼' : '🔽') : '↕️';
 }
 
 // [2] ฟังก์ชันลบคะแนน (เรียกใช้โดย Admin หรือ เจ้าของ)
