@@ -5,4 +5,13 @@ const CONFIG = {
     // รหัสลับสำหรับยืนยันตัวตนกับ Apps Script
     syncKey: "MEDENTOR_SECRET_2026",
     fbSecret: "GFPzk3iqvQr2J5nh1fmAkCJQ1iSkyhn4lZU1YOpK"
+    
+};
+
+const SUBJECTS = {
+    physic: "ฟิสิกส์",
+    chemistry: "เคมี",
+    biology: "ชีววิทยา",
+    introdent: "Intro to Dent",
+    intromed: "Intro to Med"
 };
