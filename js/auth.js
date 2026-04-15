@@ -44,27 +44,35 @@ async function loginStaff(studentID, password) {
 // --- [3] เปลี่ยนรหัสผ่านสตาฟ ---
 async function resetStaffPassword(id, name, nick, year, faculty, newPassword) {
     try {
+        // 1. ตรวจสอบตัวตนสตาฟจาก Firebase ก่อน
         const response = await fetch(`${firebaseDbUrl}staff/${id}.json?auth=${fbSecret}`);
         const staff = await response.json();
 
-        if (staff && 
-            staff.fullName === name && 
-            staff.nickname === nick && 
-            staff.year.toString() === year.toString() && 
+        if (staff &&
+            staff.fullName === name &&
+            staff.nickname === nick &&
+            staff.year.toString() === year.toString() &&
             staff.faculty === faculty) {
-            
+
+            // 2. อัปเดตที่ Firebase
             await fetch(`${firebaseDbUrl}staff/${id}/password.json?auth=${fbSecret}`, {
                 method: "PUT",
                 body: JSON.stringify(newPassword)
             });
-            fetch(CONFIG.appscriptUrl, {
+
+            // 3. (จุดสำคัญ) อัปเดตกลับไปที่ Google Sheet ผ่าน Apps Script
+            // เราจะรอให้การ Fetch สำเร็จเพื่อความชัวร์
+            await fetch(CONFIG.appscriptUrl, {
                 method: "POST",
-                // mode: "no-cors",
+                mode: "no-cors", // สำคัญมาก: ป้องกันปัญหา CORS
+                headers: {
+                    "Content-Type": "text/plain",
+                },
                 body: JSON.stringify({
                     action: "updateStaffPassword",
                     key: CONFIG.syncKey,
-                    id: id,
-                    newPassword: newPassword
+                    id: id.toString().trim(),
+                    newPassword: newPassword.toString().trim()
                 })
             });
 
@@ -73,7 +81,8 @@ async function resetStaffPassword(id, name, nick, year, faculty, newPassword) {
             return { success: false, message: "ข้อมูลยืนยันตัวตนไม่ถูกต้อง" };
         }
     } catch (e) {
-        return { success: false, message: "เกิดข้อผิดพลาด" };
+        console.error("Sync Error:", e);
+        return { success: false, message: "เกิดข้อผิดพลาดในการเชื่อมต่อ" };
     }
 }
 

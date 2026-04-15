@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 - ไม่พบหน้าที่ต้องการ | Medentor System</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Prompt -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+        }
+
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-20px);
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 min-h-screen flex items-center justify-center p-6">
+
+    <div class="max-w-md w-full text-center">
+        <!-- Illustration / Logo -->
+        <div class="relative mb-8">
+            <div class="absolute inset-0 bg-blue-200 blur-3xl opacity-30 rounded-full"></div>
+            <img src="assets/logo.png" alt="Logo"
+                class="h-32 w-32 mx-auto object-contain relative animate-float drop-shadow-2xl">
+        </div>
+
+        <!-- Error Message -->
+        <h1 class="text-7xl font-black text-slate-800 mb-4">404</h1>
+        <h2 class="text-2xl font-bold text-slate-700 mb-2">ไม่พบหน้าที่คุณต้องการ</h2>
+        <p class="text-slate-500 mb-8 leading-relaxed">
+            ขออภัย หน้าที่คุณพยายามเข้าถึงอาจถูกลบ ย้ายชื่อ <br>หรือไม่มีอยู่ในระบบ Medentor Camp
+        </p>
+
+        <!-- Redirect Notice & Button -->
+        <div class="space-y-4">
+            <p
+                class="text-sm text-blue-600 font-bold bg-blue-50 py-2 px-4 rounded-full inline-block border border-blue-100">
+                ระบบจะพาคุณกลับหน้าหลักในอีก <span id="countdown">5</span> วินาที...
+            </p>
+
+            <div class="pt-4">
+                <a href="index.html"
+                    class="inline-block bg-slate-800 hover:bg-black text-white px-8 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 active:scale-95 shadow-xl shadow-slate-200">
+                    กลับสู่หน้าหลักตอนนี้
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer Info -->
+        <p class="mt-16 text-[10px] text-slate-400 uppercase tracking-[0.2em] font-bold">
+            © 2026 MEDENTOR CAMP SYSTEM | ACADEMIC DIVISION
+        </p>
+    </div>
+
+    <script>
+        // ระบบนับถอยหลังกลับหน้าหลัก
+        let seconds = 5;
+        const countdownEl = document.getElementById('countdown');
+
+        const timer = setInterval(() => {
+            seconds--;
+            countdownEl.innerText = seconds;
+            if (seconds <= 0) {
+                clearInterval(timer);
+                window.location.href = 'index.html';
+            }
+        }, 1000);
+    </script>
+</body>
+
+</html>
