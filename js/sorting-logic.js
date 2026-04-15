@@ -51,29 +51,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 
+function getRoomLetter(index) {
+    return String.fromCharCode(64 + parseInt(index));
+}
 function renderRooms(count) {
     const wrapper = document.getElementById('rooms-wrapper');
     wrapper.innerHTML = '';
     for (let i = 1; i <= count; i++) {
+        const letter = getRoomLetter(i); // เปลี่ยนเลขเป็นตัวอักษร
         wrapper.innerHTML += `
             <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-fit">
                 <div class="bg-slate-800 text-white p-4 flex justify-between items-center">
                     <h3 class="font-bold flex items-center gap-2">
                         <span class="w-2 h-2 rounded-full bg-blue-400"></span>
-                        ห้องเรียน ${i}
+                        ห้องเรียน ${letter}
                     </h3>
-                    <span id="count-room-${i}" class="bg-white/20 px-2 py-0.5 rounded-lg text-[10px] font-bold">0 คน</span>
+                    <span id="count-room-${letter}" class="bg-white/20 px-2 py-0.5 rounded-lg text-[10px] font-bold">0 คน</span>
                 </div>
-                
-                <!-- แก้ไขบรรทัดนี้: ใส่ max-h เฉพาะจอเล็ก (มือถือ) และยกเลิกในจอ md (iPad/คอม) -->
-                <div id="room-${i}" 
-                     class="room-column p-4 space-y-3 bg-slate-50/50 max-h-[60vh] overflow-y-auto md:max-h-none md:overflow-visible" 
-                     data-room="${i}">
+                <div id="room-${letter}" 
+                     class="room-column p-4 space-y-3 bg-slate-50/50 min-h-[150px]" 
+                     data-room="${letter}">
                 </div>
             </div>
         `;
     }
-    // Init Sortable
+    // Init Sortable ให้กลุ่ม 'rooms' ทำงานร่วมกันได้
     document.querySelectorAll('.room-column, #pool').forEach(el => {
         new Sortable(el, {
             group: 'rooms',
@@ -144,12 +146,12 @@ async function applySnakeSort() {
 
     // Logic: Snake Sort
     const sorted = [...students].sort((a, b) => b.score - a.score);
-    let rooms = Array.from({ length: roomCount }, () => []);
+    let roomsData = Array.from({ length: roomCount }, () => []);
     let forward = true;
     let roomIdx = 0;
 
     sorted.forEach(s => {
-        rooms[roomIdx].push(s);
+        roomsData[roomIdx].push(s);
         if (forward) {
             if (roomIdx === roomCount - 1) forward = false;
             else roomIdx++;
@@ -159,9 +161,13 @@ async function applySnakeSort() {
         }
     });
 
-    rooms.forEach((roomStudents, i) => {
-        const roomEl = document.getElementById(`room-${i + 1}`);
-        roomEl.innerHTML = roomStudents.map(s => createStudentCard(s)).join('');
+    // --- จุดที่แก้ไข: เปลี่ยนจากเลข i+1 เป็นตัวอักษร A, B, C... ---
+    roomsData.forEach((roomStudents, i) => {
+        const letter = getRoomLetter(i + 1); // แปลง 1 เป็น A, 2 เป็น B...
+        const roomEl = document.getElementById(`room-${letter}`);
+        if (roomEl) {
+            roomEl.innerHTML = roomStudents.map(s => createStudentCard(s)).join('');
+        }
     });
 
     updateStats();
@@ -176,10 +182,10 @@ async function showRoomSelector(studentId, studentName, nickname, house, score) 
 
     const roomNames = {
         'pool': 'รายการหลัก (Pool)',
-        '1': 'ห้องเรียน 1',
-        '2': 'ห้องเรียน 2',
-        '3': 'ห้องเรียน 3',
-        '4': 'ห้องเรียน 4'
+        'A': 'ห้องเรียน A',
+        'B': 'ห้องเรียน B',
+        'C': 'ห้องเรียน C',
+        'D': 'ห้องเรียน D'
     };
 
     // กำหนดสีคะแนนใน Modal
@@ -212,17 +218,15 @@ async function showRoomSelector(studentId, studentName, nickname, house, score) 
     `;
 
     // ปุ่มเลือกห้อง
-    const rooms = ['1', '2', '3', '4'];
-    let gridButtons = rooms.map(roomId => {
-        const isCurrent = currentRoomId === roomId;
+    const rooms = ['A', 'B', 'C', 'D'];
+    let gridButtons = rooms.map(roomLetter => {
+        const isCurrent = currentRoomId === roomLetter;
         return `
-            <button onclick="${isCurrent ? '' : `Swal.clickConfirm(); moveDirect('${studentId}', '${roomId}')`}" 
+            <button onclick="${isCurrent ? '' : `Swal.clickConfirm(); moveDirect('${studentId}', '${roomLetter}')`}" 
                 class="p-5 rounded-2xl border-2 transition-all flex flex-col items-center 
-                ${isCurrent
-                ? 'bg-green-50 border-green-500 cursor-default opacity-100'
-                : 'bg-blue-50 border-blue-100 hover:bg-blue-600 hover:text-white cursor-pointer active:scale-95'}">
+                ${isCurrent ? 'bg-green-50 border-green-500' : 'bg-blue-50 border-blue-100 hover:bg-blue-600 hover:text-white'}">
                 <span class="text-2xl mb-1">${isCurrent ? '✅' : '🏫'}</span>
-                <span class="font-bold text-sm">ห้อง ${roomId}</span>
+                <span class="font-bold text-sm">ห้อง ${roomLetter}</span>
             </button>
         `;
     }).join('');
