@@ -5,33 +5,47 @@ let currentSort = 'desc'; // เก็บสถานะการ Sort
 
 async function loadStudents() {
     try {
-        const resp = await fetch(`${dbURL}students.json`);
-        const data = await resp.json();
-        if (!data) return;
+        // 1. ดึงข้อมูล 2 กิ่งพร้อมกัน (ใช้ Promise.all เพื่อความเร็ว)
+        const [profResp, scoreResp] = await Promise.all([
+            fetch(`${dbURL}students.json?auth=${CONFIG.fbSecret}`),
+            fetch(`${dbURL}scores.json?auth=${CONFIG.fbSecret}`)
+        ]);
 
-        students = Object.keys(data).map(id => {
-            const s = data[id];
+        const profiles = await profResp.json();
+        const scores = await scoreResp.json() || {};
+
+        if (!profiles) return;
+
+        // 2. รวมข้อมูล (Merge) โปรไฟล์และคะแนนเข้าด้วยกัน
+        students = Object.keys(profiles).map(id => {
+            const p = profiles[id];
+            const s = scores[id] || {};
+
+            // ดึงคะแนน Pretest (ถ้าไม่มีให้เป็น 0)
             const pretestScore = (s.pretest && s.pretest.total !== undefined)
                 ? parseFloat(s.pretest.total) : 0;
+
             return {
                 id: id,
-                name: s.fullName,
-                nickname: s.nickname,
-                house: s.house,
-                classID: s.classID || "",
-                score: pretestScore
+                name: p.fullName,
+                nickname: p.nickname,
+                house: p.house,
+                classID: p.classID || "",
+                score: pretestScore // ใช้สำหรับ Snake Sort
             };
         });
 
-        // Fix จำนวนห้องไว้ที่ 4 ทันที
+        // 3. เตรียมหน้าจอ
         const fixedRoomCount = 4;
         renderRooms(fixedRoomCount);
 
-        // 1. กระจายเด็กที่มีห้องอยู่แล้วลงใน 4 ห้องนั้น
+        // 4. กระจายเด็กที่มีห้องอยู่แล้ว (ClassID เดิม)
         distributeExistingStudents();
 
-        // 2. แสดงเด็กที่เหลือลงใน Pool (ล่างสุด)
+        // 5. แสดงเด็กที่เหลือใน Pool
         renderPool();
+
+        console.log("Admin Load Complete: Merged profiles and scores.");
 
     } catch (e) {
         console.error("Error:", e);
@@ -280,10 +294,13 @@ async function saveSorting() {
     const btn = document.getElementById('btn-save-all');
     const sortingData = {};
 
+    // รวบรวมข้อมูลว่าใครอยู่ห้องไหนจากหน้าจอ
     document.querySelectorAll('.room-column').forEach(room => {
         const roomId = room.dataset.room;
         Array.from(room.children).forEach(card => {
-            sortingData[card.dataset.id] = roomId;
+            if (card.dataset.id) {
+                sortingData[card.dataset.id] = roomId;
+            }
         });
     });
 
@@ -292,7 +309,7 @@ async function saveSorting() {
 
     const confirm = await Swal.fire({
         title: 'บันทึกการจัดห้อง?',
-        text: `คุณกำลังจะอัปเดตข้อมูลนักเรียน ${count} คน ลงฐานข้อมูล`,
+        text: `คุณกำลังจะอัปเดตห้องเรียนนักเรียน ${count} คน`,
         icon: 'question',
         showCancelButton: true,
         confirmButtonText: 'บันทึกข้อมูล'
@@ -304,18 +321,18 @@ async function saveSorting() {
         btn.innerText = "กำลังบันทึก...";
         btn.disabled = true;
 
-        // อัปเดตข้อมูลแบบ Batch (ใช้ PATCH ใน Firebase)
+        // อัปเดตไปที่กิ่ง students/{id}/classID
         const updates = {};
         for (let id in sortingData) {
             updates[`students/${id}/classID`] = sortingData[id];
         }
 
-        await fetch(`${dbURL}.json`, {
+        await fetch(`${dbURL}.json?auth=${CONFIG.fbSecret}`, {
             method: 'PATCH',
             body: JSON.stringify(updates)
         });
 
-        // ส่งไปบอก Google Sheet (Background)
+        // ส่งไป Google Sheet (Sync)
         fetch(CONFIG.appscriptUrl, {
             method: 'POST',
             mode: 'no-cors',
@@ -327,6 +344,13 @@ async function saveSorting() {
         });
 
         Swal.fire('สำเร็จ!', 'ข้อมูลห้องเรียนถูกบันทึกเรียบร้อยแล้ว', 'success');
+
+        // อัปเดตค่าในตัวแปรหลักด้วย
+        for (let id in sortingData) {
+            const sIdx = students.findIndex(s => s.id === id);
+            if (sIdx !== -1) students[sIdx].classID = sortingData[id];
+        }
+
     } catch (e) {
         Swal.fire('ผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
     } finally {
