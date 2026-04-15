@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, get, set, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, get, set, update, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 // 1. Initialize Firebase
 const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
@@ -24,27 +24,33 @@ const LIMITS = {
 // --- [A] Real-time Listener: ดึงข้อมูลและอัปเดตหน้าจออัตโนมัติ ---
 async function loadStudentsData() {
     try {
-        const studentsRef = ref(db, 'students');
-        const snapshot = await get(studentsRef); // ใช้ get แทน onValue
-        const data = snapshot.val();
+        // 1. ดึงโปรไฟล์ (ดึงครั้งเดียว)
+        const profilesSnapshot = await get(ref(db, 'students'));
+        const profiles = profilesSnapshot.val() || {};
 
-        if (data) {
-            allStudents = Object.keys(data).map(id => ({
-                id: id,
-                ...data[id]
-            }));
+        // 2. ติดตามกิ่งคะแนน (Real-time)
+        onValue(ref(db, 'scores'), (scoresSnapshot) => {
+            const scores = scoresSnapshot.val() || {};
 
-            // อัปเดตระบบค้นหา
+            // 3. รวมข้อมูล: เอาโปรไฟล์เป็นตัวตั้ง แล้วเอาคะแนนไปแปะ
+            allStudents = Object.keys(profiles).map(id => {
+                return {
+                    id: id,
+                    ...profiles[id],
+                    pretest: scores[id]?.pretest || null, // ใช้ ?. เพื่อกัน Error ถ้ายังไม่มีคะแนน
+                    posttest: scores[id]?.posttest || null
+                };
+            });
+
+            // อัปเดต Search Engine
             fuse = setupFuzzySearch(allStudents);
 
-            // อัปเดตตาราง Live Board
+            // 4. สั่งวาดตาราง Live Board ใหม่ทุกครั้งที่คะแนนเปลี่ยน
             updateLiveBoard();
-
-            console.log("Data loaded successfully");
-        }
+            console.log("Live Board Updated with", allStudents.length, "students");
+        });
     } catch (error) {
-        console.error("Error loading data:", error);
-        showToast("ไม่สามารถโหลดข้อมูลได้", "error");
+        console.error("Load Error:", error);
     }
 }
 
@@ -66,40 +72,56 @@ window.setMode = (mode) => {
 // [1] ฟังก์ชันอัปเดตตาราง Live Board พร้อมปุ่มลบ
 function updateLiveBoard() {
     const board = document.getElementById('live-score-board');
-    const user = checkAuth(); // ดึงข้อมูลสตาฟปัจจุบัน
+    if (!board) return;
 
+    const user = checkAuth();
+
+    // ปรับ Filter: ให้เอาคนที่มีคะแนนรวม > 0 มาแสดงด้วย แม้ไม่มีชื่อคนบันทึก
     const scored = allStudents.filter(s =>
-        (s.pretest && s.pretest.recordedBy) || (s.posttest && s.posttest.recordedBy)
+        (s.pretest && (s.pretest.recordedBy || s.pretest.total > 0)) ||
+        (s.posttest && (s.posttest.recordedBy || s.posttest.total > 0))
     );
+
     const lastTen = scored.slice(-10).reverse();
 
     if (lastTen.length === 0) {
-        board.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>`;
+        board.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 italic">ยังไม่มีข้อมูล</td></tr>`;
         return;
     }
 
     board.innerHTML = lastTen.map(s => {
-        // เช็คว่ามีคะแนนโหมดไหนบ้าง (แสดงอันล่าสุด)
-        const mode = s.posttest?.total > 0 ? 'posttest' : 'pretest';
+        // เลือกโหมดที่จะแสดง (ถ้ามี Posttest > 0 ให้โชว์ Posttest)
+        const mode = (s.posttest && s.posttest.total > 0) ? 'posttest' : 'pretest';
         const data = s[mode];
+
         const isOwner = data.recordedBy === (user.nickname || user.fullName);
         const isAdmin = user.role === 'Admin';
 
         return `
-            <tr class="hover:bg-slate-50 transition-colors">
-                <td class="p-4 font-mono font-bold">${s.id}</td>
-                <td class="p-4 font-bold text-slate-700">${s.fullName}</td>
-                <td class="p-4 text-xs">${mode.toUpperCase()}</td>
-                <td class="p-4 text-center font-black">${data.total}</td>
-                <td class="p-4 text-xs text-slate-400 italic">${data.recordedBy || '-'}</td>
+            <tr class="hover:bg-slate-50 transition-colors border-b">
+                <td class="p-4 font-mono font-bold text-blue-600">${s.id}</td>
+                <td class="p-4">
+                    <div class="font-bold text-slate-700">${s.fullName}</div>
+                    <div class="text-[10px] text-slate-400 uppercase">บ้าน ${s.house}</div>
+                </td>
+                <td class="p-4">
+                    <span class="px-2 py-1 rounded-md text-[10px] font-bold ${mode === 'pretest' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}">
+                        ${mode.toUpperCase()}
+                    </span>
+                </td>
+                <td class="p-4 text-center font-black text-lg">${data.total}</td>
+                <td class="p-4 text-xs text-slate-500">
+                    <div>${data.recordedBy || '<span class="text-slate-300 italic">System</span>'}</div>
+                    <div class="text-[9px] opacity-50">${data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : ''}</div>
+                </td>
                 <td class="p-4 text-right">
-                    ${(isAdmin || isOwner) ? `
+                    ${(isAdmin || isOwner || !data.recordedBy) ? `
                         <button onclick="window.deleteScore('${s.id}', '${mode}')" class="text-red-400 hover:text-red-600 p-2 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                         </button>
-                    ` : '<span class="text-slate-300">🔒</span>'}
+                    ` : '<span class="text-slate-200">🔒</span>'}
                 </td>
             </tr>
         `;
@@ -110,7 +132,7 @@ function updateLiveBoard() {
 window.deleteScore = async function (studentId, mode) {
     const result = await Swal.fire({
         title: 'ยืนยันการลบคะแนน?',
-        text: `คะแนนของรหัส ${studentId} ในโหมด ${mode} จะถูกลบถาวรทั้งในระบบและใน Google Sheet`,
+        text: `คะแนนของรหัส ${studentId} ในโหมด ${mode} จะถูกลบถาวร`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
@@ -120,17 +142,11 @@ window.deleteScore = async function (studentId, mode) {
 
     if (result.isConfirmed) {
         try {
-            // 1. ลบจาก Firebase
-            const scoreRef = ref(db, `students/${studentId}/${mode}`);
-            await set(scoreRef, null); // ลบโหนดนั้นทิ้ง
+            // แก้ Path จาก students/... เป็น scores/...
+            const scoreRef = ref(db, `scores/${studentId}/${mode}`);
+            await set(scoreRef, null);
 
-            // 2. Local Update: ลบคะแนนออกจากตัวแปรในเครื่อง
-            const idx = allStudents.findIndex(s => s.id === studentId);
-            if (idx !== -1 && allStudents[idx][mode]) {
-                delete allStudents[idx][mode];
-            }
-
-            // 3. ลบจาก Google Sheet (ยิงไปบอก GAS)
+            // ส่วนที่ส่งไป GAS และ update UI อื่นๆ คงเดิม
             fetch(CONFIG.appscriptUrl, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -142,9 +158,8 @@ window.deleteScore = async function (studentId, mode) {
                 })
             });
 
-            updateLiveBoard();
-            
-            Swal.fire('ลบข้อมูลเรียบร้อย', '', 'success');
+            showToast('ลบข้อมูลเรียบร้อย');
+            // updateLiveBoard จะถูกเรียกอัตโนมัติจาก onValue ด้านบนอยู่แล้ว
         } catch (e) {
             Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้', 'error');
         }
@@ -233,37 +248,52 @@ window.handleSelectSuggestion = (id) => {
     document.getElementById('suggest-box').classList.add('hidden');
 };
 
-function selectStudent(id) {
+// ฟังก์ชันเมื่อเลือกนักเรียน (จากการค้นหา ID หรือ ชื่อ)
+async function selectStudent(id) {
+    // 1. ค้นหาโปรไฟล์จากตัวแปร allStudents (ซึ่งตอนนี้มีแต่ชื่อและข้อมูลพื้นฐาน)
     selectedStudent = allStudents.find(s => s.id === id);
     if (!selectedStudent) return;
 
-    // แสดงฟอร์ม
+    // 2. แสดง UI พื้นฐานทันที (เพื่อให้สตาฟรู้ว่าเลือกถูกคนแล้ว ไม่ต้องรอดึงคะแนน)
     document.getElementById('score-form').classList.remove('hidden');
-
-    // อัปเดตข้อความพื้นฐาน
     document.getElementById('display-id').innerText = selectedStudent.id;
     document.getElementById('display-name').innerText = selectedStudent.fullName;
     document.getElementById('display-house').innerText = `บ้าน: ${selectedStudent.house} | ${selectedStudent.school}`;
 
-    // --- ส่วนที่เพิ่มใหม่: แสดง Badge สถานะคะแนน ---
-    const scoreObj = selectedStudent[currentMode];
-    const hasScore = scoreObj && scoreObj.recordedBy; // มีข้อมูลคะแนนและมีคนบันทึกแล้วหรือไม่
+    // แสดงสถานะ Loading ระหว่างดึงคะแนน
     const badgeContainer = document.getElementById('display-status-badge');
+    badgeContainer.innerHTML = `<span class="animate-pulse text-slate-400 text-[10px]">⏳ กำลังโหลดคะแนน...</span>`;
 
-    if (hasScore) {
-        badgeContainer.innerHTML = `
-            <span class="inline-flex items-center bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm animate-fade-in">
-                ✅ บันทึกแล้ว (${scoreObj.total}/60)
-            </span>`;
-    } else {
-        badgeContainer.innerHTML = `
-            <span class="inline-flex items-center bg-slate-400 text-white text-[10px] px-2 py-0.5 rounded-full font-bold opacity-50">
-                ⏳ ยังไม่มีคะแนน
-            </span>`;
+    try {
+        // 3. ดึงคะแนนเฉพาะ ID นี้จากกิ่งแยก (scores/{id})
+        // หมายเหตุ: ใช้ get(ref(...)) เพื่อดึงครั้งเดียว ไม่ต้องต่อ WebSocket ค้างไว้
+        const scoreSnapshot = await get(ref(db, `scores/${id}`));
+        const scoreData = scoreSnapshot.val() || {};
+
+        // 4. นำโปรไฟล์ + คะแนนมารวมกัน
+        const fullData = { ...selectedStudent, ...scoreData };
+
+        // 5. อัปเดตสถานะ Badge (บันทึกแล้ว / ยังไม่บันทึก)
+        const currentScore = fullData[currentMode]; // pretest หรือ posttest
+        if (currentScore && currentScore.recordedBy) {
+            badgeContainer.innerHTML = `
+                <span class="inline-flex items-center bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">
+                    ✅ บันทึกแล้ว (${currentScore.total}/60)
+                </span>`;
+        } else {
+            badgeContainer.innerHTML = `
+                <span class="inline-flex items-center bg-slate-400 text-white text-[10px] px-2 py-0.5 rounded-full font-bold opacity-50">
+                    ⏳ ยังไม่มีคะแนน
+                </span>`;
+        }
+
+        // 6. เติมคะแนนลงในช่อง Input (ถ้ามี)
+        syncInputsWithFirebase(fullData);
+
+    } catch (error) {
+        console.error("Error fetching score:", error);
+        showToast("ไม่สามารถดึงคะแนนได้", "error");
     }
-    // -------------------------------------------
-
-    syncInputsWithFirebase(selectedStudent);
 }
 
 // --- [D] Validation & Submission ---
@@ -349,18 +379,22 @@ window.submitScore = async function () {
             // Staff Info ที่จะบันทึกลง Firebase และส่งไป Google Sheets ด้วย
             const scoreDataWithStaff = {
                 ...finalScores,
-                recordedBy: staff.nickname || staff.fullName
+                recordedBy: staff.nickname || staff.fullName,
+                timestamp: new Date().toISOString()
             };
 
             // A. บันทึกลง Firebase (Real-time)
-            const scoreRef = ref(db, `students/${selectedStudent.id}/${currentMode}`);
+            const scoreRef = ref(db, `scores/${selectedStudent.id}/${currentMode}`);
             await set(scoreRef, scoreDataWithStaff);
 
             // B. อัปเดตข้อมูลใน allStudents เพื่อให้ข้อมูลตรงกับ Firebase ทันที (ไม่ต้องรอ Listener)
             const idx = allStudents.findIndex(s => s.id === selectedStudent.id);
             if (idx !== -1) {
-                if (!allStudents[idx][currentMode]) allStudents[idx][currentMode] = {};
+                if (!allStudents[idx][currentMode]) {
+                    allStudents[idx][currentMode] = {};
+                }
                 allStudents[idx][currentMode] = scoreDataWithStaff;
+                updateLiveBoard();
             }
 
             // C. ส่งลง Google Sheets (Background Sync)
@@ -377,7 +411,6 @@ window.submitScore = async function () {
                 })
             });
 
-            updateLiveBoard(); 
             showToast(`บันทึกคะแนนของ ${selectedStudent.nickname} สำเร็จ!`);
             resetForm();
 

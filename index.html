@@ -9,6 +9,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Canvas Confetti for Celebration Effects -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <!-- Google Fonts: Prompt -->
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -26,6 +28,13 @@
             border: 2px solid #a855f7;
             /* Purple-500 */
         }
+
+        /* เอฟเฟกต์การเคลื่อนไหวสำหรับการประกาศห้องเรียน */
+        @keyframes wiggle {
+        0%, 100% { transform: rotate(0deg) scale(1); }
+        25% { transform: rotate(-5deg) scale(1.1); }
+        75% { transform: rotate(5deg) scale(1.1); }
+    }
     </style>
 </head>
 
@@ -124,26 +133,80 @@
         </section>
 
         <!-- Tools Grid for STUDENTS (Active Interaction Section) -->
-        <section id="student-section" class="hidden">
-            <h2 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4 ml-1">Current Activity</h2>
-            <div class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
-                <div class="flex items-center gap-4 mb-8">
-                    <div
-                        class="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200 animate-pulse text-2xl">
-                        📢
+        <!-- Tools Grid for STUDENTS -->
+        <section id="student-section" class="hidden space-y-6">
+            <h2 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4 ml-1">Student Dashboard</h2>
+        
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+                <!-- Card: Room Reveal (การประกาศห้องเรียน) -->
+                <div class="bg-white rounded-3xl p-8 shadow-xl border-4 border-blue-50 relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-24 w-24" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
                     </div>
-                    <div>
-                        <h2 class="text-2xl font-bold text-slate-800">หน้ากิจกรรมในคาบ</h2>
-                        <p class="text-slate-500">รอพี่ติวเตอร์เปิดคำถามเพื่อส่งคำตอบสะสมคะแนน Bonus</p>
+        
+                    <h3 class="text-xl font-black text-slate-800 mb-2">ประกาศห้องเรียนประจำกลุ่ม</h3>
+                    <p class="text-slate-500 text-sm mb-6">ห้องเรียนนี้จะใช้สำหรับการเข้าเรียนกิจกรรมวิชาการตลอดทั้งค่าย</p>
+        
+                    <!-- State 1: Hidden (ยังไม่กดดู) -->
+                    <div id="room-hidden-state" class="flex flex-col items-center justify-center py-10 space-y-4">
+                        <div class="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-blue-200 animate-bounce cursor-pointer hover:rotate-12 transition-transform"
+                            onclick="revealRoom()">
+                            <span class="text-4xl">🎁</span>
+                        </div>
+                        <button onclick="revealRoom()"
+                            class="text-blue-600 font-black uppercase tracking-tighter hover:underline">คลิกเพื่อลุ้นห้องเรียน</button>
+                    </div>
+        
+                    <!-- State 2: Revealed (กดดูแล้ว) -->
+                    <div id="room-reveal-state"
+                        class="hidden flex flex-col items-center justify-center py-6 animate-[wiggle_0.5s_ease-in-out]">
+                        <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">ยินดีด้วย! คุณได้อยู่</p>
+                        <div class="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-blue-600 to-indigo-800 mb-2"
+                            id="display-class-id">?</div>
+                        <p class="text-slate-700 font-bold" id="display-class-name">ห้องเรียน -</p>
                     </div>
                 </div>
-
-                <!-- Interaction Area -->
-                <div id="activity-container"
-                    class="bg-slate-50 rounded-2xl p-10 text-center border-2 border-dashed border-slate-200 min-h-[300px] flex flex-col items-center justify-center">
-                    <img src="assets/logo.png" class="h-20 opacity-20 grayscale mb-4" alt="">
-                    <p class="text-slate-400 font-medium">ขณะนี้ยังไม่มีกิจกรรมที่เปิดใช้งาน <br> กรุณารอสักครู่...</p>
+        
+                <!-- Card: Post-test Results -->
+                <div class="bg-slate-900 rounded-3xl p-8 shadow-xl text-white relative overflow-hidden">
+                    <h3 class="text-xl font-black mb-1">ผลคะแนนสอบ (Post-test)</h3>
+        
+                    <div id="score-container" class="space-y-4">
+                        <!-- ข้อมูลคะแนนจะถูกเติมโดย JS -->
+                        <div class="flex items-center justify-center py-10" id="score-loading">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                        </div>
+        
+                        <div id="score-display" class="hidden space-y-4">
+                            <!-- Progress bars for each subject -->
+                            <div id="subject-bars" class="space-y-3"></div>
+        
+                            <div class="pt-4 border-t border-white/10 flex justify-between items-end">
+                                <div>
+                                    <p class="text-[10px] text-slate-400 uppercase font-bold">คะแนนรวมสุทธิ</p>
+                                    <p class="text-4xl font-black text-blue-400" id="total-post-score">0 <span
+                                            class="text-lg text-white/50">/ 60</span></p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-[10px] text-slate-400 uppercase font-bold italic">Status</p>
+                                    <p class="text-emerald-400 font-bold">COMPLETED</p>
+                                </div>
+                            </div>
+                        </div>
+        
+                        <!-- กรณีคะแนนยังไม่ออก -->
+                        <div id="score-pending" class="hidden py-10 text-center">
+                            <div class="text-4xl mb-3 text-slate-700">🔒</div>
+                            <p class="text-slate-400 text-sm">ผลคะแนน Post-test จะประกาศ<br>หลังจากสิ้นสุดกิจกรรมวิชาการ</p>
+                        </div>
+                    </div>
                 </div>
+        
             </div>
         </section>
 
@@ -156,56 +219,184 @@
     </footer>
 
     <!-- Logic -->
+    <script src="js/firebase-config.js"></script>
     <script src="js/auth.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             const user = checkAuth(); // ดึงข้อมูล Session จาก localStorage
 
-            // 1. ถ้าไม่มี Session ให้ไปหน้า Login
+            // 1. ตรวจสอบ Session: ถ้าไม่มีให้ไปหน้า Login
             if (!user) {
                 window.location.href = 'pages/login.html';
                 return;
             }
 
-            // 2. แสดงข้อมูลผู้ใช้บน UI
+            // 2. อัปเดต UI พื้นฐาน (ชื่อ, สังกัด)
             const displayName = user.nickname || user.fullName;
             document.getElementById('nav-user-name').innerText = user.userType === 'staff' ? `พี่${displayName}` : `น้อง${displayName}`;
             document.getElementById('nav-user-role').innerText = `${user.userType} - ${user.role || user.division || 'Member'}`;
             document.getElementById('welcome-name').innerText = displayName;
             document.getElementById('display-division').innerText = user.division || `บ้าน ${user.house}`;
 
-            // 3. แยกสิทธิ์การแสดงผล
+            // 3. แยกสิทธิ์การแสดงผลและดึงข้อมูลเพิ่มเติม
             if (user.userType === 'staff') {
+                // --- โหมดสตาฟ ---
                 document.getElementById('staff-section').classList.remove('hidden');
-
-                // --- เงื่อนไขเฉพาะ ADMIN ---
                 if (user.role === 'Admin') {
                     document.getElementById('card-sorting').classList.remove('hidden');
                     document.getElementById('admin-badge').classList.remove('hidden');
                 }
-            } else if (user.userType === 'student') {
+            }
+            else if (user.userType === 'student') {
+                // --- โหมดนักเรียน ---
                 document.getElementById('student-section').classList.remove('hidden');
-                // เริ่มระบบ Real-time Interaction สำหรับนักเรียน (จะเพิ่ม Logic ภายหลัง)
-                console.log("Student mode active");
+
+                // ดึงข้อมูลล่าสุดจาก Firebase (เพื่อดูห้องเรียนและคะแนน)
+                await fetchFreshStudentData(user.id);
             }
         });
 
-        async function handleLogout() {
-                const result = await Swal.fire({
-                    title: 'ออกจากระบบ?',
-                    text: "คุณต้องการออกจากระบบจัดการค่ายใช่หรือไม่?",
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#ef4444',
-                    cancelButtonColor: '#64748b',
-                    confirmButtonText: 'ออกจากระบบ',
-                    cancelButtonText: 'ยกเลิก'
-                });
+        // --- ส่วนดึงข้อมูลนักเรียนจาก Firebase ---
+        async function fetchFreshStudentData(studentId) {
+                try {
+                    // ดึงโปรไฟล์ (ใช้ REST)
+                    const pResp = await fetch(`${CONFIG.firebaseURL}students/${studentId}.json?auth=${CONFIG.fbSecret}`);
+                    const profile = await pResp.json();
 
-                if (result.isConfirmed) {
-                    logout();
-                }
+                    // ดึงคะแนน (ใช้ REST)
+                    const sResp = await fetch(`${CONFIG.firebaseURL}scores/${studentId}.json?auth=${CONFIG.fbSecret}`);
+                    const scores = await sResp.json();
+
+                    if (profile) {
+                        // รวมข้อมูลเพื่อส่งไปแสดงผล
+                        renderStudentDashboard({ ...profile, ...scores });
+                    }
+                } catch (e) { console.error(e); }
             }
+        // --- ส่วนจัดการหน้าจอ Dashboard นักเรียน ---
+        function renderStudentDashboard(data) {
+            // [1] จัดการเรื่องประกาศห้องเรียน
+            const hiddenState = document.getElementById('room-hidden-state');
+            const revealState = document.getElementById('room-reveal-state');
+
+            if (data.classID) {
+                document.getElementById('display-class-id').innerText = data.classID;
+                document.getElementById('display-class-name').innerText = `ห้องเรียน ${data.classID}`;
+
+                // ตรวจสอบว่า "เคยเปิดดูหรือยัง" โดยอ้างอิงจาก ID ของตัวเอง
+                const hasRevealed = localStorage.getItem(`roomRevealed_${data.id}`);
+
+                if (hasRevealed === 'true') {
+                    // ถ้าเคยเปิดแล้ว ให้โชว์เลย ไม่ต้องมีปุ่มกดและพลุ
+                    hiddenState.classList.add('hidden');
+                    revealState.classList.remove('hidden');
+                }
+                // ถ้ายังไม่เคยเปิด ระบบจะค้างไว้ที่ State 🎁 ตาม HTML ปกติ
+            } else {
+                // กรณี Admin ยังไม่จัดห้อง
+                hiddenState.innerHTML = `<p class="text-slate-400 text-sm italic py-10">รอประกาศรายชื่อห้องเรียนเร็วๆ นี้...</p>`;
+            }
+
+            // [2] จัดการเรื่องคะแนน Post-test
+            const scoreLoading = document.getElementById('score-loading');
+            const scoreDisplay = document.getElementById('score-display');
+            const scorePending = document.getElementById('score-pending');
+
+            if (data.posttest && data.posttest.recordedBy) {
+                scoreLoading.classList.add('hidden');
+                scoreDisplay.classList.remove('hidden');
+
+                const p = data.posttest;
+                document.getElementById('total-post-score').innerHTML = `${p.total} <span class="text-lg text-white/50">/ 60</span>`;
+
+                const subjects = [
+                    { label: 'Physic', val: p.physic, max: 15 },
+                    { label: 'Chemistry', val: p.chemistry, max: 15 },
+                    { label: 'Biology', val: p.biology, max: 6 },
+                    { label: 'IntroDent', val: p.introdent, max: 12 },
+                    { label: 'IntroMed', val: p.intromed, max: 12 }
+                ];
+
+                const barContainer = document.getElementById('subject-bars');
+                barContainer.innerHTML = subjects.map(s => `
+                    <div>
+                        <div class="flex justify-between text-[10px] mb-1">
+                            <span class="text-slate-400 font-bold uppercase">${s.label}</span>
+                            <span class="text-white">${s.val} / ${s.max}</span>
+                        </div>
+                        <div class="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                            <div class="bg-blue-500 h-full transition-all duration-1000" style="width: ${(s.val / s.max) * 100}%"></div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                scoreLoading.classList.add('hidden');
+                scorePending.classList.remove('hidden');
+            }
+        }
+
+        // --- ฟังก์ชันกดสุ่มเปิดห้อง (ทำได้ครั้งเดียว) ---
+        function revealRoom() {
+            const user = checkAuth();
+            if (!user) return;
+
+            const hiddenState = document.getElementById('room-hidden-state');
+            const revealState = document.getElementById('room-reveal-state');
+
+            // บันทึกลง localStorage ว่า ID นี้เปิดดูแล้ว
+            localStorage.setItem(`roomRevealed_${user.id}`, 'true');
+
+            // เล่น Animation
+            hiddenState.classList.add('animate-ping');
+
+            setTimeout(() => {
+                hiddenState.classList.add('hidden');
+                revealState.classList.remove('hidden');
+
+                // ยิงพลุฉลองครั้งแรกที่เปิด
+                const duration = 3 * 1000;
+                const end = Date.now() + duration;
+
+                (function frame() {
+                    confetti({
+                        particleCount: 3,
+                        angle: 60,
+                        spread: 55,
+                        origin: { x: 0 },
+                        colors: ['#2563eb', '#ffffff']
+                    });
+                    confetti({
+                        particleCount: 3,
+                        angle: 120,
+                        spread: 55,
+                        origin: { x: 1 },
+                        colors: ['#2563eb', '#ffffff']
+                    });
+
+                    if (Date.now() < end) {
+                        requestAnimationFrame(frame);
+                    }
+                }());
+            }, 500);
+        }
+
+        // --- จัดการ Logout ---
+        async function handleLogout() {
+            const result = await Swal.fire({
+                title: 'ออกจากระบบ?',
+                text: "คุณต้องการออกจากระบบจัดการค่ายใช่หรือไม่?",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: 'ออกจากระบบ',
+                cancelButtonText: 'ยกเลิก'
+            });
+
+            if (result.isConfirmed) {
+                logout();
+            }
+        }
     </script>
 </body>
 
