@@ -38,8 +38,8 @@
         <!-- Illustration / Logo -->
         <div class="relative mb-8">
             <div class="absolute inset-0 bg-blue-200 blur-3xl opacity-30 rounded-full"></div>
-            <!-- ใส่ Path แบบเริ่มจาก root เพื่อป้องกันรูปหายเมื่อเข้า URL ลึกๆ -->
-            <img src="assets/logo.png" id="err-logo" alt="Logo"
+            <!-- ใช้ Absolute Path โดยอิงจากชื่อ Repo -->
+            <img src="/medentor-camp-system/assets/logo.png" id="err-logo" alt="Logo"
                 class="h-32 w-32 mx-auto object-contain relative animate-float drop-shadow-2xl">
         </div>
 
@@ -58,7 +58,7 @@
             </p>
 
             <div class="pt-4">
-                <a href="index.html" id="back-btn"
+                <a href="/medentor-camp-system/index.html" id="back-btn"
                     class="inline-block bg-slate-800 hover:bg-black text-white px-8 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 active:scale-95 shadow-xl shadow-slate-200">
                     กลับสู่หน้าหลักตอนนี้
                 </a>
@@ -72,16 +72,18 @@
     </div>
 
     <script>
+        // กำหนด Base URL ของ Repository (GitHub Pages)
+        const REPO_NAME = '/medentor-camp-system';
+
         // 1. ตรวจสอบสถานะการ Login
         const session = localStorage.getItem("userSession");
         const isLoggedIn = session !== null;
 
-        // 2. กำหนดเป้าหมาย (ถ้ายังไม่ Login ให้ไปหน้า Login)
-        // หมายเหตุ: GitHub Pages มักใช้ Path แบบ relative จาก root
-        const targetPage = isLoggedIn ? 'index.html' : 'pages/login.html';
+        // 2. กำหนดเป้าหมาย (ใช้ Absolute Path เพื่อไม่ให้หลงโฟลเดอร์)
+        const targetPage = isLoggedIn ? `${REPO_NAME}/index.html` : `${REPO_NAME}/pages/login.html`;
         const targetText = isLoggedIn ? 'หน้าหลัก' : 'หน้าเข้าสู่ระบบ';
 
-        // 3. อัปเดต UI ตามสิทธิ์
+        // 3. อัปเดต UI
         const backBtn = document.getElementById('back-btn');
         const targetName = document.getElementById('target-name');
 
@@ -103,9 +105,10 @@
             }
         }, 1000);
 
-        // 5. ป้องกันรูปโลโก้หาย (กรณีอยู่ใน URL ที่ลึกเกินไป)
+        // 5. ป้องกันรูปโลโก้หาย (Fallback หาก Path แรกผิด)
         document.getElementById('err-logo').onerror = function () {
-            this.src = '../assets/logo.png'; // ลองถอยหลัง 1 ชั้นถ้าหาไม่เจอ
+            // ถ้าแบบ Absolute แรกไม่ได้ผล ให้ลองหาที่ Root ตรงๆ
+            this.src = 'https://panascha.github.io/medentor-camp-system/assets/logo.png';
         };
     </script>
 </body>
