@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, onValue, set, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, get, set, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 // 1. Initialize Firebase
 const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
@@ -22,33 +22,34 @@ const LIMITS = {
 };
 
 // --- [A] Real-time Listener: ดึงข้อมูลและอัปเดตหน้าจออัตโนมัติ ---
-const studentsRef = ref(db, 'students');
-onValue(studentsRef, (snapshot) => {
-    const data = snapshot.val();
-    // console.log("Firebase Data Update:", data);
-    if (data) {
-        // แปลง Object เป็น Array เพื่อใช้กับ Fuse.js และ Table
-        allStudents = Object.keys(data).map(id => ({
-            id: id,
-            ...data[id]
-        }));
+async function loadStudentsData() {
+    try {
+        const studentsRef = ref(db, 'students');
+        const snapshot = await get(studentsRef); // ใช้ get แทน onValue
+        const data = snapshot.val();
 
-        // อัปเดตระบบค้นหา
-        fuse = setupFuzzySearch(allStudents);
+        if (data) {
+            allStudents = Object.keys(data).map(id => ({
+                id: id,
+                ...data[id]
+            }));
 
-        // อัปเดตตาราง Live Board (10 คนล่าสุด)
-        updateLiveBoard();
+            // อัปเดตระบบค้นหา
+            fuse = setupFuzzySearch(allStudents);
 
-        // หากมีการเลือกนักเรียนอยู่ ให้คะแนนในช่อง Input เปลี่ยนตาม (กรณีสตาฟคนอื่นช่วยกรอก)
-        if (selectedStudent) {
-            const updatedData = allStudents.find(s => s.id === selectedStudent.id);
-            if (updatedData) {
-                selectedStudent = updatedData; // อัปเดตข้อมูลในตัวแปร
-                syncInputsWithFirebase(updatedData);
-            }
+            // อัปเดตตาราง Live Board
+            updateLiveBoard();
+
+            console.log("Data loaded successfully");
         }
+    } catch (error) {
+        console.error("Error loading data:", error);
+        showToast("ไม่สามารถโหลดข้อมูลได้", "error");
     }
-});
+}
+
+// เรียกทำงานทันทีที่โหลดหน้าจอ
+document.addEventListener('DOMContentLoaded', loadStudentsData);
 
 // --- [B] UI Management ---
 
@@ -123,7 +124,13 @@ window.deleteScore = async function (studentId, mode) {
             const scoreRef = ref(db, `students/${studentId}/${mode}`);
             await set(scoreRef, null); // ลบโหนดนั้นทิ้ง
 
-            // 2. ลบจาก Google Sheet (ยิงไปบอก GAS)
+            // 2. Local Update: ลบคะแนนออกจากตัวแปรในเครื่อง
+            const idx = allStudents.findIndex(s => s.id === studentId);
+            if (idx !== -1 && allStudents[idx][mode]) {
+                delete allStudents[idx][mode];
+            }
+
+            // 3. ลบจาก Google Sheet (ยิงไปบอก GAS)
             fetch(CONFIG.appscriptUrl, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -135,6 +142,8 @@ window.deleteScore = async function (studentId, mode) {
                 })
             });
 
+            updateLiveBoard();
+            
             Swal.fire('ลบข้อมูลเรียบร้อย', '', 'success');
         } catch (e) {
             Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้', 'error');
@@ -347,7 +356,14 @@ window.submitScore = async function () {
             const scoreRef = ref(db, `students/${selectedStudent.id}/${currentMode}`);
             await set(scoreRef, scoreDataWithStaff);
 
-            // B. ส่งลง Google Sheets (Background Sync)
+            // B. อัปเดตข้อมูลใน allStudents เพื่อให้ข้อมูลตรงกับ Firebase ทันที (ไม่ต้องรอ Listener)
+            const idx = allStudents.findIndex(s => s.id === selectedStudent.id);
+            if (idx !== -1) {
+                if (!allStudents[idx][currentMode]) allStudents[idx][currentMode] = {};
+                allStudents[idx][currentMode] = scoreDataWithStaff;
+            }
+
+            // C. ส่งลง Google Sheets (Background Sync)
             fetch(CONFIG.appscriptUrl, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -361,6 +377,7 @@ window.submitScore = async function () {
                 })
             });
 
+            updateLiveBoard(); 
             showToast(`บันทึกคะแนนของ ${selectedStudent.nickname} สำเร็จ!`);
             resetForm();
 
@@ -398,16 +415,23 @@ const inputMapping = {
 
 const scoreInputIds = Object.keys(inputMapping);
 
+// --- ส่วนจัดการ Input: Select on focus & Smart Auto-tab ---
 scoreInputIds.forEach((id, index) => {
     const input = document.getElementById(id);
 
+    // 1. เมื่อ Focus ให้คลุมดำทั้งหมด (ทำให้พิมพ์ทับได้ทันที)
+    input.addEventListener('focus', () => {
+        input.select();
+    });
+
+    // 2. เมื่อมีการพิมพ์ (Input Event)
     input.addEventListener('input', (e) => {
         const limitKey = inputMapping[id];
         const limit = LIMITS[limitKey];
         const value = e.target.value;
         const numValue = parseFloat(value);
 
-        // 1. ถ้าคะแนนเกินลิมิตวิชา ให้เปลี่ยนเป็นสีแดงและแจ้งเตือน
+        // ตรวจสอบคะแนนเกินลิมิต
         if (numValue > limit) {
             input.classList.add('text-red-600', 'font-bold', 'border-red-500');
             showToast(`วิชานี้คะแนนเต็มคือ ${limit} คะแนนเท่านั้น!`, "error");
@@ -415,23 +439,33 @@ scoreInputIds.forEach((id, index) => {
             input.classList.remove('text-red-600', 'font-bold', 'border-red-500');
         }
 
-        // 2. ระบบ Auto-tab (ย้ายไปช่องถัดไป)
+        // --- ระบบ Smart Auto-tab (กระโดดข้ามช่องแบบฉลาดขึ้น) ---
         let shouldJump = false;
-        // กรณี Bio (6 คะแนน) พิมพ์ตัวเดียวแล้วโดดเลยถ้าไม่เกินลิมิต
-        if (id === 's-bio' && value.length >= 1 && numValue <= limit) {
-            shouldJump = true;
-        }
-        // กรณีวิชาอื่น (10-15 คะแนน) ต้องพิมพ์ 2 หลักถึงจะโดด
-        else if (value.length >= 2 && numValue <= limit) {
-            shouldJump = true;
+
+        if (value !== "") {
+            // กรณี Biology (เต็ม 6): พิมพ์เลข 0-6 ตัวเดียวแล้วโดดเลย
+            if (id === 's-bio' && value.length >= 1) {
+                shouldJump = true;
+            }
+            // กรณีวิชาอื่นๆ (เต็ม 12-15):
+            else if (value.length >= 1) {
+                // ถ้าพิมพ์เลข 2-9 โดดทันที (เพราะไม่มีคะแนน 20+ แน่นอน)
+                if (numValue >= 2) {
+                    shouldJump = true;
+                }
+                // ถ้าพิมพ์เลข 1 แล้วตามด้วยเลขอื่น (รวมเป็น 2 หลัก) โดดทันที
+                else if (value.length >= 2) {
+                    shouldJump = true;
+                }
+            }
         }
 
-        if (shouldJump) {
+        if (shouldJump && numValue <= limit) {
             const nextId = scoreInputIds[index + 1];
             if (nextId) {
                 const nextEl = document.getElementById(nextId);
                 nextEl.focus();
-                nextEl.select();
+                // ไม่ต้องสั่ง nextEl.select() ตรงนี้ เพราะเรามี Event focus ด้านบนดักไว้อยู่แล้ว
             }
         }
 
@@ -445,7 +479,6 @@ scoreInputIds.forEach((id, index) => {
             const nextId = scoreInputIds[index + 1];
             if (nextId) {
                 document.getElementById(nextId).focus();
-                document.getElementById(nextId).select();
             } else {
                 window.submitScore();
             }
