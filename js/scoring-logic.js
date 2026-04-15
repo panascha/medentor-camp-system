@@ -75,6 +75,7 @@ window.setMode = (mode) => {
     document.getElementById('btn-post').className = !isPre ? 'flex-1 py-3 rounded-xl font-bold transition-all border-2 border-blue-600 bg-blue-600 text-white' : 'flex-1 py-3 rounded-xl font-bold transition-all border-2 border-slate-200 text-slate-400';
 
     if (selectedStudent) selectStudent(selectedStudent.id);
+    updateLiveBoard();
 };
 
 // ฟังก์ชันสลับการเรียงลำดับใน Live Board
