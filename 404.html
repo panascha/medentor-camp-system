@@ -38,7 +38,8 @@
         <!-- Illustration / Logo -->
         <div class="relative mb-8">
             <div class="absolute inset-0 bg-blue-200 blur-3xl opacity-30 rounded-full"></div>
-            <img src="assets/logo.png" alt="Logo"
+            <!-- ใส่ Path แบบเริ่มจาก root เพื่อป้องกันรูปหายเมื่อเข้า URL ลึกๆ -->
+            <img src="assets/logo.png" id="err-logo" alt="Logo"
                 class="h-32 w-32 mx-auto object-contain relative animate-float drop-shadow-2xl">
         </div>
 
@@ -51,13 +52,13 @@
 
         <!-- Redirect Notice & Button -->
         <div class="space-y-4">
-            <p
+            <p id="redirect-msg"
                 class="text-sm text-blue-600 font-bold bg-blue-50 py-2 px-4 rounded-full inline-block border border-blue-100">
-                ระบบจะพาคุณไปต่อในอีก <span id="countdown">5</span> วินาที...
+                ระบบจะพาคุณกลับ<span id="target-name">หน้าหลัก</span>ในอีก <span id="countdown">5</span> วินาที...
             </p>
 
             <div class="pt-4">
-                <a href="index.html" id="action-btn"
+                <a href="index.html" id="back-btn"
                     class="inline-block bg-slate-800 hover:bg-black text-white px-8 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 active:scale-95 shadow-xl shadow-slate-200">
                     กลับสู่หน้าหลักตอนนี้
                 </a>
@@ -73,23 +74,25 @@
     <script>
         // 1. ตรวจสอบสถานะการ Login
         const session = localStorage.getItem("userSession");
-        const isLoggedIn = !!session;
+        const isLoggedIn = session !== null;
 
-        // 2. กำหนดเป้าหมาย
+        // 2. กำหนดเป้าหมาย (ถ้ายังไม่ Login ให้ไปหน้า Login)
+        // หมายเหตุ: GitHub Pages มักใช้ Path แบบ relative จาก root
         const targetPage = isLoggedIn ? 'index.html' : 'pages/login.html';
-        const targetText = isLoggedIn ? 'กลับสู่หน้าหลักตอนนี้' : 'ไปหน้าเข้าสู่ระบบตอนนี้';
+        const targetText = isLoggedIn ? 'หน้าหลัก' : 'หน้าเข้าสู่ระบบ';
 
-        const actionBtn = document.getElementById('action-btn');
+        // 3. อัปเดต UI ตามสิทธิ์
+        const backBtn = document.getElementById('back-btn');
+        const targetName = document.getElementById('target-name');
+
+        backBtn.href = targetPage;
+        backBtn.innerText = `กลับสู่${targetText}ตอนนี้`;
+        targetName.innerText = targetText;
+
+        // 4. ระบบนับถอยหลัง Redirect
+        let seconds = 5;
         const countdownEl = document.getElementById('countdown');
 
-        // ปรับปรุงปุ่มตามสถานะ
-        if (actionBtn) {
-            actionBtn.href = targetPage;
-            actionBtn.innerText = targetText;
-        }
-
-        // 3. ระบบนับถอยหลัง
-        let seconds = 5;
         const timer = setInterval(() => {
             seconds--;
             if (countdownEl) countdownEl.innerText = seconds;
@@ -99,6 +102,11 @@
                 window.location.href = targetPage;
             }
         }, 1000);
+
+        // 5. ป้องกันรูปโลโก้หาย (กรณีอยู่ใน URL ที่ลึกเกินไป)
+        document.getElementById('err-logo').onerror = function () {
+            this.src = '../assets/logo.png'; // ลองถอยหลัง 1 ชั้นถ้าหาไม่เจอ
+        };
     </script>
 </body>
 
