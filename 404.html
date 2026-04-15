@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>404 - ไม่พบหน้าที่ต้องการ | Medentor System</title>
+    <title>404 - ไม่พบหน้าที่ต้องการ | Medentor Camp 13th System</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts: Prompt -->
@@ -38,7 +38,7 @@
         <!-- Illustration / Logo -->
         <div class="relative mb-8">
             <div class="absolute inset-0 bg-blue-200 blur-3xl opacity-30 rounded-full"></div>
-                <img src="assets/logo.png" alt="Logo"
+            <img src="assets/logo.png" alt="Logo"
                 class="h-32 w-32 mx-auto object-contain relative animate-float drop-shadow-2xl">
         </div>
 
@@ -53,11 +53,11 @@
         <div class="space-y-4">
             <p
                 class="text-sm text-blue-600 font-bold bg-blue-50 py-2 px-4 rounded-full inline-block border border-blue-100">
-                ระบบจะพาคุณกลับหน้าหลักในอีก <span id="countdown">5</span> วินาที...
+                ระบบจะพาคุณไปต่อในอีก <span id="countdown">5</span> วินาที...
             </p>
 
             <div class="pt-4">
-                <a href="index.html"
+                <a href="index.html" id="action-btn"
                     class="inline-block bg-slate-800 hover:bg-black text-white px-8 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 active:scale-95 shadow-xl shadow-slate-200">
                     กลับสู่หน้าหลักตอนนี้
                 </a>
@@ -71,16 +71,32 @@
     </div>
 
     <script>
-        // ระบบนับถอยหลังกลับหน้าหลัก
-        let seconds = 5;
+        // 1. ตรวจสอบสถานะการ Login
+        const session = localStorage.getItem("userSession");
+        const isLoggedIn = !!session;
+
+        // 2. กำหนดเป้าหมาย
+        const targetPage = isLoggedIn ? 'index.html' : 'pages/login.html';
+        const targetText = isLoggedIn ? 'กลับสู่หน้าหลักตอนนี้' : 'ไปหน้าเข้าสู่ระบบตอนนี้';
+
+        const actionBtn = document.getElementById('action-btn');
         const countdownEl = document.getElementById('countdown');
 
+        // ปรับปรุงปุ่มตามสถานะ
+        if (actionBtn) {
+            actionBtn.href = targetPage;
+            actionBtn.innerText = targetText;
+        }
+
+        // 3. ระบบนับถอยหลัง
+        let seconds = 5;
         const timer = setInterval(() => {
             seconds--;
-            countdownEl.innerText = seconds;
+            if (countdownEl) countdownEl.innerText = seconds;
+
             if (seconds <= 0) {
                 clearInterval(timer);
-                window.location.href = 'index.html';
+                window.location.href = targetPage;
             }
         }, 1000);
     </script>
