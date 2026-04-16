@@ -54,13 +54,17 @@ window.startSession = async function () {
         isOpen: true, subject: currentSubject,
         tutorID: user.studentID || user.id, tutorName: user.nickname || user.fullName,
         startedAt: new Date().toISOString(),
-        current_activity: { activity_id: "init", question_title: "ยินดีต้อนรับ", status: "closed" }
+        current_activity: { activity_id: "init", question_title: "ยินดีต้อนรับ", status: "closed" },
+        sos_count: 0,
+        last_reaction: { type: "", ts: 0 }
     };
 
     try {
         await set(ref(db, `active_sessions/${currentRoom}`), sessionData);
         await remove(ref(db, `responses/${currentRoom}`));
         await remove(ref(db, `classroom_scores/${currentRoom}`));
+        await remove(ref(db, `private_questions/${currentRoom}`));
+        await remove(ref(db, `active_sessions/${currentRoom}/sos_students`));
 
         localStorage.setItem('active_tutor_room', currentRoom);
         showUI(true);
@@ -70,6 +74,7 @@ window.startSession = async function () {
     } catch (e) { Swal.fire("Error", "เปิดห้องไม่ได้", "error"); }
 };
 
+// loadClassMetadata and initTutorListeners เป็นฟังก์ชันหลักที่ใช้ดึงข้อมูลนักเรียนและตั้งค่าการฟังข้อมูลแบบเรียลไทม์จาก Firebase เพื่อให้หน้าจอของ Tutor อัปเดตอยู่เสมอเมื่อมีการเปลี่ยนแปลงข้อมูล เช่น นักเรียนออนไลน์/ออฟไลน์, คำตอบใหม่, หรือกิจกรรมใหม่ที่ถูกตั้งขึ้น
 async function loadClassMetadata() {
     const roomLetter = currentRoom.replace('Room_', ''); // ตัดให้เหลือ 'A', 'B'...
     const snapshot = await get(ref(db, `students`));
@@ -83,7 +88,6 @@ async function loadClassMetadata() {
     
     renderPresenceList();
 }
-
 function initTutorListeners() {
     if (!currentRoom) return;
 
@@ -139,8 +143,64 @@ function initTutorListeners() {
         quotaUsed = snapshot.val() || 0;
         updateQuotaUI(); // อัปเดตแถบสี Progress Bar ด้านบน
     });
+
+    // 5. Listen SOS Count: มีน้องกดปุ่มตามไม่ทันกี่คน (ถ้า >0 ให้แสดงไอคอนเตือน)
+    onValue(ref(db, `active_sessions/${currentRoom}/sos_students`), (snapshot) => {
+        const sosData = snapshot.val() || {};
+        // นับจำนวนเด็กที่อยู่ในลิสต์ (จำนวน Key)
+        const count = Object.keys(sosData).length;
+
+        const sosEl = document.getElementById('sos-monitor');
+        if (sosEl) {
+            if (count > 0) {
+                sosEl.innerText = `🆘 ${count} คนกำลังตามไม่ทัน!`;
+                sosEl.classList.remove('hidden');
+            } else {
+                sosEl.classList.add('hidden');
+            }
+        }
+    });
+
+    // 6. Listen Last Reaction: มีน้องส่ง Reaction อะไรมาบ้าง (ถ้าไม่เกิน 2 วินาที ให้แสดง Emoji ลอยขึ้นมา)
+    onValue(ref(db, `active_sessions/${currentRoom}/last_reaction`), (snapshot) => {
+        const data = snapshot.val();
+        if (data && data.type && (Date.now() - data.ts < 2000)) {
+            // เรียกฟังก์ชันแสดง Emoji ลอย (ถ้ามี)
+            if (typeof spawnFloatingEmoji === 'function') spawnFloatingEmoji(data.type);
+            else showToast(`ได้ Reaction: ${data.type}`, 'info');
+        }
+    });
+
+    // 7. Listen Private Questions: มีน้องส่งคำถามส่วนตัวมาหรือเปล่า (ถ้ามีให้แสดงในหน้าจอทันที)
+    listenPrivateQuestions();
+
 }
 
+// ฟังก์ชัน showUI ใช้สำหรับสลับการแสดงผลระหว่างหน้าจอ Setup (ก่อนเริ่มคาบ) กับหน้าจอ Controls (หลังเริ่มคาบ) 
+function showUI(isStarted) {
+    const setupCard = document.getElementById('setup-card');
+    const tutorControls = document.getElementById('tutor-controls');
+    const btnFinish = document.getElementById('btn-finish');
+
+    // ถ้าเริ่ม Session แล้ว (isStarted = true) ให้ซ่อน Setup และโชว์ Controls
+    if (setupCard) setupCard.classList.toggle('hidden', isStarted);
+    if (tutorControls) tutorControls.classList.toggle('hidden', !isStarted);
+    if (btnFinish) btnFinish.classList.toggle('hidden', !isStarted);
+
+    if (isStarted && currentRoom && currentSubject) {
+        document.getElementById('display-session-info').innerText = `${currentRoom} | ${currentSubject}`;
+    }
+}
+function updateQuotaUI() {
+    const bar = document.getElementById('quota-bar');
+    const text = document.getElementById('quota-text');
+    if (!bar || !text) return;
+
+    text.innerText = `${quotaUsed} / 100 PTS`;
+    bar.style.width = `${quotaUsed}%`;
+    bar.className = "quota-bar " + (quotaUsed > 80 ? 'quota-danger' : (quotaUsed > 50 ? 'quota-warning' : 'quota-safe'));
+}
+// renderActivityFilter เป็นฟังก์ชันที่วาด Dropdown ขึ้นมาในส่วนหัวของ Live Feed เพื่อให้ครูสามารถเลือกดูคำตอบย้อนหลังได้ตามกิจกรรมที่เคยตั้งไว้ โดยจะดึงข้อมูลจาก activityLog ที่เก็บประวัติคำถามทั้งหมดมาแสดงเป็นตัวเลือกใน Dropdown และเมื่อครูเลือกคำถามไหน ตัวแปร selectedActivityFilter จะถูกอัปเดต และ Live Feed จะกรองคำตอบมาแสดงเฉพาะคำถามนั้นๆ ทันที
 function renderActivityFilter() {
     const feedHeader = document.getElementById('feed-filter-area');
     if (!feedHeader) return;
@@ -231,83 +291,6 @@ function renderSummaryTable() {
     });
     tbody.innerHTML = html;
 }
-window.viewHistory = function (id, name) {
-    const history = responsesHistory[id] || [];
-    if (history.length === 0) return Swal.fire("ไม่มีประวัติ", "น้องคนนี้ยังไม่เคยส่งคำตอบในคาบนี้", "info");
-
-    const listHtml = history.map((h, i) => `
-        <div class="text-left p-3 mb-2 rounded-xl border-2 ${h.wantsToTalk ? 'border-yellow-400 bg-yellow-50' : 'border-slate-100'}">
-            <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">คำตอบที่ ${i + 1}</p>
-            <p class="text-sm text-slate-700 font-medium">${h.answer}</p>
-        </div>
-    `).join('');
-
-    Swal.fire({
-        title: `ประวัติการตอบ: ${name}`,
-        html: `<div class="max-h-60 overflow-y-auto pr-2 custom-scrollbar">${listHtml}</div>`,
-        confirmButtonText: 'ปิด'
-    });
-}
-window.switchTab = function (tab) {
-    document.getElementById('view-live').classList.toggle('hidden', tab !== 'live');
-    document.getElementById('view-summary').classList.toggle('hidden', tab !== 'summary');
-
-    const isLive = tab === 'live';
-    document.getElementById('tab-live').className = isLive ? 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-blue-600 text-blue-600' : 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-transparent text-slate-400';
-    document.getElementById('tab-summary').className = !isLive ? 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-blue-600 text-blue-600' : 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-transparent text-slate-400';
-};
-
-window.manualPick = function (id, name) {
-    Swal.fire({
-        title: `จัดการ: ${name}`,
-        text: "เลือกดำเนินการสำหรับนักเรียนคนนี้",
-        showCancelButton: true,
-        confirmButtonText: 'ให้คะแนน +10',
-        denyButtonText: 'เรียกชื่อ (Highlight)',
-        showDenyButton: true,
-    }).then((result) => {
-        if (result.isConfirmed) giveScore(id, name, 10);
-    });
-}
-
-function showUI(isStarted) {
-    const setupCard = document.getElementById('setup-card');
-    const tutorControls = document.getElementById('tutor-controls');
-    const btnFinish = document.getElementById('btn-finish');
-
-    // ถ้าเริ่ม Session แล้ว (isStarted = true) ให้ซ่อน Setup และโชว์ Controls
-    if (setupCard) setupCard.classList.toggle('hidden', isStarted);
-    if (tutorControls) tutorControls.classList.toggle('hidden', !isStarted);
-    if (btnFinish) btnFinish.classList.toggle('hidden', !isStarted);
-
-    if (isStarted && currentRoom && currentSubject) {
-        document.getElementById('display-session-info').innerText = `${currentRoom} | ${currentSubject}`;
-    }
-}
-
-window.updateActivity = async function (status) {
-    const title = document.getElementById('input-q-title').value || "กิจกรรมทั่วไป";
-    const activity_id = "act_" + Date.now();
-
-    const activityData = {
-        activity_id,
-        question_title: title,
-        status: status
-    };
-
-    // 1. อัปเดตสถานะปัจจุบัน (ให้เด็กเห็น)
-    await update(ref(db, `active_sessions/${currentRoom}/current_activity`), activityData);
-
-    // 2. บันทึกลง Log ของ Session (เพื่อเอาไว้ดึงประวัติมาดู)
-    await set(ref(db, `active_sessions/${currentRoom}/activities_history/${activity_id}`), activityData);
-
-    // *หมายเหตุ: เราจะไม่ลบ responses/${currentRoom} ทิ้งแล้ว เพื่อให้ดูย้อนหลังได้*
-    if (status === 'open') {
-        showToast(`เริ่มกิจกรรม: ${title}`);
-        selectedActivityFilter = activity_id; // สลับไปดูอันใหม่ทันที
-    }
-};
-
 function renderResponses(data) {
     const feed = document.getElementById('view-live');
     if (!feed) return;
@@ -355,54 +338,114 @@ function renderResponses(data) {
     `;
 }
 
-window.customScore = async function (id, name, type) {
-    const { value: pts } = await Swal.fire({
-        title: `ระบุคะแนน: ${name}`,
-        input: 'number',
-        inputLabel: 'ระบุจำนวนคะแนนที่ต้องการเพิ่ม (ใส่ค่าลบเพื่อลดคะแนน)',
-        inputPlaceholder: 'ตัวอย่าง: 15 หรือ -5',
-        showCancelButton: true
+function listenPrivateQuestions() {
+    if (!currentRoom) return;
+    onValue(ref(db, `private_questions/${currentRoom}`), (snapshot) => {
+        const data = snapshot.val() || {};
+        const listEl = document.getElementById('private-questions-list');
+        const badge = document.getElementById('q-badge');
+        if (!listEl) return;
+
+        const keys = Object.keys(data);
+        if (badge) {
+            badge.innerText = keys.length;
+            badge.classList.toggle('hidden', keys.length === 0);
+        }
+
+        if (keys.length === 0) {
+            listEl.innerHTML = `<p class="text-center py-20 text-slate-400 italic">ยังไม่มีคำถามส่วนตัวส่งเข้ามา</p>`;
+            return;
+        }
+
+        listEl.innerHTML = keys.map(key => {
+            const q = data[key];
+            return `
+                <div class="bg-white p-5 rounded-3xl border-2 border-orange-100 shadow-sm relative animate-fade-in">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <span class="text-[10px] font-black text-orange-500 uppercase tracking-widest">Private Question</span>
+                            <h4 class="font-bold text-slate-800">${q.studentName}</h4>
+                        </div>
+                        <button onclick="deleteQuestion('${key}')" class="text-slate-300 hover:text-red-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </button>
+                    </div>
+                    <p class="text-slate-600 text-sm bg-orange-50/50 p-3 rounded-2xl">${q.question}</p>
+                </div>
+            `;
+        }).join('');
     });
+}
 
-    if (pts) {
-        if (type === 'std') giveScore(id, name, parseInt(pts));
-        else giveHouseScore(id, parseInt(pts));
+// ฟังก์ชันให้พี่สตาฟกดลบคำถามเมื่อตอบแล้ว
+window.deleteQuestion = function (key) {
+    if (confirm('ตอบคำถามนี้เรียบร้อยแล้วใช่หรือไม่?')) {
+        const { getDatabase, ref, remove } = FB; // อ้างอิง Firebase (ถ้าใช้ Module)
+        remove(ref(db, `private_questions/${currentRoom}/${key}`));
     }
-}
-window.giveScore = async function (id, name, pts) {
-    if (quotaUsed + pts > 100) return Swal.fire("โควต้าเต็ม", "ใช้คะแนนเกิน 100 แล้ว", "warning");
-
-    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + pts });
-
-    if (!scoresToSync.studentScores[id]) scoresToSync.studentScores[id] = { name: name, score: 0 };
-    scoresToSync.studentScores[id].score += pts;
-
-    showToast(`${name}: ${pts > 0 ? '+' : ''}${pts} คะแนน`);
-    renderSummaryTable();
 };
 
-window.giveHouseScore = async function (house, pts) {
-    if (quotaUsed + pts > 100) return Swal.fire("โควต้าเต็ม", "ใช้คะแนนเกิน 100 แล้ว", "warning");
+window.viewHistory = function (id, name) {
+    const history = responsesHistory[id] || [];
+    if (history.length === 0) return Swal.fire("ไม่มีประวัติ", "น้องคนนี้ยังไม่เคยส่งคำตอบในคาบนี้", "info");
 
-    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + pts });
+    const listHtml = history.map((h, i) => `
+        <div class="text-left p-3 mb-2 rounded-xl border-2 ${h.wantsToTalk ? 'border-yellow-400 bg-yellow-50' : 'border-slate-100'}">
+            <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">คำตอบที่ ${i + 1}</p>
+            <p class="text-sm text-slate-700 font-medium">${h.answer}</p>
+        </div>
+    `).join('');
 
-    if (!scoresToSync.houseScores[house]) scoresToSync.houseScores[house] = 0;
-    scoresToSync.houseScores[house] += pts;
-
-    showToast(`บ้าน ${house}: ${pts > 0 ? '+' : ''}${pts} คะแนน`);
-    renderSummaryTable();
-};
-
-function updateQuotaUI() {
-    const bar = document.getElementById('quota-bar');
-    const text = document.getElementById('quota-text');
-    if (!bar || !text) return;
-
-    text.innerText = `${quotaUsed} / 100 PTS`;
-    bar.style.width = `${quotaUsed}%`;
-    bar.className = "quota-bar " + (quotaUsed > 80 ? 'quota-danger' : (quotaUsed > 50 ? 'quota-warning' : 'quota-safe'));
+    Swal.fire({
+        title: `ประวัติการตอบ: ${name}`,
+        html: `<div class="max-h-60 overflow-y-auto pr-2 custom-scrollbar">${listHtml}</div>`,
+        confirmButtonText: 'ปิด'
+    });
 }
+window.switchTab = function (tab) {
+    document.getElementById('view-live').classList.toggle('hidden', tab !== 'live');
+    document.getElementById('view-summary').classList.toggle('hidden', tab !== 'summary');
 
+    const isLive = tab === 'live';
+    document.getElementById('tab-live').className = isLive ? 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-blue-600 text-blue-600' : 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-transparent text-slate-400';
+    document.getElementById('tab-summary').className = !isLive ? 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-blue-600 text-blue-600' : 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-transparent text-slate-400';
+};
+window.manualPick = function (id, name) {
+    Swal.fire({
+        title: `จัดการ: ${name}`,
+        text: "เลือกดำเนินการสำหรับนักเรียนคนนี้",
+        showCancelButton: true,
+        confirmButtonText: 'ให้คะแนน +10',
+        denyButtonText: 'เรียกชื่อ (Highlight)',
+        showDenyButton: true,
+    }).then((result) => {
+        if (result.isConfirmed) giveScore(id, name, 10);
+    });
+}
+window.updateActivity = async function (status) {
+    const title = document.getElementById('input-q-title').value || "กิจกรรมทั่วไป";
+    const activity_id = "act_" + Date.now();
+
+    const activityData = {
+        activity_id,
+        question_title: title,
+        status: status
+    };
+
+    // 1. อัปเดตสถานะปัจจุบัน (ให้เด็กเห็น)
+    await update(ref(db, `active_sessions/${currentRoom}/current_activity`), activityData);
+
+    // 2. บันทึกลง Log ของ Session (เพื่อเอาไว้ดึงประวัติมาดู)
+    await set(ref(db, `active_sessions/${currentRoom}/activities_history/${activity_id}`), activityData);
+
+    // *หมายเหตุ: เราจะไม่ลบ responses/${currentRoom} ทิ้งแล้ว เพื่อให้ดูย้อนหลังได้*
+    if (status === 'open') {
+        showToast(`เริ่มกิจกรรม: ${title}`);
+        selectedActivityFilter = activity_id; // สลับไปดูอันใหม่ทันที
+    }
+};
 window.runRandom = function (mode) {
     // สุ่มจากเด็กทุกคนในคลาส (A, B, C, D) ตามโจทย์
     let list = allStudentsInClass;
@@ -511,6 +554,8 @@ let userSession = checkAuth();
 let myRoom = userSession?.classID ? `Room_${userSession.classID}` : null;
 let currentActivityId = null;
 let activeSessionData = null; // เก็บข้อมูลห้องเรียนที่กำลังเปิดอยู่
+let isInClass = false;
+let lastActiveSubject = "";
 
 // --- [1] ฟังก์ชันเริ่มเฝ้าดูห้องเรียน (Watcher) ---
 function startRoomWatcher() {
@@ -527,6 +572,20 @@ function startRoomWatcher() {
     onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
         const session = snapshot.val();
         activeSessionData = session; // เก็บข้อมูลไว้ใช้ตอนกด Join
+
+        if (isInClass && (!session || !session.isOpen)) {
+            // ถ้าเราอยู่ในห้องอยู่ แล้วอยู่ดีๆ session หายไป หรือ isOpen เป็น false
+            if (typeof triggerRating === 'function') {
+                triggerRating(lastActiveSubject);
+            }
+            isInClass = false; // รีเซ็ตสถานะ
+
+            // สลับหน้าจอกลับไปหน้าเลือกวิชา
+            document.getElementById('subject-selector').classList.remove('hidden');
+            document.getElementById('activity-area').classList.add('hidden');
+            document.getElementById('interaction-bar').classList.add('hidden');
+        }
+
         renderWaitingRoom(session);
     });
 }
@@ -581,6 +640,8 @@ window.joinClass = async function () {
         });
 
         onDisconnect(myPresenceRef).remove();
+        isInClass = true;
+        lastActiveSubject = activeSessionData.subject;
 
         // สลับหน้าจอ
         document.getElementById('subject-selector').classList.add('hidden');
@@ -650,3 +711,45 @@ window.submitResponse = async function () {
 if (window.location.pathname.includes('student.html')) {
     startRoomWatcher();
 }
+
+// ---------------------------------------------------------
+// [SECTION: SCORING LOGIC] - สำหรับการให้คะแนนและจัดการโควต้า
+// ---------------------------------------------------------
+
+window.customScore = async function (id, name, type) {
+    const { value: pts } = await Swal.fire({
+        title: `ระบุคะแนน: ${name}`,
+        input: 'number',
+        inputLabel: 'ระบุจำนวนคะแนนที่ต้องการเพิ่ม (ใส่ค่าลบเพื่อลดคะแนน)',
+        inputPlaceholder: 'ตัวอย่าง: 15 หรือ -5',
+        showCancelButton: true
+    });
+
+    if (pts) {
+        if (type === 'std') giveScore(id, name, parseInt(pts));
+        else giveHouseScore(id, parseInt(pts));
+    }
+}
+window.giveScore = async function (id, name, pts) {
+    if (quotaUsed + pts > 100) return Swal.fire("โควต้าเต็ม", "ใช้คะแนนเกิน 100 แล้ว", "warning");
+
+    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + pts });
+
+    if (!scoresToSync.studentScores[id]) scoresToSync.studentScores[id] = { name: name, score: 0 };
+    scoresToSync.studentScores[id].score += pts;
+
+    showToast(`${name}: ${pts > 0 ? '+' : ''}${pts} คะแนน`);
+    renderSummaryTable();
+};
+
+window.giveHouseScore = async function (house, pts) {
+    if (quotaUsed + pts > 100) return Swal.fire("โควต้าเต็ม", "ใช้คะแนนเกิน 100 แล้ว", "warning");
+
+    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + pts });
+
+    if (!scoresToSync.houseScores[house]) scoresToSync.houseScores[house] = 0;
+    scoresToSync.houseScores[house] += pts;
+
+    showToast(`บ้าน ${house}: ${pts > 0 ? '+' : ''}${pts} คะแนน`);
+    renderSummaryTable();
+};

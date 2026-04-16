@@ -13,6 +13,14 @@
         body {
             font-family: 'Prompt', sans-serif;
         }
+        @keyframes floatUp {
+    0% { transform: translateY(0) scale(1); opacity: 0; }
+    20% { opacity: 1; }
+    100% { transform: translateY(-200px) scale(1.5); opacity: 0; }
+}
+.animate-float-up {
+    animation: floatUp 3s ease-out forwards;
+}
     </style>
 </head>
 
@@ -29,9 +37,19 @@
                     </svg>
                 </a>
                 <div>
-                    <h1 class="text-xl font-black text-slate-800 leading-none">TUTOR PANEL</h1>
-                    <p id="display-session-info" class="text-xs text-blue-600 font-bold mt-1 uppercase tracking-widest">
-                        ยังไม่ได้เปิดห้องเรียน</p>
+                    <div class="flex items-center gap-3">
+                        <div class="flex flex-col">
+                            <h1 class="text-xl font-black text-slate-800 leading-none">TUTOR PANEL</h1>
+                            <p id="display-session-info" class="text-[10px] text-blue-600 font-bold mt-1 uppercase tracking-widest">
+                                ยังไม่ได้เปิดห้องเรียน</p>
+                        </div>
+                        <!-- ตัวแสดงผล SOS (ต้องมี ID นี้) -->
+                        <div id="sos-monitor"
+                            class="hidden bg-red-600 text-white px-4 py-2 rounded-full font-black text-sm animate-bounce shadow-lg shadow-red-200">
+                            🆘 0 คนตามไม่ทัน
+                        </div>
+                    </div>
+                        
                 </div>
             </div>
 
@@ -159,6 +177,11 @@
                         class="flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-transparent text-slate-400 transition-all">
                         Class Summary
                     </button>
+                    <button onclick="switchTab('questions')" id="tab-questions"
+                        class="flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-transparent text-slate-400 transition-all flex items-center justify-center gap-2">
+                        Private Q&A
+                        <span id="q-badge" class="hidden bg-orange-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">0</span>
+                    </button>
                 </div>
 
                 <div class="p-6 border-b flex justify-between items-center bg-white">
@@ -199,6 +222,14 @@
                         </table>
                     </div>
                 </div>
+
+                <!-- [TAB 3] Private Questions Area -->
+                <div id="view-questions" class="hidden flex-1 overflow-y-auto p-6 bg-slate-50/30">
+                    <div class="max-w-2xl mx-auto space-y-4" id="private-questions-list">
+                        <!-- รายการคำถามจะถูกเติมที่นี่ -->
+                        <p class="text-center py-20 text-slate-400 italic">ยังไม่มีคำถามส่วนตัวส่งเข้ามา</p>
+                    </div>
+                </div>
     
             </div>
         </div>
@@ -216,6 +247,87 @@
     <script src="../js/auth.js"></script>
     <script type="module" src="../js/utils.js"></script>
     <script type="module" src="../js/classroom-logic.js"></script>
+    <script type="module">
+        import { ref, onValue, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+            // --- [1] ฟังก์ชัน Emoji ลอยบนหน้าจอ (Visual Effect) ---
+            window.spawnFloatingEmoji = function (emoji) {
+                const el = document.createElement('div');
+                el.innerText = emoji;
+                el.className = 'fixed bottom-10 right-10 text-4xl pointer-events-none z-[100] animate-float-up';
+                el.style.left = (Math.random() * 80 + 10) + '%'; // สุ่มตำแหน่งแนวนอน
+                document.body.appendChild(el);
+                setTimeout(() => el.remove(), 3000); // ลบออกเมื่อจบ Animation
+            };
+
+            // --- [2] ฟังข้อมูลคำถามส่วนตัว (Private Questions) ---
+            // เรียกใช้ใน initTutorListeners()
+            function listenPrivateQuestions() {
+                onValue(ref(db, `private_questions/${currentRoom}`), (snapshot) => {
+                    const data = snapshot.val() || {};
+                    const listEl = document.getElementById('private-questions-list');
+                    const badge = document.getElementById('q-badge');
+                    const keys = Object.keys(data);
+
+                    // อัปเดตตัวเลขแจ้งเตือนบน Tab
+                    if (keys.length > 0) {
+                        badge.innerText = keys.length;
+                        badge.classList.remove('hidden');
+                    } else {
+                        badge.classList.add('hidden');
+                    }
+
+                    if (keys.length === 0) {
+                        listEl.innerHTML = `<p class="text-center py-20 text-slate-400 italic">ยังไม่มีคำถามส่วนตัวส่งเข้ามา</p>`;
+                        return;
+                    }
+
+                    listEl.innerHTML = keys.map(key => {
+                        const q = data[key];
+                        return `
+                <div class="bg-white p-5 rounded-3xl border-2 border-orange-100 shadow-sm relative group">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <span class="text-[10px] font-black text-orange-500 uppercase tracking-widest">Question from</span>
+                            <h4 class="font-bold text-slate-800">${q.studentName}</h4>
+                        </div>
+                        <button onclick="deleteQuestion('${key}')" class="text-slate-300 hover:text-red-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                    <p class="text-slate-600 text-sm leading-relaxed bg-orange-50/50 p-3 rounded-2xl">${q.question}</p>
+                    <p class="text-[9px] text-slate-400 mt-2 text-right">${new Date(q.ts).toLocaleTimeString()}</p>
+                </div>
+            `;
+                    }).join('');
+                });
+            }
+
+            // ฟังก์ชันลบคำถาม (เมื่อตอบแล้ว)
+            window.deleteQuestion = function (key) {
+                remove(ref(db, `private_questions/${currentRoom}/${key}`));
+            };
+
+            // --- [3] อัปเดตฟังก์ชัน switchTab เดิม ---
+            // เพิ่ม case 'questions' เข้าไป
+            window.switchTab = function (tab) {
+                document.getElementById('view-live').classList.toggle('hidden', tab !== 'live');
+                document.getElementById('view-summary').classList.toggle('hidden', tab !== 'summary');
+                document.getElementById('view-questions').classList.toggle('hidden', tab !== 'questions');
+
+                const tabs = ['live', 'summary', 'questions'];
+                tabs.forEach(t => {
+                    const el = document.getElementById(`tab-${t}`);
+                    if (t === tab) {
+                        el.className = 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-blue-600 text-blue-600';
+                    } else {
+                        el.className = 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-transparent text-slate-400';
+                    }
+                });
+            };
+    </script>
 </body>
 
 </html>

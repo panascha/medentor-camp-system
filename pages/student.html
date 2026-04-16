@@ -96,6 +96,48 @@
 
         </div>
 
+        <!-- Navigation (เพิ่มปุ่มดูประวัติ) -->
+        <nav class="bg-white border-b p-4 sticky top-0 z-50 shadow-sm">
+            <div class="max-w-xl mx-auto flex justify-between items-center">
+                <button onclick="viewMyHistory()" class="p-2 hover:bg-slate-100 rounded-full text-blue-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </button>
+                <div class="text-center">
+                    <h1 class="text-lg font-black text-slate-800 leading-none">CLASSROOM</h1>
+                    <p id="room-badge" class="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-1">Connecting...
+                    </p>
+                </div>
+                <!-- ปุ่มส่งคำถามส่วนตัว -->
+                <button onclick="askPrivateQuestion()" class="p-2 hover:bg-slate-100 rounded-full text-orange-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                    </svg>
+                </button>
+            </div>
+        </nav>
+        
+        <!-- Floating Interaction Bar (Reaction & SOS) -->
+        <div id="interaction-bar"
+            class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-white/80 backdrop-blur-md p-2 rounded-full shadow-2xl border border-white/50">
+            <button onclick="sendReaction('👏')"
+                class="w-10 h-10 flex items-center justify-center hover:scale-125 transition-transform text-xl">👏</button>
+            <button onclick="sendReaction('❤️')"
+                class="w-10 h-10 flex items-center justify-center hover:scale-125 transition-transform text-xl">❤️</button>
+            <button onclick="sendReaction('💡')"
+                class="w-10 h-10 flex items-center justify-center hover:scale-125 transition-transform text-xl">💡</button>
+            <div class="w-[1px] h-6 bg-slate-200 mx-1"></div>
+            <button onclick="sendSOS()"
+                class="bg-red-50 text-red-600 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 hover:text-white transition-all">
+                ตามไม่ทัน 🐢
+            </button>
+        </div>
+
     </main>
 
     <script type="importmap">
@@ -110,6 +152,202 @@
     <script src="../js/auth.js"></script>
     <script type="module" src="../js/utils.js"></script>
     <script type="module" src="../js/classroom-logic.js"></script>
+    <script type="module">
+        // นำเข้า Firebase Functions ที่จำเป็น
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getDatabase, ref, set, push, runTransaction, onValue, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+        // 1. Initialize Firebase ภายใน Script นี้ด้วยเพื่อให้มีตัวแปร db ใช้งาน
+        const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
+        const db = getDatabase(app);
+
+        // 2. ดึงข้อมูล User และ Room (ต้องเหมือนกับใน classroom-logic.js)
+        const userSession = checkAuth();
+        const myRoom = userSession?.classID ? `Room_${userSession.classID}` : null;
+        let mySOSStatus = false;
+
+        // ตัวแปรเก็บข้อมูล Session ปัจจุบัน (สำหรับ Subject)
+        let activeSessionData = null;
+
+        // ฟังข้อมูลห้องเพื่ออัปเดต activeSessionData
+        if (myRoom) {
+            onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
+                activeSessionData = snapshot.val();
+            });
+        }
+
+        // --- [ฟังก์ชันที่เคย Error: ตอนนี้ db และ myRoom จะใช้งานได้แล้ว] ---
+
+        window.sendReaction = function (emoji) {
+            if (!myRoom) return;
+            set(ref(db, `active_sessions/${myRoom}/last_reaction`), {
+                type: emoji,
+                ts: Date.now()
+            });
+        };
+
+    window.sendSOS = function () {
+            if (!myRoom || !userSession) return;
+
+            const sosBtn = document.querySelector('[onclick="sendSOS()"]'); // อ้างอิงปุ่ม
+            mySOSStatus = !mySOSStatus; // สลับสถานะ (Toggle)
+
+            // บันทึกลง Firebase โดยใช้ ID ของน้องเป็น Key
+            // ถ้าเป็น true จะบันทึกค่าลงไป ถ้าเป็น false จะลบ (set null)
+            const mySOSRef = ref(db, `active_sessions/${myRoom}/sos_students/${userSession.id}`);
+            set(mySOSRef, mySOSStatus ? { nickname: userSession.nickname, ts: Date.now() } : null);
+
+            // --- อัปเดต UI ของปุ่มทันที ---
+            if (mySOSStatus) {
+                sosBtn.innerText = "ตามทันแล้ว ✨";
+                sosBtn.classList.remove('bg-red-50', 'text-red-600');
+                sosBtn.classList.add('bg-green-600', 'text-white');
+                showToast("ส่งสัญญาณว่าไม่ทันแล้ว 🐢", "info");
+            } else {
+                sosBtn.innerText = "ตามไม่ทัน 🐢";
+                sosBtn.classList.remove('bg-green-600', 'text-white');
+                sosBtn.classList.add('bg-red-50', 'text-red-600');
+                showToast("เย้! ตามทันแล้ว", "success");
+            }
+        };
+
+        // --- เพิ่มเติม: ดักฟังเมื่อจบวิชา ให้ Reset ปุ่มเป็นสถานะปกติ ---
+        onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
+            if (!snapshot.exists()) {
+                mySOSStatus = false;
+                const sosBtn = document.querySelector('[onclick="sendSOS()"]');
+                if (sosBtn) {
+                    sosBtn.innerText = "ตามไม่ทัน 🐢";
+                    sosBtn.className = "bg-red-50 text-red-600 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 hover:text-white transition-all";
+                }
+            }
+        });
+        
+        window.askPrivateQuestion = async function () {
+            if (!myRoom) return;
+            const { value: text } = await Swal.fire({
+                title: 'ถามคำถามส่วนตัว',
+                input: 'textarea',
+                inputPlaceholder: 'พิมพ์คำถามที่สงสัยทิ้งไว้ที่นี่...',
+                showCancelButton: true,
+                confirmButtonText: 'ส่งคำถาม',
+                cancelButtonText: 'ยกเลิก',
+            });
+
+            if (text) {
+                const questionData = {
+                    room: myRoom,
+                    subject: activeSessionData?.subject || 'general',
+                    studentName: `${userSession.nickname} (${userSession.id})`,
+                    question: text,
+                    ts: Date.now()
+                };
+                push(ref(db, `private_questions/${myRoom}`), questionData);
+
+                fetch(CONFIG.appscriptUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify({ action: "submitPrivateQuestion", key: CONFIG.syncKey, ...questionData })
+                });
+                Swal.fire('ส่งสำเร็จ!', 'พี่สตาฟได้รับคำถามแล้วครับ', 'success');
+            }
+        };
+
+        window.viewMyHistory = async function () {
+            if (!myRoom) return;
+            Swal.fire({ title: 'กำลังโหลดประวัติ...', didOpen: () => Swal.showLoading() });
+
+            try {
+                const snapshot = await get(ref(db, `responses/${myRoom}`));
+                const allRes = snapshot.val() || {};
+                const myHistory = Object.values(allRes).filter(res => res.studentID === userSession.id);
+
+                if (myHistory.length === 0) return Swal.fire("ไม่พบประวัติ", "น้องยังไม่เคยส่งคำตอบในคาบนี้", "info");
+
+                const html = myHistory.reverse().map(h => `
+                    <div class="text-left p-3 mb-2 rounded-xl border bg-slate-50">
+                        <p class="text-[10px] font-bold text-blue-500 uppercase">${new Date(h.timestamp).toLocaleTimeString()}</p>
+                        <p class="text-sm text-slate-700">${h.answer}</p>
+                    </div>
+                `).join('');
+
+                Swal.fire({
+                    title: 'ประวัติการตอบของฉัน',
+                    html: `<div class="max-h-60 overflow-y-auto pr-2">${html}</div>`,
+                    confirmButtonText: 'ปิด'
+                });
+            } catch (e) {
+                Swal.fire("Error", "ไม่สามารถดึงข้อมูลได้", "error");
+            }
+        };
+
+        // ระบบ Rating (เหมือนเดิมแต่ย้ายมาไว้ในขอบเขตที่มี db)
+        let hasRatedThisSession = false;
+        let lastSubjectForRating = "";
+
+        if (myRoom) {
+            onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
+                const session = snapshot.val();
+                const interactionBar = document.getElementById('interaction-bar');
+
+                if (session && session.isOpen) {
+                    if (interactionBar) interactionBar.classList.remove('hidden');
+                    lastSubjectForRating = session.subject;
+                    hasRatedThisSession = false;
+                } else {
+                    if (interactionBar) interactionBar.classList.add('hidden');
+                    if (!hasRatedThisSession && lastSubjectForRating !== "" && window.isInClass) {
+                        triggerRating(lastSubjectForRating);
+                    }
+                }
+            });
+        }
+
+        async function triggerRating(subject) {
+            hasRatedThisSession = true;
+            const { value: formValues } = await Swal.fire({
+                title: 'ติววิชานี้เป็นอย่างไรบ้าง?',
+                html: `
+                    <p class="text-xs text-slate-500 mb-4">วิชา ${subject.toUpperCase()}</p>
+                    <div class="flex flex-col gap-4">
+                        <select id="swal-rating" class="p-3 border rounded-xl font-bold">
+                            <option value="5">⭐⭐⭐⭐⭐ (ดีมาก)</option>
+                            <option value="4">⭐⭐⭐⭐ (ดี)</option>
+                            <option value="3">⭐⭐⭐ (ปานกลาง)</option>
+                            <option value="2">⭐⭐ (พอใช้)</option>
+                            <option value="1">⭐ (ควรปรับปรุง)</option>
+                        </select>
+                        <textarea id="swal-comment" class="p-3 border rounded-xl text-sm" placeholder="ข้อเสนอแนะเพิ่มเติม (ถ้ามี)"></textarea>
+                    </div>
+                `,
+                confirmButtonText: 'ส่งความเห็น (Anonymous)',
+                preConfirm: () => {
+                    return {
+                        rating: document.getElementById('swal-rating').value,
+                        comment: document.getElementById('swal-comment').value
+                    }
+                }
+            });
+
+            if (formValues) {
+                fetch(CONFIG.appscriptUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify({
+                        action: "submitRating",
+                        key: CONFIG.syncKey,
+                        room: myRoom,
+                        subject: subject,
+                        rating: formValues.rating,
+                        comment: formValues.comment
+                    })
+                });
+                Swal.fire('ขอบคุณครับ!', 'ความเห็นของน้องมีค่ามาก', 'success');
+                lastSubjectForRating = "";
+                window.isInClass = false; // จบ Session จริงๆ
+            }
+        }
+    </script>
 </body>
 
 </html>
