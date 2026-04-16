@@ -23,17 +23,18 @@
         <!-- Navigation -->
         <nav class="bg-white border-b p-4 sticky top-0 z-50 shadow-sm">
             <div class="max-w-xl mx-auto flex justify-between items-center">
-                <!-- ปุ่มประวัติ -->
-                <button onclick="viewMyHistory()" class="p-2 hover:bg-slate-100 rounded-full text-blue-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
-                        stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <!-- ปุ่มกลับหน้าหลัก -->
+                <a href="../index.html"
+                    class="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-600 flex items-center gap-1 group">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 group-hover:-translate-x-1 transition-transform"
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                     </svg>
-                </button>
+                    <span class="text-xs font-bold hidden sm:block">หน้าหลัก</span>
+                </a>
         
                 <div class="text-center">
-                    <h1 class="text-lg font-black text-slate-800 leading-none">CLASSROOM ACTIVITY</h1>
+                    <h1 class="text-lg font-black text-slate-800 leading-none">CLASSROOM</h1>
                     <p id="room-badge" class="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-1">Connecting...
                     </p>
                 </div>
@@ -147,9 +148,9 @@
         const db = getDatabase(app);
 
         // 2. ดึงข้อมูล User และ Room (ต้องเหมือนกับใน classroom-logic.js)
-        const userSession = checkAuth();
-        const myId = userSession?.id;   
-        let myRoom = userSession?.classID ? `Room_${userSession.classID}` : null;
+        let userSession = checkAuth();
+        let myId = userSession?.id;   
+        let myRoom = userSession?.classID ? `Room_${userSession.classID}` : null; // เปลี่ยนเป็น let
         let mySOSStatus = false;
 
         // ตัวแปรเก็บข้อมูล Session ปัจจุบัน (สำหรับ Subject)

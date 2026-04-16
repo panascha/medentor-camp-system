@@ -74,6 +74,25 @@ window.startSession = async function () {
     } catch (e) { Swal.fire("Error", "เปิดห้องไม่ได้", "error"); }
 };
 
+function handleSessionUI(session, roomId) {
+    const roomBadge = document.getElementById('room-badge');
+    const interactionBar = document.getElementById('interaction-bar');
+
+    if (session && session.isOpen) {
+        if (roomBadge) roomBadge.innerText = `${roomId.replace('_', ' ')} | ${session.subject.toUpperCase()}`;
+        window.lastActiveSubject = session.subject;
+        if (window.isInClass && interactionBar) interactionBar.classList.remove('hidden');
+    } else {
+        if (roomBadge) roomBadge.innerText = `${roomId.replace('_', ' ')} | WAITING...`;
+        if (interactionBar) interactionBar.classList.add('hidden');
+
+        if (window.isInClass && window.lastActiveSubject) {
+            if (typeof triggerRating === 'function') triggerRating(window.lastActiveSubject);
+            window.isInClass = false;
+        }
+    }
+}
+
 // loadClassMetadata and initTutorListeners เป็นฟังก์ชันหลักที่ใช้ดึงข้อมูลนักเรียนและตั้งค่าการฟังข้อมูลแบบเรียลไทม์จาก Firebase เพื่อให้หน้าจอของ Tutor อัปเดตอยู่เสมอเมื่อมีการเปลี่ยนแปลงข้อมูล เช่น นักเรียนออนไลน์/ออฟไลน์, คำตอบใหม่, หรือกิจกรรมใหม่ที่ถูกตั้งขึ้น
 async function loadClassMetadata() {
     const roomLetter = currentRoom.replace('Room_', ''); // ตัดให้เหลือ 'A', 'B'...
@@ -171,7 +190,20 @@ function initTutorListeners() {
         }
     });
 
-    // 7. Listen Private Questions: มีน้องส่งคำถามส่วนตัวมาหรือเปล่า (ถ้ามีให้แสดงในหน้าจอทันที)
+    // 7. Listen Current Activity: มีการตั้งคำถามใหม่หรือเปลี่ยนสถานะคำถามปัจจุบันหรือเปล่า (ถ้าใช่ ให้รีเฟรช Live Feed ทันที)
+    onValue(ref(db, `active_sessions/${currentRoom}/current_activity`), (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            // อัปเดตตัวแปรในเครื่อง
+            activityLog[data.activity_id] = data;
+            // ถ้าเรากำลังดู "กิจกรรมปัจจุบัน" อยู่ ให้สั่ง Re-render
+            if (selectedActivityFilter === 'current' || selectedActivityFilter === data.activity_id) {
+                get(ref(db, `responses/${currentRoom}`)).then(snap => renderResponses(snap.val() || {}));
+            }
+        }
+    });
+
+    // 8. Listen Private Questions: มีน้องส่งคำถามส่วนตัวมาหรือเปล่า (ถ้ามีให้แสดงในหน้าจอทันที)
     listenPrivateQuestions();
 
 }
@@ -295,47 +327,78 @@ function renderResponses(data) {
     const feed = document.getElementById('view-live');
     if (!feed) return;
 
-    let entries = Object.entries(data);
-
-    // กรองข้อมูลตามคำถามที่เลือก
+    // 1. หาข้อมูลกิจกรรมที่จะแสดง
     let targetActivityId = selectedActivityFilter;
     if (selectedActivityFilter === 'current') {
-        // หา activity_id ล่าสุดจาก Log
         const keys = Object.keys(activityLog);
         targetActivityId = keys.length > 0 ? keys[keys.length - 1] : null;
     }
 
-    // กรองเฉพาะคำตอบที่ตรงกับ activity_id นั้น (ต้องให้น้องส่ง activity_id มาด้วยในหน้า student.html)
-    const filteredEntries = entries.filter(([key, res]) => res.activityID === targetActivityId).reverse();
     const currentQ = activityLog[targetActivityId];
-
-    if (filteredEntries.length === 0) {
-        feed.innerHTML = `
-            <div class="col-span-full py-20 text-center">
-                <p class="text-slate-400 font-bold italic">ยังไม่มีคำตอบในหัวข้อ: ${currentQ ? currentQ.question_title : '...'}</p>
-            </div>`;
+    if (!currentQ) {
+        feed.innerHTML = `<div class="col-span-full py-20 text-center text-slate-400 italic">ยังไม่มีกิจกรรมที่ถูกสร้าง</div>`;
         return;
     }
 
-    feed.innerHTML = `
-        <div class="col-span-full mb-2 p-4 bg-blue-600 rounded-2xl text-white shadow-lg">
-            <p class="text-[10px] font-black uppercase opacity-60">กำลังแสดงคำตอบของคำถาม:</p>
-            <h3 class="text-lg font-black">${currentQ.question_title}</h3>
+    // 2. กรองคำตอบ
+    const entries = Object.entries(data);
+    const filteredEntries = entries.filter(([key, res]) => res.activityID === targetActivityId).reverse();
+
+    // 3. เตรียม UI Header (แสดงหัวข้อและสถานะ)
+    const statusBadge = currentQ.status === 'open'
+        ? `<span class="bg-emerald-500 text-white text-[10px] px-2 py-1 rounded-full animate-pulse">● LIVE</span>`
+        : `<span class="bg-slate-500 text-white text-[10px] px-2 py-1 rounded-full">● CLOSED</span>`;
+
+    let html = `
+        <div class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <p class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">หัวข้อกิจกรรมปัจจุบัน:</p>
+                    <h3 class="text-2xl font-black text-slate-800">${currentQ.question_title}</h3>
+                </div>
+                <div>${statusBadge}</div>
+            </div>
+            <div class="text-[10px] font-bold text-slate-400 uppercase">
+                <span>คำตอบทั้งหมด: ${filteredEntries.length}</span>
+            </div>
         </div>
-        ${filteredEntries.map(([key, res]) => `
-            <div class="bg-white p-5 rounded-2xl border-2 ${res.wantsToTalk ? 'border-yellow-400 bg-yellow-50' : 'border-slate-100'} shadow-sm animate-fade-in relative overflow-hidden">
-                ${res.wantsToTalk ? '<div class="absolute top-0 right-0 bg-yellow-400 text-[9px] font-black px-2 py-1 rounded-bl-lg">VOLUNTEER</div>' : ''}
-                <div class="flex items-center gap-3 mb-3">
-                    <div class="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-black text-slate-400 text-xs">บ.${res.house}</div>
+    `;
+
+    // 4. แสดงรายการคำตอบ
+    if (filteredEntries.length === 0) {
+        html += `
+            <div class="col-span-full py-16 text-center bg-white/50 rounded-[2rem] border-2 border-dashed border-slate-200">
+                <p class="text-slate-400 font-bold italic">ยังไม่มีคำตอบส่งเข้ามา... กำลังรอรหัสน้องๆ</p>
+            </div>`;
+    } else {
+        html += filteredEntries.map(([key, res]) => `
+            <div class="bg-white p-6 rounded-[2rem] shadow-sm border-2 ${res.wantsToTalk ? 'border-yellow-400 bg-yellow-50' : 'border-transparent'} transition-all hover:shadow-md relative overflow-hidden group">
+                ${res.wantsToTalk ? '<div class="absolute top-0 right-0 bg-yellow-400 text-[10px] font-black px-4 py-1 rounded-bl-2xl">VOLUNTEER 🙋‍♂️</div>' : ''}
+                
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center font-black shadow-lg shadow-blue-100">
+                        ${res.house}
+                    </div>
                     <div>
-                        <h4 class="font-black text-slate-800 leading-none">${res.nickname}</h4>
-                        <p class="text-[10px] text-slate-400 mt-1">${new Date(res.timestamp).toLocaleTimeString()}</p>
+                        <h4 class="font-black text-lg text-slate-800 leading-tight">${res.nickname}</h4>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                            ${new Date(res.timestamp).toLocaleTimeString('th-TH')} | HOUSE ${res.house}
+                        </p>
                     </div>
                 </div>
-                <p class="text-sm text-slate-600 leading-relaxed">${res.answer}</p>
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p class="text-slate-700 font-medium leading-relaxed">${res.answer}</p>
+                </div>
+                
+                <button onclick="giveScore('${res.studentID}', '${res.nickname}', 5)" 
+                    class="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity bg-blue-100 text-blue-600 px-3 py-1 rounded-lg text-[10px] font-black hover:bg-blue-600 hover:text-white">
+                    QUICK +5
+                </button>
             </div>
-        `).join('')}
-    `;
+        `).join('');
+    }
+
+    feed.innerHTML = html;
 }
 
 function listenPrivateQuestions() {
@@ -388,7 +451,19 @@ window.deleteQuestion = function (key) {
             .catch(e => console.error("Delete Question Error:", e));
     }
 };
+window.selectManualRoom = function (roomId) {
+    // กำหนดค่าห้องที่เลือกให้กับตัวแปร global
+    myRoom = roomId;
 
+    // ไปดึงข้อมูลของห้องนั้นมาเก็บใน activeSessionData
+    get(ref(db, `active_sessions/${myRoom}`)).then((snapshot) => {
+        activeSessionData = snapshot.val();
+        if (activeSessionData) {
+            // เมื่อเลือกห้องแล้ว ให้เข้าสู่กระบวนการ Join ปกติ
+            joinClass();
+        }
+    });
+};
 window.viewHistory = function (id, name) {
     const history = responsesHistory[id] || [];
     if (history.length === 0) return Swal.fire("ไม่มีประวัติ", "น้องคนนี้ยังไม่เคยส่งคำตอบในคาบนี้", "info");
@@ -427,46 +502,51 @@ window.manualPick = function (id, name) {
     });
 }
 window.updateActivity = async function (status) {
-    const title = document.getElementById('input-q-title').value || "กิจกรรมทั่วไป";
-    const activity_id = "act_" + Date.now();
+    const title = document.getElementById('input-q-title').value.trim() || "กิจกรรมทั่วไป";
 
+    // ถ้าจะเปิดรับคำตอบ ให้ยืนยันก่อน
+    if (status === 'open') {
+        const confirm = await Swal.fire({
+            title: 'เริ่มกิจกรรมใหม่?',
+            text: `หัวข้อ: ${title}`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'เริ่มเลย!',
+            cancelButtonText: 'แก้ไขก่อน'
+        });
+        if (!confirm.isConfirmed) return;
+    }
+
+    const activity_id = "act_" + Date.now();
     const activityData = {
         activity_id,
         question_title: title,
-        status: status
+        status: status, // 'open' หรือ 'closed'
+        timestamp: Date.now()
     };
 
     try {
-        // 1. อัปเดตสถานะปัจจุบัน (ให้เด็กเห็น)
+        // 1. อัปเดตข้อมูลลง Firebase
         await update(ref(db, `active_sessions/${currentRoom}/current_activity`), activityData);
-
-        // 2. บันทึกลง Log ของ Session
         await set(ref(db, `active_sessions/${currentRoom}/activities_history/${activity_id}`), activityData);
 
+        // 2. อัปเดตสถานะในเครื่อง
+        selectedActivityFilter = activity_id;
+        activityLog[activity_id] = activityData;
+
+        // 3. สั่ง Render ทันที
+        renderActivityFilter();
+        renderResponses({}); // ส่ง Object ว่างเพื่อให้วาดหัวข้อรอไว้เลย
+        switchTab('live');
+
         if (status === 'open') {
-            showToast(`เริ่มกิจกรรม: ${title}`);
-
-            // --- [ส่วนที่เพิ่มเพื่อให้ Render ทันที] ---
-            selectedActivityFilter = activity_id; // สลับ Filter ไปที่อันใหม่
-
-            // อัปเดตตัวแปร Local ทันทีไม่ต้องรอกรอบถัดไป
-            activityLog[activity_id] = activityData;
-
-            // สั่งวาด Dropdown ใหม่เพื่อให้มีชื่อกิจกรรมใหม่ขึ้นมา
-            renderActivityFilter();
-
-            // สั่งล้างหน้าจอคำตอบและแสดง Header กิจกรรมใหม่ (ส่ง {} เพื่อบอกว่ายังไม่มีคนตอบ)
-            renderResponses({});
-
-            // สลับ Tab ไปที่ Live Feed อัตโนมัติเพื่อให้พี่ติวเตอร์เห็นคำตอบน้อง
-            switchTab('live');
+            showToast(`เปิดรับคำตอบ: ${title}`);
+            document.getElementById('input-q-title').value = ""; // ล้างช่องกรอก
         } else {
             showToast("ปิดรับคำตอบแล้ว", "info");
-            // เมื่อปิดรับคำตอบ ให้หน้าจอยังคงแสดงคำตอบเดิมไว้ (ไม่ต้องล้างจอ)
         }
     } catch (e) {
-        console.error("Update Activity Error:", e);
-        showToast("ไม่สามารถอัปเดตกิจกรรมได้", "error");
+        showToast("เกิดข้อผิดพลาด", "error");
     }
 };
 
@@ -614,80 +694,105 @@ let lastActiveSubject = "";
 // --- [1] ฟังก์ชันเริ่มเฝ้าดูห้องเรียน (Watcher) ---
 function startRoomWatcher() {
     const roomBadge = document.getElementById('room-badge');
-    const interactionBar = document.getElementById('interaction-bar'); // เพิ่มการอ้างอิง Bar
 
-    if (!myRoom) {
-        if (roomBadge) roomBadge.innerText = "NO ROOM ASSIGNED";
-        // แสดง UI ว่าน้องยังไม่มีห้อง
-        const container = document.getElementById('subject-selector');
-        if (container) {
-            container.innerHTML = `<div class="py-10 text-slate-400 italic">คุณยังไม่มีรายชื่อในห้องเรียนใดๆ<br>กรุณารอประกาศห้องเรียนจากหน้าหลัก</div>`;
-        }
+    // [CASE A] น้องมีห้องที่ถูกจัดไว้แล้ว (จาก Admin)
+    if (myRoom) {
+        onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
+            const session = snapshot.val();
+            activeSessionData = session;
+            handleSessionUI(session, myRoom);
+            renderWaitingRoom(session);
+        });
+    }
+    // [CASE B] น้องไม่มีห้อง (หรือต้องการเลือกห้องเอง)
+    else {
+        if (roomBadge) roomBadge.innerText = "SELECT A ROOM";
+
+        // ฟังข้อมูลจากกิ่ง active_sessions ทั้งหมด เพื่อดูว่าห้องไหนเปิดอยู่บ้าง
+        onValue(ref(db, `active_sessions`), (snapshot) => {
+            const allSessions = snapshot.val() || {};
+            renderAvailableRooms(allSessions);
+        });
+    }
+}
+
+function renderAvailableRooms(sessions) {
+    const container = document.getElementById('subject-selector');
+    if (!container) return;
+
+    const activeRooms = Object.entries(sessions).filter(([id, data]) => data.isOpen);
+
+    if (activeRooms.length === 0) {
+        container.innerHTML = `
+            <div class="py-10 text-center">
+                <div class="text-4xl mb-4">⏳</div>
+                <h2 class="text-xl font-black text-slate-800">ยังไม่มีห้องเรียนเปิดสอน</h2>
+                <p class="text-slate-400 text-sm mt-2">กรุณารอพี่ติวเตอร์เปิดระบบสักครู่...</p>
+            </div>`;
         return;
     }
 
-    onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
-        const session = snapshot.val();
-        activeSessionData = session;
-
-        if (session && session.isOpen) {
-            // --- [1] สถานะ: ห้องเรียนเปิดติวอยู่ (LIVE) ---
-            if (roomBadge) {
-                roomBadge.innerText = `${myRoom} | ${session.subject.toUpperCase()}`;
-            }
-
-            // เก็บชื่อวิชาไว้ใช้ตอนทำ Rating (ใช้ window. เพื่อให้ไฟล์อื่นเห็น)
-            window.lastActiveSubject = session.subject;
-
-            // ถ้าเครื่องน้องอยู่ในสถานะ "เข้าเรียนแล้ว" ให้โชว์แถบ Interaction
-            if (window.isInClass && interactionBar) {
-                interactionBar.classList.remove('hidden');
-            }
-
-        } else {
-            // --- [2] สถานะ: ห้องเรียนถูกปิด หรือยังไม่เปิด (WAITING) ---
-            if (roomBadge) {
-                roomBadge.innerText = `${myRoom} | WAITING...`;
-            }
-            if (interactionBar) {
-                interactionBar.classList.add('hidden');
-            }
-
-            // --- TRIGGER RATING LOGIC ---
-            // ถ้าเคยเรียนอยู่ (isInClass = true) แต่ตอนนี้ห้องปิดแล้ว แสดงว่าพี่เพิ่งกด Finish Session
-            if (window.isInClass && window.lastActiveSubject) {
-                if (typeof triggerRating === 'function') {
-                    triggerRating(window.lastActiveSubject);
-                }
-                // รีเซ็ตสถานะหลังจากเรียกหน้าประเมินแล้ว
-                window.isInClass = false;
-                window.lastActiveSubject = "";
-            }
-        }
-
-        // วาดหน้าจอหลัก (ปุ่ม Join หรือข้อความรอ)
-        renderWaitingRoom(session);
-    });
+    container.innerHTML = `
+        <div class="text-left mb-6">
+            <h2 class="text-xl font-black text-slate-800">เลือกห้องที่ต้องการเข้าร่วม</h2>
+            <p class="text-slate-400 text-xs">พบ ${activeRooms.length} ห้องที่กำลังทำการเรียนการสอน</p>
+        </div>
+        <div class="grid grid-cols-1 gap-3">
+            ${activeRooms.map(([id, data]) => `
+                <button onclick="selectManualRoom('${id}')" 
+                    class="bg-white p-5 rounded-3xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 transition-all text-left group">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">${id.replace('_', ' ')}</span>
+                            <h3 class="text-lg font-black text-slate-800">${data.subject.toUpperCase()}</h3>
+                            <p class="text-xs text-slate-500">ติวเตอร์: พี่${data.tutorName}</p>
+                        </div>
+                        <div class="w-10 h-10 bg-slate-100 rounded-2xl flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                            ➔
+                        </div>
+                    </div>
+                </button>
+            `).join('')}
+        </div>
+    `;
 }
 
 // --- [2] ฟังก์ชันวาดหน้าจอ Waiting Room ---
 function renderWaitingRoom(session) {
     const container = document.getElementById('subject-selector');
+    if (!container) return;
 
-    // ถ้าห้องยังไม่เปิด
+    // --- [CASE 1] ถ้าห้องยังไม่เปิดสอน (CLOSED / WAITING) ---
     if (!session || !session.isOpen) {
         container.innerHTML = `
             <div class="w-20 h-20 bg-slate-100 text-slate-300 rounded-3xl flex items-center justify-center mx-auto text-4xl mb-6">
                 ⏳
             </div>
             <h2 class="text-2xl font-black text-slate-800">รอติวเตอร์เปิดห้องเรียน</h2>
-            <p class="text-slate-400 text-sm">ขณะนี้ในห้อง ${myRoom} ยังไม่มีกิจกรรม<br>กรุณารอสักครู่...</p>
+            <p class="text-slate-400 text-sm">ขณะนี้ในห้อง <span class="text-blue-600 font-bold">${myRoom.replace('_', ' ')}</span> ยังไม่มีกิจกรรม<br>กรุณารอสักครู่...</p>
         `;
-        document.getElementById('room-badge').innerText = `${myRoom} | Waiting...`;
+
+        // เพิ่มปุ่ม "เลือกห้องอื่น" เฉพาะน้องที่ Admin ไม่ได้ล็อกห้องไว้ (classID ว่าง)
+        if (!userSession.classID) {
+            container.innerHTML += `
+                <div class="mt-8 pt-6 border-t border-slate-100">
+                    <button onclick="location.reload()" class="text-sm font-bold text-blue-600 hover:underline flex items-center justify-center gap-2 mx-auto">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 8 9 0 01-18 0z" />
+                        </svg>
+                        กลับไปเลือกห้องเรียนอื่น
+                    </button>
+                </div>
+            `;
+        }
+
+        if (document.getElementById('room-badge')) {
+            document.getElementById('room-badge').innerText = `${myRoom.replace('_', ' ')} | WAITING...`;
+        }
         return;
     }
 
-    // ถ้าห้องเปิดแล้ว! (แสดงปุ่มให้กดเข้าได้เลย)
+    // --- [CASE 2] ถ้าห้องเปิดแล้ว (LIVE) ---
     container.innerHTML = `
         <div class="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto text-4xl mb-6 shadow-lg animate-bounce">
             📖
@@ -698,33 +803,57 @@ function renderWaitingRoom(session) {
             <p class="text-xl font-black text-blue-700">${session.subject.toUpperCase()}</p>
             <p class="text-xs text-slate-500 mt-1">โดย พี่${session.tutorName}</p>
         </div>
+        
         <button onclick="joinClass()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all">
             เข้าเรียนตอนนี้ ➔
         </button>
     `;
+
+    // เพิ่มปุ่ม "เลือกห้องอื่น" กรณีเข้าเรียนผิดห้อง (เฉพาะน้องที่ไม่ได้ถูกล็อกห้อง)
+    if (!userSession.classID) {
+        container.innerHTML += `
+            <button onclick="location.reload()" class="mt-6 text-xs font-bold text-slate-400 hover:text-blue-600 underline">
+                เลือกห้องอื่น (กรณีเข้าผิดห้อง)
+            </button>
+        `;
+    }
 }
 
 // --- [3] ฟังก์ชันกดเข้าร่วม (Join) ---
+// ค้นหา window.joinClass ใน js/classroom-logic.js
 window.joinClass = async function () {
-    if (!activeSessionData) return;
+    // 1. ดึงข้อมูล User ใหม่ทุกครั้งที่กด เพื่อป้องกันค่า null
+    const currentUser = checkAuth();
+
+    // 2. ตรวจสอบความพร้อมของข้อมูล
+    if (!currentUser || !currentUser.id) {
+        Swal.fire("ไม่พบข้อมูลผู้ใช้งาน", "กรุณาเข้าสู่ระบบใหม่อีกครั้ง", "error")
+            .then(() => window.location.href = 'login.html');
+        return;
+    }
+
+    if (!activeSessionData || !myRoom) {
+        Swal.fire("ผิดพลาด", "ข้อมูลห้องเรียนไม่สมบูรณ์", "error");
+        return;
+    }
 
     Swal.fire({ title: 'กำลังเข้าสู่ห้องเรียน...', didOpen: () => Swal.showLoading() });
 
     try {
-        const myPresenceRef = ref(db, `presence/${myRoom}/${userSession.id}`);
+        // ใช้ currentUser.id แทน userSession.id
+        const myPresenceRef = ref(db, `presence/${myRoom}/${currentUser.id}`);
         await set(myPresenceRef, {
-            fullName: userSession.fullName,
-            nickname: userSession.nickname,
-            house: userSession.house,
+            fullName: currentUser.fullName,
+            nickname: currentUser.nickname,
+            house: currentUser.house,
             joinedAt: new Date().toISOString()
         });
 
         onDisconnect(myPresenceRef).remove();
 
-        // --- [วางบรรทัดนี้ที่นี่] ---
+        // ตั้งค่าสถานะการเข้าเรียน
         window.isInClass = true;
         window.lastActiveSubject = activeSessionData.subject;
-        // -------------------------
 
         // สลับหน้าจอ UI
         document.getElementById('subject-selector').classList.add('hidden');
@@ -734,14 +863,14 @@ window.joinClass = async function () {
         const interactionBar = document.getElementById('interaction-bar');
         if (interactionBar) interactionBar.classList.remove('hidden');
 
-        document.getElementById('room-badge').innerText = `${myRoom} | ${activeSessionData.subject.toUpperCase()}`;
+        document.getElementById('room-badge').innerText = `${myRoom.replace('_', ' ')} | ${activeSessionData.subject.toUpperCase()}`;
 
         Swal.close();
         initStudentListener(); // เริ่มฟังคำถาม Broadcast
 
     } catch (e) {
-        console.error(e);
-        Swal.fire("Error", "ไม่สามารถเข้าห้องเรียนได้", "error");
+        console.error("Join Class Error:", e);
+        Swal.fire("Error", "ไม่สามารถเข้าห้องเรียนได้: " + e.message, "error");
     }
 };
 
@@ -801,6 +930,34 @@ if (window.location.pathname.includes('student.html')) {
     startRoomWatcher();
 }
 
+// --- [7] ฟังก์ชันออกจากห้องเรียน (สำหรับนักเรียน) ---
+window.exitClass = async function () {
+    const result = await Swal.fire({
+        title: 'ออกจากห้องเรียน?',
+        text: "คุณต้องการกลับสู่หน้าหลักใช่หรือไม่? (สถานะออนไลน์จะถูกยกเลิก)",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'ใช่, กลับหน้าหลัก',
+        cancelButtonText: 'ยกเลิก',
+        confirmButtonColor: '#3b82f6'
+    });
+
+    if (result.isConfirmed) {
+        const currentUser = checkAuth();
+        if (currentUser && myRoom) {
+            // ลบสถานะออนไลน์ใน Firebase
+            const myPresenceRef = ref(db, `presence/${myRoom}/${currentUser.id}`);
+            await remove(myPresenceRef);
+        }
+
+        // รีเซ็ตสถานะในเครื่อง
+        window.isInClass = false;
+
+        // กลับหน้าหลัก
+        window.location.href = '../index.html';
+    }
+};
+
 // ---------------------------------------------------------
 // [SECTION: SCORING LOGIC] - สำหรับการให้คะแนนและจัดการโควต้า
 // ---------------------------------------------------------
@@ -830,7 +987,6 @@ window.giveScore = async function (id, name, pts) {
     showToast(`${name}: ${pts > 0 ? '+' : ''}${pts} คะแนน`);
     renderSummaryTable();
 };
-
 window.giveHouseScore = async function (house, pts) {
     if (quotaUsed + pts > 100) return Swal.fire("โควต้าเต็ม", "ใช้คะแนนเกิน 100 แล้ว", "warning");
 
