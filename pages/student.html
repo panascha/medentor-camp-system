@@ -18,25 +18,36 @@
 
 <body class="bg-slate-50 min-h-screen">
 
-    <!-- Navigation -->
-    <nav class="bg-white border-b p-4 sticky top-0 z-50 shadow-sm">
-        <div class="max-w-xl mx-auto flex justify-between items-center">
-            <a href="../index.html" class="p-2 hover:bg-slate-100 rounded-full transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-slate-600" fill="none" viewBox="0 0 24 24"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                </svg>
-            </a>
-            <div class="text-center">
-                <h1 class="text-lg font-black text-slate-800 leading-none">CLASSROOM ACTIVITY</h1>
-                <p id="room-badge" class="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-1">
-                    Connecting...</p>
-            </div>
-            <div class="w-10"></div> <!-- Placeholder for balance -->
-        </div>
-    </nav>
-
     <main class="max-w-xl mx-auto p-4 space-y-6">
+
+        <!-- Navigation -->
+        <nav class="bg-white border-b p-4 sticky top-0 z-50 shadow-sm">
+            <div class="max-w-xl mx-auto flex justify-between items-center">
+                <!-- ปุ่มประวัติ -->
+                <button onclick="viewMyHistory()" class="p-2 hover:bg-slate-100 rounded-full text-blue-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </button>
+        
+                <div class="text-center">
+                    <h1 class="text-lg font-black text-slate-800 leading-none">CLASSROOM ACTIVITY</h1>
+                    <p id="room-badge" class="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-1">Connecting...
+                    </p>
+                </div>
+        
+                <!-- ปุ่มคำถามส่วนตัว -->
+                <button onclick="askPrivateQuestion()" class="p-2 hover:bg-slate-100 rounded-full text-orange-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                    </svg>
+                </button>
+            </div>
+        </nav>
 
         <!-- [UI State 1] Select Subject -->
         <div id="subject-selector"
@@ -95,32 +106,6 @@
             </div>
 
         </div>
-
-        <!-- Navigation (เพิ่มปุ่มดูประวัติ) -->
-        <nav class="bg-white border-b p-4 sticky top-0 z-50 shadow-sm">
-            <div class="max-w-xl mx-auto flex justify-between items-center">
-                <button onclick="viewMyHistory()" class="p-2 hover:bg-slate-100 rounded-full text-blue-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
-                        stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                </button>
-                <div class="text-center">
-                    <h1 class="text-lg font-black text-slate-800 leading-none">CLASSROOM</h1>
-                    <p id="room-badge" class="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-1">Connecting...
-                    </p>
-                </div>
-                <!-- ปุ่มส่งคำถามส่วนตัว -->
-                <button onclick="askPrivateQuestion()" class="p-2 hover:bg-slate-100 rounded-full text-orange-500">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
-                        stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                    </svg>
-                </button>
-            </div>
-        </nav>
         
         <!-- Floating Interaction Bar (Reaction & SOS) -->
         <div id="interaction-bar"
@@ -163,11 +148,34 @@
 
         // 2. ดึงข้อมูล User และ Room (ต้องเหมือนกับใน classroom-logic.js)
         const userSession = checkAuth();
-        const myRoom = userSession?.classID ? `Room_${userSession.classID}` : null;
+        const myId = userSession?.id;   
+        let myRoom = userSession?.classID ? `Room_${userSession.classID}` : null;
         let mySOSStatus = false;
 
         // ตัวแปรเก็บข้อมูล Session ปัจจุบัน (สำหรับ Subject)
         let activeSessionData = null;
+
+        // 3. ตรวจสอบสถานะการ Login และดึงข้อมูลห้องเรียน
+        if (myId) {
+                // อัปเดต UI เบื้องต้นก่อน
+                const roomBadge = document.getElementById('room-badge');
+
+                // ไปดึงข้อมูลโปรไฟล์ล่าสุดของน้องมาดูว่า ClassID คืออะไร
+                const studentRef = ref(db, `students/${myId}`);
+                onValue(studentRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (data && data.classID) {
+                        myRoom = `Room_${data.classID}`;
+                        roomBadge.innerText = `${myRoom} | STANDBY`; // เปลี่ยนจาก Connecting เป็นชื่อห้อง
+
+                        // เมื่อรู้ห้องแล้ว ค่อยเริ่มฟังข้อมูลห้องเรียน
+                        startWatchingActiveSession();
+                    } else {
+                        roomBadge.innerText = "ยังไม่มีห้องเรียน";
+                        roomBadge.classList.add('text-slate-400');
+                    }
+                });
+            }
 
         // ฟังข้อมูลห้องเพื่ออัปเดต activeSessionData
         if (myRoom) {
@@ -284,6 +292,8 @@
         // ระบบ Rating (เหมือนเดิมแต่ย้ายมาไว้ในขอบเขตที่มี db)
         let hasRatedThisSession = false;
         let lastSubjectForRating = "";
+        let lastActiveSubject = "";
+
 
         if (myRoom) {
             onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
@@ -347,6 +357,45 @@
                 window.isInClass = false; // จบ Session จริงๆ
             }
         }
+
+        function startWatchingActiveSession() {
+                if (!myRoom) return;
+
+                onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
+                    const session = snapshot.val();
+                    const roomBadge = document.getElementById('room-badge');
+                    const interactionBar = document.getElementById('interaction-bar');
+
+                    if (session && session.isOpen) {
+                        // --- [1] กรณี: ห้องเรียนกำลังเปิดสอน (LIVE) ---
+                        roomBadge.innerText = `${myRoom} | ${session.subject.toUpperCase()}`;
+                        if (interactionBar) interactionBar.classList.remove('hidden');
+
+                        // อัปเดตสถานะ (ใช้ window. เพื่อให้ classroom-logic.js มองเห็นด้วย)
+                        window.isInClass = true;
+                        lastActiveSubject = session.subject;
+                        hasRatedThisSession = false; // รีเซ็ตเพื่อรอประเมินเมื่อจบคลาส
+
+                    } else {
+                        // --- [2] กรณี: ห้องเรียนถูกปิด หรือยังไม่เปิด (WAITING) ---
+                        roomBadge.innerText = `${myRoom} | WAITING...`;
+                        if (interactionBar) interactionBar.classList.add('hidden');
+
+                        // ตรวจสอบว่า "เพิ่งเรียนจบ" ใช่ไหม? ถ้าใช่ ให้เด้งหน้าประเมิน
+                        if (window.isInClass && !hasRatedThisSession && lastActiveSubject !== "") {
+                            triggerRating(lastActiveSubject);
+                        }
+
+                        // รีเซ็ตสถานะการเข้าเรียน
+                        window.isInClass = false;
+                    }
+
+                    // อัปเดตหน้าจอ Waiting Room (ถ้ามีฟังก์ชันนี้ในหน้าจอ)
+                    if (typeof renderWaitingRoom === 'function') {
+                        renderWaitingRoom(session);
+                    }
+                });
+            }
     </script>
 </body>
 

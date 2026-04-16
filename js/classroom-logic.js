@@ -382,8 +382,10 @@ function listenPrivateQuestions() {
 // ฟังก์ชันให้พี่สตาฟกดลบคำถามเมื่อตอบแล้ว
 window.deleteQuestion = function (key) {
     if (confirm('ตอบคำถามนี้เรียบร้อยแล้วใช่หรือไม่?')) {
-        const { getDatabase, ref, remove } = FB; // อ้างอิง Firebase (ถ้าใช้ Module)
-        remove(ref(db, `private_questions/${currentRoom}/${key}`));
+        // ใช้ ref และ db ที่ import มาแล้วที่หัวไฟล์ได้เลย ไม่ต้องมี FB.
+        remove(ref(db, `private_questions/${currentRoom}/${key}`))
+            .then(() => showToast("ลบคำถามแล้ว"))
+            .catch(e => console.error("Delete Question Error:", e));
     }
 };
 
@@ -434,18 +436,40 @@ window.updateActivity = async function (status) {
         status: status
     };
 
-    // 1. อัปเดตสถานะปัจจุบัน (ให้เด็กเห็น)
-    await update(ref(db, `active_sessions/${currentRoom}/current_activity`), activityData);
+    try {
+        // 1. อัปเดตสถานะปัจจุบัน (ให้เด็กเห็น)
+        await update(ref(db, `active_sessions/${currentRoom}/current_activity`), activityData);
 
-    // 2. บันทึกลง Log ของ Session (เพื่อเอาไว้ดึงประวัติมาดู)
-    await set(ref(db, `active_sessions/${currentRoom}/activities_history/${activity_id}`), activityData);
+        // 2. บันทึกลง Log ของ Session
+        await set(ref(db, `active_sessions/${currentRoom}/activities_history/${activity_id}`), activityData);
 
-    // *หมายเหตุ: เราจะไม่ลบ responses/${currentRoom} ทิ้งแล้ว เพื่อให้ดูย้อนหลังได้*
-    if (status === 'open') {
-        showToast(`เริ่มกิจกรรม: ${title}`);
-        selectedActivityFilter = activity_id; // สลับไปดูอันใหม่ทันที
+        if (status === 'open') {
+            showToast(`เริ่มกิจกรรม: ${title}`);
+
+            // --- [ส่วนที่เพิ่มเพื่อให้ Render ทันที] ---
+            selectedActivityFilter = activity_id; // สลับ Filter ไปที่อันใหม่
+
+            // อัปเดตตัวแปร Local ทันทีไม่ต้องรอกรอบถัดไป
+            activityLog[activity_id] = activityData;
+
+            // สั่งวาด Dropdown ใหม่เพื่อให้มีชื่อกิจกรรมใหม่ขึ้นมา
+            renderActivityFilter();
+
+            // สั่งล้างหน้าจอคำตอบและแสดง Header กิจกรรมใหม่ (ส่ง {} เพื่อบอกว่ายังไม่มีคนตอบ)
+            renderResponses({});
+
+            // สลับ Tab ไปที่ Live Feed อัตโนมัติเพื่อให้พี่ติวเตอร์เห็นคำตอบน้อง
+            switchTab('live');
+        } else {
+            showToast("ปิดรับคำตอบแล้ว", "info");
+            // เมื่อปิดรับคำตอบ ให้หน้าจอยังคงแสดงคำตอบเดิมไว้ (ไม่ต้องล้างจอ)
+        }
+    } catch (e) {
+        console.error("Update Activity Error:", e);
+        showToast("ไม่สามารถอัปเดตกิจกรรมได้", "error");
     }
 };
+
 window.runRandom = function (mode) {
     // สุ่มจากเด็กทุกคนในคลาส (A, B, C, D) ตามโจทย์
     let list = allStudentsInClass;
@@ -511,37 +535,67 @@ window.finishSession = async function () {
         text: "ระบบจะทำการ Sync คะแนนเข้าสู่ Google Sheet และปิดห้องเรียน",
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonText: 'บันทึกและจบคลาส'
+        confirmButtonText: 'บันทึกและจบคลาส',
+        cancelButtonText: 'ยกเลิก'
     });
 
     if (result.isConfirmed) {
-        Swal.fire({ title: 'กำลังซิงค์ข้อมูล...', didOpen: () => Swal.showLoading() });
+        Swal.fire({
+            title: 'กำลังซิงค์ข้อมูล...',
+            text: 'กรุณารอสักครู่ ระบบกำลังนำส่งข้อมูลเข้า Google Sheets',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
         try {
-            // ส่งคะแนนไปที่ Google Sheet (GAS)
-            await fetch(CONFIG.appscriptUrl, {
+            // 1. ส่งข้อมูลไป GAS (ไม่ใช้ await เพื่อไม่ให้การค้างของ GAS มาดึงหน้าจอเรา)
+            fetch(CONFIG.appscriptUrl, {
                 method: 'POST',
                 mode: 'no-cors',
+                headers: { "Content-Type": "text/plain" },
                 body: JSON.stringify({
                     action: "syncClassroomScore",
                     key: CONFIG.syncKey,
                     room: currentRoom,
                     subject: currentSubject,
-                    tutor: checkAuth().nickname || "Tutor",
+                    tutor: checkAuth()?.nickname || "Tutor",
                     studentScores: scoresToSync.studentScores,
                     houseScores: scoresToSync.houseScores
                 })
             });
 
-            // ล้างข้อมูล Session
-            localStorage.removeItem('active_tutor_room');
-            await remove(ref(db, `active_sessions/${currentRoom}`));
-            await remove(ref(db, `presence/${currentRoom}`));
-            await remove(ref(db, `responses/${currentRoom}`));
-            await remove(ref(db, `classroom_scores/${currentRoom}`));
+            // 2. ล้างข้อมูลใน Firebase 
+            // เราจะลบทีละโหนดเพื่อให้มั่นใจว่าไม่มี Error จากโหนดใดโหนดหนึ่งมาขัดขวาง
+            const roomToClear = currentRoom; // เก็บชื่อห้องไว้ก่อนล้าง
 
-            Swal.fire('สำเร็จ!', 'บันทึกคะแนนเรียบร้อยแล้ว', 'success').then(() => window.location.href = '../index.html');
+            await remove(ref(db, `active_sessions/${roomToClear}`));
+            await remove(ref(db, `presence/${roomToClear}`));
+            await remove(ref(db, `responses/${roomToClear}`));
+            await remove(ref(db, `classroom_scores/${roomToClear}`));
+            await remove(ref(db, `private_questions/${roomToClear}`));
+
+            // 3. ล้าง Local Storage และ State
+            localStorage.removeItem('active_tutor_room');
+            currentRoom = null;
+
+            // 4. แสดงผลสำเร็จ (ปิด Loading เดิม)
+            Swal.fire({
+                icon: 'success',
+                title: 'จบคลาสสำเร็จ!',
+                text: 'คะแนนถูกส่งเข้าสู่คลังข้อมูลกลางแล้ว',
+                timer: 2000,
+                showConfirmButton: false
+            }).then(() => {
+                window.location.href = '../index.html';
+            });
+
         } catch (e) {
-            Swal.fire('ผิดพลาด', 'ไม่สามารถเชื่อมต่อ Google Sheet ได้', 'error');
+            console.error("Sync Error:", e);
+            Swal.fire({
+                icon: 'error',
+                title: 'เกิดข้อผิดพลาด',
+                text: 'ไม่สามารถล้างข้อมูลใน Firebase ได้ แต่ข้อมูลอาจถูกส่งไป GAS แล้ว'
+            });
         }
     }
 };
@@ -559,33 +613,59 @@ let lastActiveSubject = "";
 
 // --- [1] ฟังก์ชันเริ่มเฝ้าดูห้องเรียน (Watcher) ---
 function startRoomWatcher() {
+    const roomBadge = document.getElementById('room-badge');
+    const interactionBar = document.getElementById('interaction-bar'); // เพิ่มการอ้างอิง Bar
+
     if (!myRoom) {
-        document.getElementById('subject-selector').innerHTML = `
-            <div class="py-10 text-slate-400">
-                <p class="text-3xl mb-4">📍</p>
-                <p>คุณยังไม่มีรายชื่อในห้องเรียนใดๆ<br>กรุณารอประกาศห้องเรียนจากหน้าหลัก</p>
-            </div>`;
+        if (roomBadge) roomBadge.innerText = "NO ROOM ASSIGNED";
+        // แสดง UI ว่าน้องยังไม่มีห้อง
+        const container = document.getElementById('subject-selector');
+        if (container) {
+            container.innerHTML = `<div class="py-10 text-slate-400 italic">คุณยังไม่มีรายชื่อในห้องเรียนใดๆ<br>กรุณารอประกาศห้องเรียนจากหน้าหลัก</div>`;
+        }
         return;
     }
 
-    // ฟังข้อมูลจากห้องเรียนของตัวเอง (เช่น active_sessions/Room_A)
     onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
         const session = snapshot.val();
-        activeSessionData = session; // เก็บข้อมูลไว้ใช้ตอนกด Join
+        activeSessionData = session;
 
-        if (isInClass && (!session || !session.isOpen)) {
-            // ถ้าเราอยู่ในห้องอยู่ แล้วอยู่ดีๆ session หายไป หรือ isOpen เป็น false
-            if (typeof triggerRating === 'function') {
-                triggerRating(lastActiveSubject);
+        if (session && session.isOpen) {
+            // --- [1] สถานะ: ห้องเรียนเปิดติวอยู่ (LIVE) ---
+            if (roomBadge) {
+                roomBadge.innerText = `${myRoom} | ${session.subject.toUpperCase()}`;
             }
-            isInClass = false; // รีเซ็ตสถานะ
 
-            // สลับหน้าจอกลับไปหน้าเลือกวิชา
-            document.getElementById('subject-selector').classList.remove('hidden');
-            document.getElementById('activity-area').classList.add('hidden');
-            document.getElementById('interaction-bar').classList.add('hidden');
+            // เก็บชื่อวิชาไว้ใช้ตอนทำ Rating (ใช้ window. เพื่อให้ไฟล์อื่นเห็น)
+            window.lastActiveSubject = session.subject;
+
+            // ถ้าเครื่องน้องอยู่ในสถานะ "เข้าเรียนแล้ว" ให้โชว์แถบ Interaction
+            if (window.isInClass && interactionBar) {
+                interactionBar.classList.remove('hidden');
+            }
+
+        } else {
+            // --- [2] สถานะ: ห้องเรียนถูกปิด หรือยังไม่เปิด (WAITING) ---
+            if (roomBadge) {
+                roomBadge.innerText = `${myRoom} | WAITING...`;
+            }
+            if (interactionBar) {
+                interactionBar.classList.add('hidden');
+            }
+
+            // --- TRIGGER RATING LOGIC ---
+            // ถ้าเคยเรียนอยู่ (isInClass = true) แต่ตอนนี้ห้องปิดแล้ว แสดงว่าพี่เพิ่งกด Finish Session
+            if (window.isInClass && window.lastActiveSubject) {
+                if (typeof triggerRating === 'function') {
+                    triggerRating(window.lastActiveSubject);
+                }
+                // รีเซ็ตสถานะหลังจากเรียกหน้าประเมินแล้ว
+                window.isInClass = false;
+                window.lastActiveSubject = "";
+            }
         }
 
+        // วาดหน้าจอหลัก (ปุ่ม Join หรือข้อความรอ)
         renderWaitingRoom(session);
     });
 }
@@ -640,18 +720,27 @@ window.joinClass = async function () {
         });
 
         onDisconnect(myPresenceRef).remove();
-        isInClass = true;
-        lastActiveSubject = activeSessionData.subject;
 
-        // สลับหน้าจอ
+        // --- [วางบรรทัดนี้ที่นี่] ---
+        window.isInClass = true;
+        window.lastActiveSubject = activeSessionData.subject;
+        // -------------------------
+
+        // สลับหน้าจอ UI
         document.getElementById('subject-selector').classList.add('hidden');
         document.getElementById('activity-area').classList.remove('hidden');
+
+        // แสดงแถบ Interaction Bar (ถ้ามี)
+        const interactionBar = document.getElementById('interaction-bar');
+        if (interactionBar) interactionBar.classList.remove('hidden');
+
         document.getElementById('room-badge').innerText = `${myRoom} | ${activeSessionData.subject.toUpperCase()}`;
 
         Swal.close();
         initStudentListener(); // เริ่มฟังคำถาม Broadcast
 
     } catch (e) {
+        console.error(e);
         Swal.fire("Error", "ไม่สามารถเข้าห้องเรียนได้", "error");
     }
 };
