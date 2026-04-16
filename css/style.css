@@ -1,0 +1,77 @@
+/* --- Progress Bar for Quota Tracker --- */
+.quota-container {
+    height: 12px;
+    width: 100%;
+    background-color: #e2e8f0; /* slate-200 */
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+}
+
+.quota-bar {
+    height: 100%;
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+}
+
+/* Dynamic Colors (ใช้ JS เปลี่ยน Class) */
+.quota-safe { background-color: #22c55e; }    /* green-500 */
+.quota-warning { background-color: #eab308; } /* yellow-500 */
+.quota-danger { background-color: #ef4444; }  /* red-500 */
+
+
+/* --- Slot Machine / Randomizer Effect --- */
+.slot-container {
+    height: 80px; /* ความสูงของชื่อที่แสดง 1 ชื่อ */
+    overflow: hidden;
+    position: relative;
+    border: 4px solid #f1f5f9;
+    background: white;
+    border-radius: 1.5rem;
+}
+
+.slot-list {
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.1s linear;
+}
+
+.slot-item {
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #1e293b;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+/* Winner Animation */
+@keyframes winner-pulse {
+    0%, 100% { transform: scale(1); background-color: #fff; }
+    50% { transform: scale(1.05); background-color: #fef08a; border-color: #eab308; }
+}
+
+.winner-highlight {
+    animation: winner-pulse 0.5s ease-in-out infinite;
+    z-index: 20;
+    box-shadow: 0 0 30px rgba(234, 179, 8, 0.4);
+}
+
+/* --- Utilities --- */
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Glass Card Enhancement */
+.glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
