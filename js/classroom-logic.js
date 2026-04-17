@@ -638,7 +638,14 @@ document.getElementById('select-room')?.addEventListener('change', (e) => {
     });
 });
 
+// Live board
+window.openLiveBoard = function () {
+    const room = document.getElementById('select-room').value || currentRoom;
+    if (!room) return Swal.fire("แจ้งเตือน", "กรุณาเลือกหรือเปิดห้องเรียนก่อน", "warning");
 
+    // เปิดหน้าใหม่แบบ New Tab
+    window.open(`liveboard.html?room=${room}`, '_blank');
+};
 
 // ฟังก์ชันให้พี่สตาฟกดลบคำถามเมื่อตอบแล้ว
 window.deleteQuestion = function (key) {

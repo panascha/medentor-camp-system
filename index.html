@@ -79,6 +79,25 @@
             </div>
         </header>
 
+        <!-- Tutor Active Session Card -->
+        <section id="tutor-active-session" class="hidden mb-10">
+            <div
+                class="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 rounded-[2rem] shadow-xl shadow-blue-200 flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in">
+                <div class="flex items-center gap-4">
+                    <div class="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center text-3xl">👨‍🏫</div>
+                    <div class="text-white">
+                        <h2 class="text-xl font-black italic">YOU ARE TEACHING!</h2>
+                        <p id="active-session-text" class="text-blue-100 text-sm font-medium">กำลังสอนในห้อง Room A | วิชา
+                            ฟิสิกส์</p>
+                    </div>
+                </div>
+                <a id="btn-quick-liveboard" href="#" target="_blank"
+                    class="w-full md:w-auto bg-white text-blue-600 px-8 py-3 rounded-xl font-black text-center shadow-lg hover:bg-blue-50 transition-all active:scale-95">
+                    เข้าสู่หน้าจอสอน (LIVE BOARD) ➔
+                </a>
+            </div>
+        </section>
+
         <!-- Tools Grid for STAFF -->
         <section id="staff-section" class="hidden">
             <h2 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4 ml-1">Staff Management Tools</h2>
@@ -278,6 +297,63 @@
     <!-- Logic -->
     <script src="js/firebase-config.js"></script>
     <script src="js/auth.js"></script>
+    <!-- เพิ่มส่วนนี้เพื่อโหลด Firebase Module สำหรับตรวจสอบข้อมูล Real-time -->
+    <script type="importmap">
+        {
+            "imports": {
+                "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js",
+                "firebase/database": "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js"
+            }
+        }
+    </script>
+    
+    <script type="module">
+        import { initializeApp } from "firebase/app";
+        import { getDatabase, ref, onValue } from "firebase/database";
+
+        // 1. Initialize Firebase
+        const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
+        const db = getDatabase(app);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const user = checkAuth();
+            if (!user || user.userType !== 'staff') return;
+
+            const myName = user.nickname || user.fullName;
+            const sessionSection = document.getElementById('tutor-active-session');
+            const sessionText = document.getElementById('active-session-text');
+            const liveBoardBtn = document.getElementById('btn-quick-liveboard');
+
+            // 2. ฟังข้อมูลจากกิ่ง active_sessions ทั้งหมด
+            onValue(ref(db, `active_sessions`), (snapshot) => {
+                const sessions = snapshot.val() || {};
+                let isUserTeaching = false;
+                let activeRoom = "";
+                let activeSubject = "";
+
+                // 3. วนลูปเช็คว่ามีห้องไหนที่ "ชื่อติวเตอร์" ตรงกับเราไหม
+                for (const roomId in sessions) {
+                    const session = sessions[roomId];
+                    // เช็คว่าเป็นติวเตอร์คนนี้ และห้องยังเปิดอยู่
+                    if (session.isOpen && session.tutor === myName) {
+                        isUserTeaching = true;
+                        activeRoom = roomId;
+                        activeSubject = session.subject;
+                        break;
+                    }
+                }
+
+                // 4. แสดง/ซ่อน UI ตามสถานะ
+                if (isUserTeaching) {
+                    sessionSection.classList.remove('hidden');
+                    sessionText.innerText = `คุณกำลังสอนในห้อง ${activeRoom.replace('_', ' ')} | วิชา ${activeSubject.toUpperCase()}`;
+                    liveBoardBtn.href = `pages/liveboard.html?room=${activeRoom}`;
+                } else {
+                    sessionSection.classList.add('hidden');
+                }
+            });
+        });
+    </script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const user = checkAuth(); // ดึงข้อมูล Session จาก localStorage

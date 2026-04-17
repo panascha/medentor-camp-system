@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Board - Medentor System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            overflow: hidden;
+        }
+
+        .response-card {
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ปรับขนาดฟอนต์พิเศษสำหรับหน้าจอใหญ่ */
+        .big-q {
+            font-size: 3.5rem;
+            line-height: 1.2;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-900 text-white min-h-screen">
+    <!-- Header: บอกสถานะและห้อง -->
+    <div class="p-6 flex justify-between items-center bg-black/30 backdrop-blur-md border-b border-white/10">
+        <div class="flex items-center gap-4">
+            <img src="../assets/logo.png" class="h-16 w-16">
+            <div>
+                <h1 id="display-room" class="text-2xl font-black text-blue-400">SELECT ROOM</h1>
+                <p id="display-subject" class="text-sm font-bold text-slate-400 uppercase tracking-widest">Waiting for
+                    session...</p>
+            </div>
+        </div>
+        <div class="flex gap-6 items-center">
+            <div id="sos-alert" class="hidden bg-red-600 px-6 py-2 rounded-full animate-bounce font-black">🆘 ตามไม่ทัน!
+            </div>
+            <div class="text-right">
+                <p class="text-xs text-slate-500 font-bold uppercase">Responses</p>
+                <p id="response-count" class="text-4xl font-black text-white">0</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="p-8 h-[calc(100vh-120px)] flex flex-col gap-8">
+        <!-- Question Area -->
+        <div
+            class="bg-gradient-to-br from-blue-600 to-indigo-800 p-10 rounded-[3rem] shadow-2xl relative overflow-hidden">
+            <div class="relative z-10">
+                <span class="bg-white/20 px-4 py-1 rounded-full text-sm font-bold uppercase mb-4 inline-block">Current
+                    Question</span>
+                <h2 id="live-question" class="big-q font-black italic">กำลังรอคำถามจากพี่ติวเตอร์...</h2>
+            </div>
+            <div class="absolute -right-20 -bottom-20 w-80 h-80 bg-white/10 rounded-full blur-3xl"></div>
+        </div>
+
+        <!-- Responses Grid -->
+        <div id="live-responses"
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pr-4 custom-scrollbar">
+            <!-- คำตอบของน้องๆ จะเด้งขึ้นตรงนี้ -->
+        </div>
+    </div>
+
+    <script type="importmap">
+        { "imports": {
+            "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js",
+            "firebase/database": "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js"
+        }}
+    </script>
+    <script src="../js/firebase-config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script type="module" src="../js/liveboard-logic.js"></script>
+</body>
+
+</html>
