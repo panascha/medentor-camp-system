@@ -122,9 +122,6 @@ function handleSessionUI(session, roomId) {
     } else {
         if (roomBadge) roomBadge.innerText = `${roomId.replace('_', ' ')} | WAITING...`;
         if (interactionBar) interactionBar.classList.add('hidden');
-
-        localStorage.removeItem('joined_room');
-        window.isInClass = false;
     }
 }
 

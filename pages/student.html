@@ -318,25 +318,54 @@
                 }
             });
         }
+        function startWatchingActiveSession() {
+                if (!myRoom) return;
 
-        async function triggerRating(subject) {
+                onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
+                    const session = snapshot.val();
+                    const roomBadge = document.getElementById('room-badge');
+                    const interactionBar = document.getElementById('interaction-bar');
+
+                    if (session && session.isOpen) {
+                        if (roomBadge) roomBadge.innerText = `${myRoom} | ${session.subject.toUpperCase()}`;
+                        if (window.isInClass && interactionBar) interactionBar.classList.remove('hidden');
+
+                        // เก็บชื่อวิชาไว้ล่าสุด
+                        window.lastActiveSubject = session.subject;
+                    } else {
+                        // กรณีห้องปิด/ถูกลบ
+                        if (roomBadge) roomBadge.innerText = `${myRoom} | CLOSED`;
+                        if (interactionBar) interactionBar.classList.add('hidden');
+
+                        // ถ้ากำลังเรียนอยู่ (isInClass = true) และยังไม่ได้ประเมิน
+                        if (window.isInClass && !hasRatedThisSession && window.lastActiveSubject) {
+                            triggerRating(window.lastActiveSubject);
+                        }
+                    }
+                });
+            }
+    async function triggerRating(subject) {
+            // ป้องกันการเรียกซ้อน
+            if (hasRatedThisSession) return;
             hasRatedThisSession = true;
+
             const { value: formValues } = await Swal.fire({
-                title: 'ติววิชานี้เป็นอย่างไรบ้าง?',
+                title: 'การสอนในคาบเรียนนี้เป็นยังไงบ้าง?',
                 html: `
-                    <p class="text-xs text-slate-500 mb-4">วิชา ${subject.toUpperCase()}</p>
-                    <div class="flex flex-col gap-4">
-                        <select id="swal-rating" class="p-3 border rounded-xl font-bold">
-                            <option value="5">⭐⭐⭐⭐⭐ (ดีมาก)</option>
-                            <option value="4">⭐⭐⭐⭐ (ดี)</option>
-                            <option value="3">⭐⭐⭐ (ปานกลาง)</option>
-                            <option value="2">⭐⭐ (พอใช้)</option>
-                            <option value="1">⭐ (ควรปรับปรุง)</option>
-                        </select>
-                        <textarea id="swal-comment" class="p-3 border rounded-xl text-sm" placeholder="ข้อเสนอแนะเพิ่มเติม (ถ้ามี)"></textarea>
-                    </div>
-                `,
-                confirmButtonText: 'ส่งความเห็น (Anonymous)',
+            <p class="text-xs text-slate-500 mb-4">วิชา ${subject.toUpperCase()}</p>
+            <div class="flex flex-col gap-4">
+                <select id="swal-rating" class="p-3 border rounded-xl font-bold">
+                    <option value="5">⭐⭐⭐⭐⭐ (ดีมาก)</option>
+                    <option value="4">⭐⭐⭐⭐ (ดี)</option>
+                    <option value="3">⭐⭐⭐ (ปานกลาง)</option>
+                    <option value="2">⭐⭐ (พอใช้)</option>
+                    <option value="1">⭐ (ควรปรับปรุง)</option>
+                </select>
+                <textarea id="swal-comment" class="p-3 border rounded-xl text-sm" placeholder="ข้อเสนอแนะเพิ่มเติม (ถ้ามี)"></textarea>
+            </div>
+        `,
+                confirmButtonText: 'ส่งความเห็น',
+                allowOutsideClick: false,
                 preConfirm: () => {
                     return {
                         rating: document.getElementById('swal-rating').value,
@@ -346,6 +375,7 @@
             });
 
             if (formValues) {
+                // ส่งข้อมูลไปยัง Google Apps Script
                 fetch(CONFIG.appscriptUrl, {
                     method: 'POST',
                     mode: 'no-cors',
@@ -358,44 +388,20 @@
                         comment: formValues.comment
                     })
                 });
-                Swal.fire('ขอบคุณครับ!', 'ความเห็นของน้องมีค่ามาก', 'success');
-                lastSubjectForRating = "";
-                window.isInClass = false; // จบ Session จริงๆ
+
+                await Swal.fire('ขอบคุณครับ!', 'ความเห็นของน้องมีค่ามาก', 'success');
+
+                // ล้างสถานะเข้าเรียนหลังจากประเมินเสร็จ
+                window.isInClass = false;
+                window.lastActiveSubject = "";
+                localStorage.removeItem('joined_room');
+
+                // รีเฟรชหน้าจอเพื่อกลับไปหน้าเลือกห้อง
+                location.reload();
             }
         }
 
-        function startWatchingActiveSession() {
-                if (!myRoom) return;
-
-                onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
-                    const session = snapshot.val();
-                    const roomBadge = document.getElementById('room-badge');
-                    const interactionBar = document.getElementById('interaction-bar');
-
-                    if (session && session.isOpen) {
-                        roomBadge.innerText = `${myRoom} | ${session.subject.toUpperCase()}`;
-                        if (window.isInClass && interactionBar) interactionBar.classList.remove('hidden');
-
-                        // เก็บชื่อวิชาไว้สำหรับทำ Rating
-                        window.lastActiveSubject = session.subject;
-                    } else {
-                        roomBadge.innerText = `${myRoom} | WAITING...`;
-                        if (interactionBar) interactionBar.classList.add('hidden');
-
-                        // --- แก้ไขเงื่อนไข Rating: ใช้ window.lastActiveSubject ให้ตรงกัน ---
-                        if (window.isInClass && !hasRatedThisSession && window.lastActiveSubject) {
-                            triggerRating(window.lastActiveSubject);
-
-                            // ล้างค่าเมื่อทำ Rating แล้ว
-                            localStorage.removeItem('joined_room');
-                            window.isInClass = false;
-                            window.lastActiveSubject = "";
-                        }
-                    }
-                });
-            }
-            
-    </script>
+        </script>
 </body>
 
 </html>
