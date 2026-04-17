@@ -6,7 +6,6 @@ const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
 const db = getDatabase(app);
 
 // 2. Local State
-const rooms = ['Room_A', 'Room_B', 'Room_C', 'Room_D'];
 let currentRoom = null;
 let currentSubject = null;
 let quotaUsed = 0;
@@ -39,6 +38,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (window.location.pathname.includes('student.html')) {
         startRoomWatcher();
+    }
+
+    if (window.location.pathname.includes('tutor.html')) {
+        initGlobalRoomStatusWatcher();
     }
 });
 
@@ -241,11 +244,15 @@ function showUI(isStarted) {
     const setupCard = document.getElementById('setup-card');
     const tutorControls = document.getElementById('tutor-controls');
     const btnFinish = document.getElementById('btn-finish');
+    const globalStatusCard = document.getElementById('room-status-container');
 
     // ถ้าเริ่ม Session แล้ว (isStarted = true) ให้ซ่อน Setup และโชว์ Controls
     if (setupCard) setupCard.classList.toggle('hidden', isStarted);
     if (tutorControls) tutorControls.classList.toggle('hidden', !isStarted);
     if (btnFinish) btnFinish.classList.toggle('hidden', !isStarted);
+    if (globalStatusCard) {
+        globalStatusCard.classList.toggle('hidden', isStarted);
+    }
 
     if (isStarted && currentRoom && currentSubject) {
         document.getElementById('display-session-info').innerText = `${currentRoom} | ${currentSubject}`;
@@ -472,70 +479,166 @@ function listenPrivateQuestions() {
 function listenForForceClose(room) {
     const requestRef = ref(db, `active_sessions/${room}/forceCloseRequest`);
 
-    // ฟังการเปลี่ยนแปลงในฟิลด์ forceCloseRequest
     onValue(requestRef, async (snapshot) => {
         const request = snapshot.val();
-        if (!request) return;
+        // สนใจเฉพาะคำขอที่ status เป็น pending เท่านั้น
+        if (!request || request.status !== 'pending') return;
 
-        // ป้องกันแจ้งเตือนตัวเอง
-        if (request.requestedBy === (userSession.nickname || userSession.fullName)) return;
+        if (request.requestedBy === (checkAuth().nickname || checkAuth().fullName)) return;
 
         let timerInterval;
         const result = await Swal.fire({
             title: 'มีคำขอคืนห้องเรียน!',
             html: `พี่ <b>${request.requestedBy}</b> รอสอนคาบถัดไป<br><br>ระบบจะปิดห้องอัตโนมัติในอีก <b><span></span></b> วินาที`,
-            icon: 'error',
-            timer: 30000, // 30 วินาที
+            icon: 'warning',
+            timer: 30000,
             timerProgressBar: true,
             showCancelButton: true,
             confirmButtonColor: '#ef4444',
             confirmButtonText: 'ปิดห้องและ Sync ทันที',
-            cancelButtonText: 'ขอเวลาแป๊บนึง (ยกเลิกอัตโนมัติ)',
+            cancelButtonText: 'ขอสอนต่อ (ปฏิเสธ)',
             didOpen: () => {
                 const b = Swal.getHtmlContainer().querySelector('span');
-                timerInterval = setInterval(() => {
-                    b.textContent = Math.ceil(Swal.getTimerLeft() / 1000);
-                }, 100);
+                timerInterval = setInterval(() => { b.textContent = Math.ceil(Swal.getTimerLeft() / 1000); }, 100);
             },
             willClose: () => { clearInterval(timerInterval); }
         });
 
         if (result.isConfirmed || result.dismiss === Swal.DismissReason.timer) {
-            // กรณีปิดทันที หรือ หมดเวลา 30 วินาที
-            if (result.dismiss === Swal.DismissReason.timer) {
-                showToast("หมดเวลา! กำลังปิดห้องและบันทึกข้อมูล...", "warning");
-            }
-            window.finishSession(true); 
+            window.finishSession(true);
         } else if (result.dismiss === Swal.DismissReason.cancel) {
-            // กรณีขอเวลาแป๊บนึง ให้ลบคำขอออกจาก Firebase
-            await update(ref(db, `active_sessions/${room}`), { forceCloseRequest: null });
-            showToast("ยกเลิกการปิดอัตโนมัติแล้ว โปรดรีบสรุปคะแนนและปิดห้องด้วยตัวเอง", "info");
+            // ปฏิเสธคำขอ: เปลี่ยน status เป็น rejected
+            await update(ref(db, `active_sessions/${room}/forceCloseRequest`), { status: 'rejected' });
+            showToast("ส่งสัญญาณแจ้งว่าคุณยังสอนไม่เสร็จแล้ว", "info");
         }
     });
 }
 
-async function sendTakeoverRequest(targetRoom) {
+window.sendTakeoverRequest = async function (targetRoom) {
     const user = checkAuth();
     const tutorName = user?.nickname || user?.fullName || "พี่สตาฟ";
 
-    try {
-        // อ้างอิงไปที่ห้องนั้นๆ
-        const roomRef = ref(db, `active_sessions/${targetRoom}`);
+    const confirm = await Swal.fire({
+        title: 'ส่งคำขอจองห้อง?',
+        text: `ระบบจะส่งสัญญาณแจ้งเตือนให้พี่ติวเตอร์ในห้อง ${targetRoom.replace('_', ' ')} ทราบ`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'ส่งคำขอ',
+        cancelButtonText: 'ยกเลิก'
+    });
 
-        // ใช้ update เพื่อสร้างฟิลด์ forceCloseRequest โดยไม่กระทบข้อมูลอื่น
-        await update(roomRef, {
-            "forceCloseRequest": {
-                "requestedBy": tutorName,
-                "requestedAt": Date.now()
+    if (!confirm.isConfirmed) return;
+
+    try {
+        await update(ref(db, `active_sessions/${targetRoom}/forceCloseRequest`), {
+            requestedBy: tutorName,
+            requestedAt: Date.now(),
+            status: "pending"
+        });
+        showToast(`ส่งคำขอถึงห้อง ${targetRoom} แล้ว`);
+    } catch (e) {
+        showToast("ไม่สามารถส่งคำขอได้", "error");
+    }
+};
+
+// Room Selector Logic: เมื่อครูเลือกห้องเรียนจาก Dropdown ในหน้าจอ Setup ระบบจะเริ่มฟังข้อมูลแบบเรียลไทม์จาก Firebase ว่าห้องนั้นมีสถานะเป็นอย่างไร (เปิด/ปิด, ใครเป็นติวเตอร์, มีคำขอปิดห้องไหม) และอัปเดต UI ตามข้อมูลที่ได้รับมา เช่น แสดงชื่อติวเตอร์ที่กำลังสอน, แสดงสถานะห้องเรียน, และถ้าเราส่งคำขอไปแล้วก็จะแสดงสถานะการรอคำตอบจากเจ้าของห้องด้วย
+function initGlobalRoomStatusWatcher() {
+    const statusContainer = document.getElementById('global-room-status');
+    const rooms = ['Room_A', 'Room_B', 'Room_C', 'Room_D'];
+    const user = checkAuth();
+    const myName = user.nickname || user.fullName;
+
+    // ฟังข้อมูลจากกิ่ง active_sessions ทั้งหมด
+    onValue(ref(db, `active_sessions`), (snapshot) => {
+        const allSessions = snapshot.val() || {};
+        let html = '';
+
+        rooms.forEach(roomId => {
+            const session = allSessions[roomId];
+            const isLive = session && session.isOpen;
+
+            // ตรวจสอบสถานะการขอจองห้อง (Takeover Request)
+            let requestHTML = '';
+            if (isLive && session.forceCloseRequest) {
+                const req = session.forceCloseRequest;
+                if (req.requestedBy === myName) {
+                    if (req.status === 'rejected') {
+                        requestHTML = `<p class="text-[10px] text-orange-600 font-bold mt-1 italic animate-pulse">⚠️ พี่ ${session.tutor} ขอสอนต่ออีกครู่หนึ่ง</p>`;
+                    } else {
+                        requestHTML = `<p class="text-[10px] text-blue-500 font-bold mt-1 italic animate-pulse">⏳ ส่งคำขอแล้ว... รอการตอบกลับ</p>`;
+                    }
+                }
             }
+
+            html += `
+                <div class="p-4 rounded-2xl border-2 transition-all ${isLive ? 'border-red-100 bg-red-50/30' : 'border-slate-100 bg-white'}">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full ${isLive ? 'bg-red-500 animate-ping' : 'bg-slate-300'}"></span>
+                                <span class="text-xs font-black text-slate-800">${roomId.replace('_', ' ')}</span>
+                            </div>
+                            ${isLive ? `
+                                <p class="text-sm font-bold text-slate-700 mt-1">${session.subject.toUpperCase()}</p>
+                                <p class="text-[10px] text-slate-400 font-bold">BY: พี่ ${session.tutor}</p>
+                            ` : `
+                                <p class="text-[10px] text-slate-400 font-bold mt-1 uppercase italic">ว่าง (Available)</p>
+                            `}
+                        </div>
+                        ${isLive && session.tutor !== myName ? `
+                            <button onclick="sendTakeoverRequest('${roomId}')" class="text-[9px] font-black bg-white border border-red-200 text-red-600 px-2 py-1 rounded-lg hover:bg-red-600 hover:text-white transition-all">
+                                ขอจองต่อ
+                            </button>
+                        ` : ''}
+                    </div>
+                    ${requestHTML}
+                </div>
+            `;
         });
 
-        showToast(`ส่งสัญญาณขอห้องเรียนถึงพี่สตาฟคนเดิมแล้ว`, "info");
-    } catch (error) {
-        console.error("Takeover Request Error:", error);
-        showToast("ไม่สามารถส่งสัญญาณได้ กรุณาลองใหม่", "error");
-    }
+        if (statusContainer) statusContainer.innerHTML = html;
+    });
 }
+document.getElementById('select-room')?.addEventListener('change', (e) => {
+    const selectedRoom = e.target.value;
+    const statusDiv = document.getElementById('room-occupancy-status');
+    const nameSpan = document.getElementById('occupant-name');
+    const feedbackText = document.getElementById('request-feedback');
+
+    if (!selectedRoom) return;
+
+    // ฟังข้อมูลจาก Firebase
+    onValue(ref(db, `active_sessions/${selectedRoom}`), (snapshot) => {
+        const session = snapshot.val();
+
+        if (session && session.isOpen) {
+            statusDiv.classList.remove('hidden');
+            nameSpan.innerText = session.tutor || "ติวเตอร์ท่านอื่น";
+
+            // ตรวจสอบว่าเราเคยส่งคำขอไปแล้วหรือยัง และเขาตอบกลับว่าอะไร
+            const request = session.forceCloseRequest;
+            const myName = checkAuth()?.nickname || checkAuth()?.fullName;
+
+            if (request && request.requestedBy === myName) {
+                feedbackText.classList.remove('hidden');
+                if (request.status === 'rejected') {
+                    feedbackText.innerText = "⚠️ เจ้าของห้องแจ้งว่า: ขอเวลาอีกสักครู่ (ยังไม่พร้อมออก)";
+                    feedbackText.className = "text-[10px] font-medium text-orange-600 mt-1 italic";
+                } else {
+                    feedbackText.innerText = "⏳ ส่งคำขอแล้ว... กำลังรอการตอบกลับ";
+                    feedbackText.className = "text-[10px] font-medium text-blue-500 mt-1 italic";
+                }
+            } else {
+                feedbackText.classList.add('hidden');
+            }
+        } else {
+            statusDiv.classList.add('hidden');
+            feedbackText.classList.add('hidden');
+        }
+    });
+});
+
+
 
 // ฟังก์ชันให้พี่สตาฟกดลบคำถามเมื่อตอบแล้ว
 window.deleteQuestion = function (key) {

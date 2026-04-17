@@ -109,6 +109,22 @@
                     </button>
                 </div>
             </div>
+
+            <!-- [CARD 2] All Rooms Status Overview -->
+            <div id="room-status-container" class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+                <h2 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span class="text-lg">📡</span> Live Room Status
+                </h2>
+                <div id="global-room-status" class="grid grid-cols-1 gap-3">
+                    <!-- รายชื่อห้อง A, B, C, D จะถูกสร้างจาก JS -->
+                    <div class="animate-pulse flex space-x-4">
+                        <div class="flex-1 space-y-4 py-1">
+                            <div class="h-4 bg-slate-200 rounded w-3/4"></div>
+                            <div class="h-4 bg-slate-200 rounded"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
     
             <!-- [GROUP: CONTROLS] แสดงเมื่อเริ่ม Session แล้ว -->
             <div id="tutor-controls" class="hidden space-y-6 animate-fade-in">
