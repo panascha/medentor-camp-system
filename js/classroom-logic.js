@@ -37,6 +37,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (window.location.pathname.includes('student.html')) {
+        const savedJoinedRoom = localStorage.getItem('joined_room');
+        if (savedJoinedRoom) {
+            myRoom = savedJoinedRoom;
+        }
         startRoomWatcher();
     }
 
@@ -106,21 +110,21 @@ window.startSession = async function () {
 };
 
 function handleSessionUI(session, roomId) {
-    const roomBadge = document.getElementById('room-badge');
     const interactionBar = document.getElementById('interaction-bar');
+    const roomBadge = document.getElementById('room-badge');
 
     if (session && session.isOpen) {
         if (roomBadge) roomBadge.innerText = `${roomId.replace('_', ' ')} | ${session.subject.toUpperCase()}`;
-        window.lastActiveSubject = session.subject;
-        if (window.isInClass && interactionBar) interactionBar.classList.remove('hidden');
+
+        if (window.isInClass && interactionBar) {
+            interactionBar.classList.remove('hidden');
+        }
     } else {
         if (roomBadge) roomBadge.innerText = `${roomId.replace('_', ' ')} | WAITING...`;
         if (interactionBar) interactionBar.classList.add('hidden');
 
-        if (window.isInClass && window.lastActiveSubject) {
-            if (typeof triggerRating === 'function') triggerRating(window.lastActiveSubject);
-            window.isInClass = false;
-        }
+        localStorage.removeItem('joined_room');
+        window.isInClass = false;
     }
 }
 
@@ -1066,7 +1070,8 @@ window.joinClass = async function () {
     Swal.fire({ title: 'กำลังเข้าสู่ห้องเรียน...', didOpen: () => Swal.showLoading() });
 
     try {
-        // ใช้ currentUser.id แทน userSession.id
+        localStorage.setItem('joined_room', myRoom);
+        window.isInClass = true; 
         const myPresenceRef = ref(db, `presence/${myRoom}/${currentUser.id}`);
         await set(myPresenceRef, {
             fullName: currentUser.fullName,
@@ -1101,10 +1106,17 @@ window.joinClass = async function () {
 };
 
 // --- [4] ฟังก์ชันฟังคำถาม (เหมือนเดิม) ---
-function initStudentListener() {
+window.initStudentListener = function () {
+    if (!myRoom) return;
     onValue(ref(db, `active_sessions/${myRoom}/current_activity`), (snapshot) => {
         const activity = snapshot.val();
-        if (!activity) return;
+
+        if (!activity) {
+            document.getElementById('response-form').classList.add('hidden');
+            document.getElementById('closed-state').classList.remove('hidden');
+            document.getElementById('closed-state').innerHTML = `<p class="text-slate-400 font-bold italic">ขณะนี้ไม่มีกิจกรรมการเรียนการสอน</p>`;
+            return;
+        }
 
         if (currentActivityId !== activity.activity_id) {
             document.getElementById('input-answer').value = "";
@@ -1128,12 +1140,15 @@ function initStudentListener() {
 
 // --- [5] ฟังก์ชันส่งคำตอบ (เหมือนเดิม) ---
 window.submitResponse = async function () {
-    const answer = document.getElementById('input-answer').value.trim();
-    const wantsToTalk = document.getElementById('check-talk').checked;
+    const answerEl = document.getElementById('input-answer');
+    const answer = answerEl.value.trim();
+    const checkTalkEl = document.getElementById('check-talk');
+    const wantsToTalk = checkTalkEl ? checkTalkEl.checked : false;
 
     if (!answer) return showToast("กรุณาพิมพ์คำตอบ", "error");
 
     try {
+        // 1. ส่งข้อมูลเข้า Firebase
         await push(ref(db, `responses/${myRoom}`), {
             activityID: currentActivityId,
             studentID: userSession.id,
@@ -1144,11 +1159,18 @@ window.submitResponse = async function () {
             timestamp: Date.now()
         });
 
-        Swal.fire({ icon: 'success', title: 'ส่งคำตอบแล้ว!', timer: 1500, showConfirmButton: false });
-        document.getElementById('response-form').classList.add('hidden');
-        document.getElementById('closed-state').innerHTML = `<p class="text-emerald-600 font-bold italic">ส่งคำตอบเรียบร้อยแล้ว ✅</p>`;
-        document.getElementById('closed-state').classList.remove('hidden');
-    } catch (e) { showToast("ส่งคำตอบไม่สำเร็จ", "error"); }
+        // 2. ถ้าส่งสำเร็จ ให้แสดงแจ้งเตือนเขียว
+        showToast("ส่งคำตอบแล้ว! สามารถตอบเพิ่มได้", "success");
+
+        // 3. เคลียร์ค่าในช่องพิมพ์
+        if (answerEl) answerEl.value = "";
+        if (checkTalkEl) checkTalkEl.checked = false;
+
+    } catch (e) {
+        // 👉 บรรทัดนี้จะช่วยพ่น Error จริงๆ ออกมาดูที่หน้าต่าง Console
+        console.error("เกิดข้อผิดพลาดหลังส่งคำตอบ:", e);
+        showToast("ส่งคำตอบไม่สำเร็จ", "error");
+    }
 };
 
 // --- [6] ตรวจสอบว่าอยู่หน้าไหน แล้วเริ่มทำงาน ---

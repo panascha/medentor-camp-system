@@ -158,26 +158,31 @@
 
         // 3. ตรวจสอบสถานะการ Login และดึงข้อมูลห้องเรียน
         if (myId) {
-                // อัปเดต UI เบื้องต้นก่อน
                 const roomBadge = document.getElementById('room-badge');
+                const savedJoinedRoom = localStorage.getItem('joined_room');
 
-                // ไปดึงข้อมูลโปรไฟล์ล่าสุดของน้องมาดูว่า ClassID คืออะไร
                 const studentRef = ref(db, `students/${myId}`);
                 onValue(studentRef, (snapshot) => {
                     const data = snapshot.val();
                     if (data && data.classID) {
                         myRoom = `Room_${data.classID}`;
-                        roomBadge.innerText = `${myRoom} | STANDBY`; // เปลี่ยนจาก Connecting เป็นชื่อห้อง
 
-                        // เมื่อรู้ห้องแล้ว ค่อยเริ่มฟังข้อมูลห้องเรียน
+                        // ตรวจสอบว่าห้องที่ Admin จัดให้ ตรงกับห้องที่เคย Join ไว้หรือไม่
+                        if (savedJoinedRoom === myRoom) {
+                            // ถ้าเคย Join ไว้แล้ว ให้ข้ามไปหน้าเรียนเลย
+                            window.isInClass = true;
+                            document.getElementById('subject-selector').classList.add('hidden');
+                            document.getElementById('activity-area').classList.remove('hidden');
+                            // เรียกใช้ Listener คำถาม
+                            if (typeof window.initStudentListener === 'function') {
+                                window.initStudentListener();
+                            }
+                        }
+
                         startWatchingActiveSession();
-                    } else {
-                        roomBadge.innerText = "ยังไม่มีห้องเรียน";
-                        roomBadge.classList.add('text-slate-400');
                     }
                 });
             }
-
         // ฟังข้อมูลห้องเพื่ออัปเดต activeSessionData
         if (myRoom) {
             onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
@@ -368,35 +373,28 @@
                     const interactionBar = document.getElementById('interaction-bar');
 
                     if (session && session.isOpen) {
-                        // --- [1] กรณี: ห้องเรียนกำลังเปิดสอน (LIVE) ---
                         roomBadge.innerText = `${myRoom} | ${session.subject.toUpperCase()}`;
-                        if (interactionBar) interactionBar.classList.remove('hidden');
+                        if (window.isInClass && interactionBar) interactionBar.classList.remove('hidden');
 
-                        // อัปเดตสถานะ (ใช้ window. เพื่อให้ classroom-logic.js มองเห็นด้วย)
-                        window.isInClass = true;
-                        lastActiveSubject = session.subject;
-                        hasRatedThisSession = false; // รีเซ็ตเพื่อรอประเมินเมื่อจบคลาส
-
+                        // เก็บชื่อวิชาไว้สำหรับทำ Rating
+                        window.lastActiveSubject = session.subject;
                     } else {
-                        // --- [2] กรณี: ห้องเรียนถูกปิด หรือยังไม่เปิด (WAITING) ---
                         roomBadge.innerText = `${myRoom} | WAITING...`;
                         if (interactionBar) interactionBar.classList.add('hidden');
 
-                        // ตรวจสอบว่า "เพิ่งเรียนจบ" ใช่ไหม? ถ้าใช่ ให้เด้งหน้าประเมิน
-                        if (window.isInClass && !hasRatedThisSession && lastActiveSubject !== "") {
-                            triggerRating(lastActiveSubject);
+                        // --- แก้ไขเงื่อนไข Rating: ใช้ window.lastActiveSubject ให้ตรงกัน ---
+                        if (window.isInClass && !hasRatedThisSession && window.lastActiveSubject) {
+                            triggerRating(window.lastActiveSubject);
+
+                            // ล้างค่าเมื่อทำ Rating แล้ว
+                            localStorage.removeItem('joined_room');
+                            window.isInClass = false;
+                            window.lastActiveSubject = "";
                         }
-
-                        // รีเซ็ตสถานะการเข้าเรียน
-                        window.isInClass = false;
-                    }
-
-                    // อัปเดตหน้าจอ Waiting Room (ถ้ามีฟังก์ชันนี้ในหน้าจอ)
-                    if (typeof renderWaitingRoom === 'function') {
-                        renderWaitingRoom(session);
                     }
                 });
             }
+            
     </script>
 </body>
 
