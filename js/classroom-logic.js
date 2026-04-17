@@ -6,6 +6,7 @@ const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
 const db = getDatabase(app);
 
 // 2. Local State
+const rooms = ['Room_A', 'Room_B', 'Room_C', 'Room_D'];
 let currentRoom = null;
 let currentSubject = null;
 let quotaUsed = 0;
