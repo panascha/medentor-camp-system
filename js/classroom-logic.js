@@ -755,63 +755,70 @@ window.updateActivity = async function (status) {
     }
 };
 
-window.runRandom = function (mode) {
-    // สุ่มจากเด็กทุกคนในคลาส (A, B, C, D) ตามโจทย์
+window.runRandom = async function (mode) {
     let list = allStudentsInClass;
-
     if (mode === 'volunteer') {
         list = allStudentsInClass.filter(s => responsesHistory[s.id]?.some(h => h.wantsToTalk));
     }
 
     if (list.length === 0) return showToast("ไม่มีรายชื่อให้สุ่ม", "error");
 
+    // อ้างอิง Element ในหน้า Tutor
     const slotList = document.getElementById('slot-list');
-    slotList.innerHTML = '';
+    const winner = list[Math.floor(Math.random() * list.length)];
 
-    // สร้างรายการสุ่ม (เอาชื่อเด็กมาสลับและเพิ่มจำนวนเพื่อให้ลื่นไหล)
-    const shuffle = [...list].sort(() => 0.5 - Math.random());
-    const repeatCount = 30; // จำนวนชื่อที่จะวิ่งผ่านหน้าจอ
+    try {
+        // --- [1] เริ่มการ Roll บนหน้าจอ Liveboard (Firebase) ---
+        await set(ref(db, `active_sessions/${currentRoom}/randomizer`), {
+            status: 'rolling',
+            pool: list,
+            ts: Date.now()
+        });
 
-    for (let i = 0; i < repeatCount; i++) {
-        const item = shuffle[i % shuffle.length];
-        const div = document.createElement('div');
-        div.className = 'slot-item';
-        div.innerText = item.nickname;
-        slotList.appendChild(div);
-    }
+        // --- [2] เริ่มการ Roll บนหน้าจอ Tutor (Local UI) ---
+        let tutorRollInterval = setInterval(() => {
+            const randomPerson = list[Math.floor(Math.random() * list.length)];
+            // แสดงชื่อในช่อง Slot Item บนหน้า Tutor
+            slotList.innerHTML = `<div class="slot-item animate-pulse text-blue-600">${randomPerson.nickname}</div>`;
+        }, 80); // วิ่งความเร็วใกล้เคียงกับหน้าจอใหญ่
 
-    let currentPos = 0;
-    let speed = 40; // เริ่มต้นที่ความเร็วปกติ
-    let moveCount = 0;
-    const totalMove = (repeatCount - 1) * 80;
+        // --- [3] หน่วงเวลาลุ้น (3.5 วินาที) ---
+        setTimeout(async () => {
+            // หยุดการวิ่งบนหน้า Tutor
+            clearInterval(tutorRollInterval);
 
-    function animate() {
-        currentPos += 80;
-        slotList.style.transform = `translateY(-${currentPos}px)`;
-        moveCount++;
+            // แสดงชื่อผู้ชนะบนหน้า Tutor
+            slotList.innerHTML = `<div class="slot-item text-yellow-500 font-black scale-110 transition-transform">${winner.nickname}</div>`;
 
-        if (moveCount < repeatCount - 1) {
-            // ค่อยๆ ช้าลงในช่วง 5 ชื่อสุดท้าย
-            if (moveCount > repeatCount - 6) speed += 150;
-            else if (moveCount > repeatCount - 10) speed += 50;
+            // ส่งคำสั่งหยุดไปที่หน้า Liveboard (Firebase)
+            await update(ref(db, `active_sessions/${currentRoom}/randomizer`), {
+                status: 'winner',
+                winner: winner
+            });
 
-            setTimeout(animate, speed);
-        } else {
-            // จบการสุ่ม
-            const winner = shuffle[(repeatCount - 1) % shuffle.length];
+            // แสดง Popup ยืนยันการให้คะแนน
             Swal.fire({
                 title: '🎉 ผู้โชคดี!',
-                text: `ยินดีด้วยกับน้อง ${winner.nickname} (บ้าน ${winner.house})`,
+                html: `น้อง <b>${winner.nickname}</b> (บ้าน ${winner.house})`,
                 icon: 'success',
-                confirmButtonText: 'ให้คะแนน +10',
                 showCancelButton: true,
-                cancelButtonText: 'ข้าม'
-            }).then(res => {
+                confirmButtonText: 'ให้คะแนน +10',
+                cancelButtonText: 'ปิดหน้าจอการสุ่ม',
+                allowOutsideClick: false
+            }).then(async (res) => {
                 if (res.isConfirmed) giveScore(winner.id, winner.nickname, 10);
+
+                // รีเซ็ตหน้าจอทั้งคู่กลับสู่สถานะปกติ
+                await set(ref(db, `active_sessions/${currentRoom}/randomizer`), { status: 'idle' });
+                slotList.innerHTML = `<div class="slot-item">READY TO ROLL</div>`;
             });
-        }
+
+        }, 3500);
+
+    } catch (e) {
+        console.error(e);
+        showToast("เกิดข้อผิดพลาดในการสุ่ม", "error");
     }
-    animate();
 };
 
 window.finishSession = async function (isAuto = false) {
