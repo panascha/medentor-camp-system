@@ -4,7 +4,7 @@ function generateSessionId() {
 }
 
 // --- [1] Login สำหรับนักเรียน (ID, House, Nickname) ---
-async function loginStudent(id, house, nickname) {
+window.loginStudent = async function (id, house, nickname) {
     try {
         const response = await fetch(`${CONFIG.firebaseURL}students/${id}.json?auth=${CONFIG.fbSecret}`);
         const student = await response.json();
@@ -34,53 +34,52 @@ async function loginStudent(id, house, nickname) {
 }
 
 // --- [2] Login สำหรับสตาฟ (StudentID, Password) ---
-async function loginStaff(studentID, password) {
+window.loginStaff = async function (studentID, password) {
     try {
         const response = await fetch(`${CONFIG.firebaseURL}staff/${studentID}.json?auth=${CONFIG.fbSecret}`);
         const staff = await response.json();
 
         if (staff && staff.password === password) {
             const newSessionId = generateSessionId();
-            const isStaff = staff.role === 'Admin' || staff.role === 'Staff';
 
-            if (isStaff) {
-                // ดึงรายการ Session เดิมของสตาฟ
-                const loginResp = await fetch(`${CONFIG.firebaseURL}active_logins/${studentID}.json?auth=${CONFIG.fbSecret}`);
-                const loginData = await loginResp.json();
-                let sessions = (loginData && loginData.sessions) ? loginData.sessions : [];
+            const loginResp = await fetch(`${CONFIG.firebaseURL}active_logins/${studentID}.json?auth=${CONFIG.fbSecret}`);
+            const loginData = await loginResp.json();
+            let sessions = (loginData && loginData.sessions) ? loginData.sessions : [];
 
-                // ถ้าเกิน 2 เครื่อง ให้เอาเครื่องเก่าที่สุดออก (FIFO)
-                sessions.push(newSessionId);
-                if (sessions.length > 2) {
-                    sessions.shift();
-                }
+            // เพิ่ม Session ใหม่เข้าไป
+            sessions.push(newSessionId);
 
-                await fetch(`${CONFIG.firebaseURL}active_logins/${studentID}.json?auth=${CONFIG.fbSecret}`, {
-                    method: "PUT",
-                    body: JSON.stringify({ sessions: sessions, lastLogin: Date.now() })
-                });
+            // ถ้าเกิน 2 เครื่อง ให้เอาเครื่องที่เก่าที่สุดออก (FIFO)
+            if (sessions.length > 2) {
+                sessions.shift();
             }
+
+            // อัปเดตกลับไปที่ Firebase
+            await fetch(`${CONFIG.firebaseURL}active_logins/${studentID}.json?auth=${CONFIG.fbSecret}`, {
+                method: "PUT",
+                body: JSON.stringify({
+                    sessions: sessions,
+                    lastLogin: Date.now(),
+                })
+            });
 
             const sessionData = { ...staff, userType: 'staff', sessionId: newSessionId };
             localStorage.setItem("userSession", JSON.stringify(sessionData));
             return { success: true, data: sessionData };
         } else {
-            return { success: false, message: "รหัสผ่านไม่ถูกต้อง" };
+            return { success: false, message: "รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง" };
         }
     } catch (e) {
+        console.error(e);
         return { success: false, message: "เชื่อมต่อล้มเหลว" };
     }
 }
 
 // --- [3] ฟังก์ชันตรวจสอบ Session ปัจจุบัน (สำหรับทุกหน้า) ---
-async function validateCurrentSession() {
+window.validateCurrentSession = async function () {
     const session = JSON.parse(localStorage.getItem("userSession"));
 
-    // 1. ถ้าไม่มี Session ในเครื่องเลย
     if (!session) return false;
-
-    // 2. ถ้าเป็น Admin ให้ผ่านตลอด (ตามโจทย์)
-    if (session.role === 'Admin') return true;
 
     try {
         const id = session.id || session.studentID;
@@ -98,7 +97,7 @@ async function validateCurrentSession() {
 }
 
 // --- [4] เปลี่ยนรหัสผ่านสตาฟ ---
-async function resetStaffPassword(id, name, nick, year, faculty, newPassword) {
+window.resetStaffPassword = async function (id, name, nick, year, faculty, newPassword) {
     try {
         // 1. ตรวจสอบตัวตนสตาฟจาก Firebase ก่อน
         const response = await fetch(`${CONFIG.firebaseURL}staff/${id}.json?auth=${CONFIG.fbSecret}`);
@@ -143,13 +142,13 @@ async function resetStaffPassword(id, name, nick, year, faculty, newPassword) {
 }
 
 // --- [5] ฟังก์ชันตรวจสอบ Session ---
-function checkAuth() {
+window.checkAuth = function () {
     const session = localStorage.getItem("userSession");
     return session ? JSON.parse(session) : null;
 }
 
 // --- [6] ฟังก์ชัน Logout ---
-function logout() {
+window.logout = function () {
     localStorage.removeItem("userSession");
     window.location.href = (window.location.pathname.includes('pages/')) ? 'login.html' : 'pages/login.html';
 }

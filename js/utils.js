@@ -1,5 +1,8 @@
-// js/utils.js
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { goOnline, goOffline, getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
+const db = getDatabase(app);
 
 // [1] ระบบจัดการ Connection (Quota Saved)
 window.setupConnectionManager = function (db) {
@@ -46,34 +49,37 @@ async function validateCurrentSession() {
 // ระบบตรวจสอบการเชื่อมต่อ (Online/Offline)
 function startSessionListener() {
     const session = JSON.parse(localStorage.getItem("userSession"));
+    if (!session) return;
+
+    // หมายเหตุ: ถ้าไม่ต้องการให้ Admin โดนเตะ ให้ใส่บรรทัดนี้:
+    // if (session.role === 'Admin') return;
 
     const id = session.id || session.studentID;
-    // ใช้ db จาก window ที่ classroom-logic.js สร้างไว้ หรือสร้างใหม่ถ้ายังไม่มี
-    const database = window.db || getDatabase();
-    const loginRef = ref(database, `active_logins/${id}`);
+    const loginRef = ref(db, `active_logins/${id}`);
 
     // ฟังการเปลี่ยนแปลงข้อมูลกิ่งนี้
-    onValue(loginRef, async (snapshot) => {
+    onValue(loginRef, (snapshot) => {
         const data = snapshot.val();
+        // ดึงข้อมูล session ปัจจุบันในเครื่องมาเทียบอีกครั้ง
+        const currentLocal = JSON.parse(localStorage.getItem("userSession"));
 
-        // ถ้ามีข้อมูลใน Firebase แต่ไม่มี Session ID ปัจจุบันของเราอยู่ในลิสต์
-        if (data && data.sessions && !data.sessions.includes(session.sessionId)) {
+        if (data && data.sessions && currentLocal) {
+            // ถ้า sessionId ของเครื่องเรา ไม่อยู่ในรายชื่อที่ Firebase อนุญาตแล้ว
+            if (!data.sessions.includes(currentLocal.sessionId)) {
 
-            // ปิดการดักฟังเพื่อไม่ให้รันซ้ำ
-            // (onValue จะหยุดทำงานเมื่อเราเปลี่ยนหน้าหรือ logout)
+                localStorage.removeItem("userSession");
 
-            localStorage.removeItem("userSession");
-
-            await Swal.fire({
-                title: 'เซสชั่นหมดอายุ',
-                text: 'มีการเข้าสู่ระบบจากอุปกรณ์อื่น บัญชีของคุณในเครื่องนี้จะถูกออกจากระบบ',
-                icon: 'error',
-                confirmButtonText: 'ตกลง',
-                allowOutsideClick: false
-            });
-
-            // ดีดกลับหน้า Login
-            window.location.href = window.location.pathname.includes('pages/') ? 'login.html' : 'pages/login.html';
+                Swal.fire({
+                    title: 'เซสชั่นหมดอายุ',
+                    text: 'มีการเข้าสู่ระบบจากอุปกรณ์อื่น (จำกัด 1 เครื่องสำหรับน้อง / 2 เครื่องสำหรับพี่)',
+                    icon: 'warning',
+                    confirmButtonText: 'ตกลง',
+                    allowOutsideClick: false
+                }).then(() => {
+                    const isInsidePages = window.location.pathname.includes('pages/');
+                    window.location.href = isInsidePages ? 'login.html' : 'pages/login.html';
+                });
+            }
         }
     });
 }
@@ -102,5 +108,3 @@ window.protectPage = async function () {
 
 // รันการตรวจสอบทันทีเมื่อโหลดหน้าจอ
 protectPage();
-
-// ตรวจสอบซ้ำทุก 1 นาที
