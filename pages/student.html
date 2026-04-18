@@ -299,6 +299,7 @@
         let hasRatedThisSession = false;
         let lastSubjectForRating = "";
         let lastActiveSubject = "";
+        let lastTutorName = "ไม่ระบุชื่อ";
 
 
         if (myRoom) {
@@ -308,6 +309,7 @@
 
                 if (session && session.isOpen) {
                     if (interactionBar) interactionBar.classList.remove('hidden');
+                    lastTutorName = session.tutor || "ไม่ระบุชื่อ"; 
                     lastSubjectForRating = session.subject;
                     hasRatedThisSession = false;
                 } else {
@@ -349,10 +351,12 @@
             if (hasRatedThisSession) return;
             hasRatedThisSession = true;
 
+            const tutorName = lastTutorName;
+        
             const { value: formValues } = await Swal.fire({
                 title: 'การสอนในคาบเรียนนี้เป็นยังไงบ้าง?',
                 html: `
-            <p class="text-xs text-slate-500 mb-4">วิชา ${subject.toUpperCase()}</p>
+            <p class="text-xs text-slate-500 mb-4">วิชา ${subject.toUpperCase()} | พี่${tutorName}</p>
             <div class="flex flex-col gap-4">
                 <select id="swal-rating" class="p-3 border rounded-xl font-bold">
                     <option value="5">⭐⭐⭐⭐⭐ (ดีมาก)</option>
@@ -384,12 +388,13 @@
                         key: CONFIG.syncKey,
                         room: myRoom,
                         subject: subject,
+                        tutor: tutorName,
                         rating: formValues.rating,
                         comment: formValues.comment
                     })
                 });
 
-                await Swal.fire('ขอบคุณครับ!', 'ความเห็นของน้องมีค่ามาก', 'success');
+                await Swal.fire('ขอบคุณสำหรับความคิดเห็นครับ!', 'success');
 
                 // ล้างสถานะเข้าเรียนหลังจากประเมินเสร็จ
                 window.isInClass = false;

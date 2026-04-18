@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ratings Dashboard - Medentor System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 min-h-screen">
+
+    <nav class="bg-white border-b p-4 sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <a href="../index.html" class="text-blue-600 font-bold flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path
+                        d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" />
+                </svg>
+                กลับหน้าหลัก
+            </a>
+            <div class="text-right">
+                <h1 class="text-lg font-black text-slate-800 uppercase italic leading-none">Ratings Dashboard</h1>
+                <p id="view-mode-badge" class="text-[9px] font-bold text-blue-500 mt-1 uppercase tracking-widest">
+                    Loading...</p>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto p-6">
+        <!-- Stats Header -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Average Rating</p>
+                <div class="flex items-end gap-1">
+                    <span id="stat-avg" class="text-4xl font-black text-blue-600">0.0</span>
+                    <span class="text-slate-300 text-sm mb-1">/ 5.0</span>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Feedbacks</p>
+                <span id="stat-count" class="text-4xl font-black text-slate-800">0</span>
+            </div>
+            <div class="md:col-span-2 bg-slate-800 p-6 rounded-[2rem] shadow-lg flex items-center justify-between">
+                <div class="text-white">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ยินดีต้อนรับ</p>
+                    <h2 id="user-display-name" class="text-xl font-black">กำลังโหลด...</h2>
+                </div>
+                <div id="admin-icon"
+                    class="hidden w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center text-2xl">🛡️</div>
+            </div>
+        </div>
+
+        <!-- Filter Area (Only for Admin) -->
+        <div id="admin-filters"
+            class="hidden bg-white p-6 rounded-3xl shadow-sm border border-slate-100 mb-8 flex flex-wrap gap-4">
+            <div class="flex-1 min-w-[200px]">
+                <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Filter by Tutor</label>
+                <select id="filter-tutor" onchange="renderDashboard()"
+                    class="w-full mt-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none">
+                    <option value="all">ทุกคน (All Tutors)</option>
+                </select>
+            </div>
+            <div class="flex-1 min-w-[200px]">
+                <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Filter by Subject</label>
+                <select id="filter-subject" onchange="renderDashboard()"
+                    class="w-full mt-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none">
+                    <option value="all">ทุกวิชา (All Subjects)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Feedback List -->
+        <div id="loading-state" class="text-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p class="text-slate-400 font-bold uppercase tracking-widest text-xs">กำลังรวบรวมข้อมูล...</p>
+        </div>
+
+        <div id="feedback-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Feedbacks will appear here -->
+        </div>
+    </main>
+
+    <script src="../js/firebase-config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script type="module" src="../js/utils.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+        // 1. Initialize Firebase
+        const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
+        const db = getDatabase(app);
+
+        let allRatings = [];
+        const user = checkAuth();
+
+        function init() {
+            if (!user || user.userType !== 'staff') {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            document.getElementById('user-display-name').innerText = user.nickname || user.fullName;
+
+            if (user.role === 'Admin') {
+                document.getElementById('admin-filters').classList.remove('hidden');
+                document.getElementById('admin-icon').classList.remove('hidden');
+                document.getElementById('view-mode-badge').innerText = "Admin View: All Data";
+            } else {
+                document.getElementById('view-mode-badge').innerText = "Tutor View: Your Data";
+            }
+
+            // 2. ดึงข้อมูลจากกิ่ง 'ratings'
+            const ratingsRef = ref(db, 'ratings');
+
+            // เพิ่ม Error Handling
+            onValue(ratingsRef, (snapshot) => {
+                console.log("Firebase connected. Snapshot exists:", snapshot.exists());
+
+                const data = snapshot.val();
+                document.getElementById('loading-state').classList.add('hidden');
+
+                if (!data) {
+                    console.log("No data found in Firebase path 'ratings'");
+                    allRatings = [];
+                    renderDashboard();
+                    return;
+                }
+
+                // แปลงข้อมูลจาก Object เป็น Array และคัดกรองเฉพาะตัวที่มีข้อมูลครบ
+                allRatings = Object.keys(data).map(key => data[key]);
+
+                // เรียงลำดับตามเวลา (ล่าสุดขึ้นก่อน)
+                allRatings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+                console.log("Total Ratings Loaded:", allRatings.length);
+
+                if (user.role === 'Admin') setupAdminFilters();
+                renderDashboard();
+            }, (error) => {
+                console.error("Firebase Error:", error);
+                document.getElementById('loading-state').innerHTML = `<p class="text-red-500 font-bold">เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล</p>`;
+            });
+        }
+
+        let filtersSet = false;
+        function setupAdminFilters() {
+            if (filtersSet) return; // แอดครั้งเดียว
+
+            const tutors = [...new Set(allRatings.map(r => r.tutor).filter(t => t))];
+            const subjects = [...new Set(allRatings.map(r => r.subject).filter(s => s))];
+
+            const tutorSelect = document.getElementById('filter-tutor');
+            const subSelect = document.getElementById('filter-subject');
+
+            tutors.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t;
+                opt.innerText = t;
+                tutorSelect.appendChild(opt);
+            });
+
+            subjects.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.innerText = s.toUpperCase();
+                subSelect.appendChild(opt);
+            });
+
+            filtersSet = true;
+        }
+
+        window.renderDashboard = function () {
+            const myName = user.nickname || user.fullName;
+            let displayData = allRatings;
+
+            // กรองสิทธิ์
+            if (user.role !== 'Admin') {
+                displayData = allRatings.filter(r => r.tutor === myName);
+            } else {
+                const tutorFilter = document.getElementById('filter-tutor').value;
+                const subFilter = document.getElementById('filter-subject').value;
+
+                if (tutorFilter !== 'all') displayData = displayData.filter(r => r.tutor === tutorFilter);
+                if (subFilter !== 'all') displayData = displayData.filter(r => r.subject === subFilter);
+            }
+
+            // อัปเดตตัวเลข
+            const total = displayData.length;
+            const avg = total > 0 ? (displayData.reduce((a, b) => a + Number(b.rating), 0) / total).toFixed(1) : "0.0";
+
+            document.getElementById('stat-avg').innerText = avg;
+            document.getElementById('stat-count').innerText = total;
+
+            const grid = document.getElementById('feedback-grid');
+
+            if (total === 0) {
+                grid.innerHTML = `<div class="col-span-full py-20 text-center text-slate-400 italic font-bold">ยังไม่มีข้อมูลการประเมินที่ตรงกับเงื่อนไข</div>`;
+                return;
+            }
+
+            grid.innerHTML = displayData.map(r => `
+                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 hover:border-blue-300 transition-all">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${r.subject || 'N/A'} | ${r.room || 'N/A'}</span>
+                            <h3 class="font-bold text-slate-800">${user.role === 'Admin' ? 'ติวเตอร์: ' + (r.tutor || 'ไม่ระบุ') : 'Feedback ของคุณ'}</h3>
+                        </div>
+                        <div class="text-sm">
+                            ${'⭐'.repeat(r.rating || 0)}
+                        </div>
+                    </div>
+                    <p class="text-slate-600 text-sm italic bg-slate-50 p-4 rounded-2xl border-l-4 border-blue-100">
+                        "${r.comment || 'ไม่มีข้อความเพิ่มเติม'}"
+                    </p>
+                    <div class="mt-4 text-[9px] text-slate-400 font-bold uppercase text-right">
+                        ${r.timestamp ? new Date(r.timestamp).toLocaleString('th-TH') : '-'}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
