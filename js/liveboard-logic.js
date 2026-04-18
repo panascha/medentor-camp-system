@@ -5,6 +5,10 @@ import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.
 const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
 const db = getDatabase(app);
 
+if (window.setupConnectionManager) {
+    window.setupConnectionManager(db);
+}
+
 // 2. Global State (ตัวแปรเก็บสถานะปัจจุบัน)
 let lastReactionTs = 0;
 let rollInterval = null;
