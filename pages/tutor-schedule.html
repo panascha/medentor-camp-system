@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutor Schedule - Medentor System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 min-h-screen">
+
+    <nav class="bg-white border-b p-4 sticky top-0 z-50">
+        <div class="max-w-xl mx-auto flex justify-between items-center">
+            <a href="../index.html" class="text-blue-600 font-bold flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd"
+                        d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
+                        clip-rule="evenodd" />
+                </svg>
+                กลับหน้าหลัก
+            </a>
+            <h1 class="text-lg font-black text-slate-800 italic uppercase">Teaching Plan</h1>
+        </div>
+    </nav>
+
+    <main class="max-w-xl mx-auto p-4 space-y-6 pb-20">
+        <!-- Tutor Info Header -->
+        <div class="bg-slate-800 p-6 rounded-[2rem] text-white shadow-xl shadow-slate-200">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-[10px] font-black uppercase tracking-widest opacity-70">ฝ่าย / Division</p>
+                    <h2 id="display-division" class="text-2xl font-black text-blue-400">...</h2>
+                </div>
+                <div id="role-badge" class="bg-white/10 px-3 py-1 rounded-full text-[10px] font-bold">STAFF</div>
+            </div>
+            <p class="text-xs mt-3 opacity-80">แสดงเฉพาะคาบสอนของฝ่ายคุณ และกิจกรรมรวมของค่าย</p>
+        </div>
+
+        <!-- Date Tabs -->
+        <div id="day-tabs" class="flex gap-2 overflow-x-auto pb-2 custom-scrollbar"></div>
+
+        <!-- Schedule List -->
+        <div id="schedule-list" class="space-y-4">
+            <div class="py-20 text-center text-slate-400 italic">กำลังตรวจสอบตารางสอน...</div>
+        </div>
+    </main>
+
+    <script src="../js/firebase-config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+        const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
+        const db = getDatabase(app);
+        const user = checkAuth();
+
+        let allItems = [];
+        let selectedDay = "";
+
+        // Mapping ระหว่าง Subject ID (ในตาราง) กับ Division (ในรายชื่อ Staff)
+        const SUB_TO_DIV = {
+            physic: "ฟิสิกส์",
+            chemistry: "เคมี",
+            biology: "ชีววิทยา",
+            introdent: "IntroDent",
+            intromed: "IntroMed"
+        };
+
+        function init() {
+            if (!user || user.userType !== 'staff') {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            document.getElementById('display-division').innerText = user.division;
+            if (user.role === 'Admin') document.getElementById('role-badge').innerText = "ADMIN";
+
+            onValue(ref(db, 'schedule'), (snapshot) => {
+                const data = snapshot.val();
+                if (!data) return;
+
+                const myDivision = user.division;
+                const isAdmin = user.role === 'Admin' || user.division === 'วิชาการ';
+
+                // --- LOGIC การกรองข้อมูลสำหรับพี่สตาฟ ---
+                allItems = Object.values(data).filter(item => {
+                    // 1. ถ้าเป็น Admin หรือฝ่ายวิชาการ ให้เห็นทั้งหมด
+                    if (isAdmin) return true;
+                    // 2. ถ้าวิชาในตาราง ตรงกับฝ่ายตัวเอง
+                    if (SUB_TO_DIV[item.subject] === myDivision) return true;
+                    // 3. ถ้าเป็นกิจกรรมรวม (ALL)
+                    if (item.classTarget === "ALL") return true;
+
+                    return false;
+                });
+
+                const days = [...new Set(allItems.map(i => i.day))];
+                if (!selectedDay) selectedDay = days[0];
+                renderTabs(days);
+                renderSchedule();
+            });
+        }
+
+        function renderTabs(days) {
+            const container = document.getElementById('day-tabs');
+            container.innerHTML = days.map(day => `
+                <button onclick="setDay('${day}')" class="px-6 py-2 rounded-full font-bold text-sm whitespace-nowrap transition-all ${selectedDay === day ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}">
+                    ${day}
+                </button>
+            `).join('');
+        }
+
+        window.setDay = function (day) {
+            selectedDay = day;
+            renderSchedule();
+            renderTabs([...new Set(allItems.map(i => i.day))]);
+        }
+
+        function renderSchedule() {
+            const container = document.getElementById('schedule-list');
+            const filtered = allItems.filter(i => i.day === selectedDay);
+
+            const SUBJECT_NAMES = {
+                physic: "ฟิสิกส์", chemistry: "เคมี", biology: "ชีววิทยา",
+                introdent: "Intro to Dent", intromed: "Intro to Med"
+            };
+
+            container.innerHTML = filtered.map(item => {
+                const isMyDept = SUB_TO_DIV[item.subject] === user.division;
+                return `
+                <div class="bg-white p-5 rounded-[2rem] shadow-sm border-2 ${isMyDept ? 'border-blue-500 bg-blue-50/30' : 'border-slate-100'} flex gap-4 transition-all">
+                    <div class="flex flex-col items-center justify-center min-w-[70px] border-r pr-4">
+                        <span class="text-xs font-black text-slate-800">${item.startTime}</span>
+                        <span class="text-[9px] text-slate-400 font-bold uppercase">TO</span>
+                        <span class="text-xs font-bold text-slate-400">${item.endTime}</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex justify-between items-start">
+                            <h3 class="font-black text-slate-800 text-lg leading-tight">
+                                ${SUBJECT_NAMES[item.subject] || item.subject}
+                            </h3>
+                            <span class="text-[8px] font-black px-2 py-0.5 rounded-full ${item.classTarget === 'ALL' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">
+                                CLASS ${item.classTarget}
+                            </span>
+                        </div>
+                        <p class="text-slate-500 text-xs mt-1">ผู้สอน: ${item.tutor || '-'}</p>
+                        <div class="mt-3 flex items-center justify-between">
+                            <div class="flex items-center gap-1 text-slate-400">
+                                <span class="text-[10px] font-bold">📍 ${item.room}</span>
+                            </div>
+                            ${isMyDept ? '<span class="text-[9px] font-black text-blue-600 uppercase tracking-tighter animate-pulse">● Your Session</span>' : ''}
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

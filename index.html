@@ -104,6 +104,20 @@
             <!-- ปรับเป็น 4 คอลัมน์บนจอใหญ่ -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         
+                <!-- Card: Tutor Schedule -->
+                <a href="pages/tutor-schedule.html"
+                    class="glass-card group p-6 rounded-2xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div
+                        class="w-12 h-12 bg-slate-100 text-slate-800 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">ตารางสอน / แผนงาน</h3>
+                    <p class="text-xs text-slate-500">ดูคาบสอนที่ได้รับมอบหมายและแผนกิจกรรมรวม</p>
+                </a>
+                
                 <!-- Card 1: Scoring (เหมือนเดิม) -->
                 <a href="pages/scoring.html"
                     class="glass-card group p-6 rounded-2xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
@@ -185,10 +199,32 @@
         <section id="student-section" class="hidden space-y-6">
             <h2 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4 ml-1">Student Dashboard</h2>
         
-            <!-- เพิ่มส่วนทางเข้าห้องเรียนแบบ Live Card ด้านบนสุด -->
-            <div class="grid grid-cols-1 gap-6">
+            <!-- [แถวที่ 1] Action Cards: ตารางเรียน & ห้องเรียน Live -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-                <!-- [เพิ่มใหม่] Card: ร่วมกิจกรรมในห้องเรียน -->
+                <!-- Card: ตารางเรียน (Schedule) -->
+                <a href="pages/schedule.html"
+                    class="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200 group transition-all hover:shadow-lg hover:border-emerald-200">
+                    <div class="flex flex-col h-full justify-between">
+                        <div>
+                            <span
+                                class="bg-emerald-100 text-emerald-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Timetable</span>
+                            <h3 class="text-2xl font-black text-slate-800 mt-4 leading-tight">ตารางเรียน<br>ประจำวัน</h3>
+                            <p class="text-slate-400 text-xs mt-1">เช็คเวลาเรียน วิชา และอาคารเรียน</p>
+                        </div>
+                        <div class="flex items-center gap-2 text-emerald-600 font-bold mt-6 text-sm">
+                            ดูตารางเรียน
+                            <svg xmlns="http://www.w3.org/2000/svg"
+                                class="h-5 w-5 group-hover:translate-x-2 transition-transform" fill="none" viewBox="0 0 24 24"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                        </div>
+                    </div>
+                </a>
+        
+                <!-- Card: ร่วมกิจกรรมห้องเรียน (Live Activity) -->
                 <a href="pages/student.html"
                     class="bg-blue-600 p-8 rounded-[2rem] shadow-xl shadow-blue-100 group relative overflow-hidden transition-all hover:scale-[1.02] active:scale-95">
                     <div class="relative z-10 flex flex-col h-full justify-between">
@@ -213,35 +249,12 @@
                         class="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700">
                     </div>
                 </a>
-        
-                <!-- [เพิ่มใหม่] Card: ดู Leaderboard สำหรับนักเรียน -->
-                <!-- <a href="pages/leaderboard.html"
-                    class="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200 group transition-all hover:shadow-lg hover:border-blue-200">
-                    <div class="flex flex-col h-full justify-between">
-                        <div>
-                            <span
-                                class="bg-orange-100 text-orange-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">House
-                                Ranking</span>
-                            <h3 class="text-2xl font-black text-slate-800 mt-4 leading-tight">คะแนนรวม<br>รายบ้าน</h3>
-                            <p class="text-slate-400 text-xs mt-1">ตรวจสอบอันดับของบ้านตัวเอง</p>
-                        </div>
-                        <div class="flex items-center gap-2 text-blue-600 font-bold mt-6 text-sm">
-                            ดู Leaderboard
-                            <svg xmlns="http://www.w3.org/2000/svg"
-                                class="h-5 w-5 group-hover:translate-x-2 transition-transform" fill="none" viewBox="0 0 24 24"
-                                stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                            </svg>
-                        </div>
-                    </div>
-                </a> -->
             </div>
         
-            <!-- ส่วนประกาศห้องเรียน และคะแนน Post-test เดิม (เอามาครอบ Grid ไว้) -->
+            <!-- [แถวที่ 2] Info Cards: ประกาศห้องเรียน & ผลคะแนน -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-                <!-- Card: Room Reveal (เหมือนเดิม) -->
+                <!-- Card: Room Reveal -->
                 <div class="bg-white rounded-3xl p-8 shadow-xl border-4 border-blue-50 relative overflow-hidden group">
                     <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-24 w-24" fill="none" viewBox="0 0 24 24"
@@ -251,7 +264,7 @@
                         </svg>
                     </div>
                     <h3 class="text-xl font-black text-slate-800 mb-2">ประกาศห้องเรียนประจำกลุ่ม</h3>
-                    <p class="text-slate-500 text-sm mb-6">ห้องเรียนนี้จะใช้สำหรับการเข้าเรียนกิจกรรมวิชาการตลอดทั้งค่าย</p>
+                    <p class="text-slate-500 text-sm mb-6">ห้องเรียนที่จะใช้สำหรับเข้าเรียนตลอดทั้งค่าย</p>
                     <div id="room-hidden-state" class="flex flex-col items-center justify-center py-10 space-y-4">
                         <div class="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-blue-200 animate-bounce cursor-pointer hover:rotate-12 transition-transform"
                             onclick="revealRoom()">
@@ -269,7 +282,7 @@
                     </div>
                 </div>
         
-                <!-- Card: Post-test Results (เหมือนเดิม) -->
+                <!-- Card: Post-test Results -->
                 <div class="bg-slate-900 rounded-3xl p-8 shadow-xl text-white relative overflow-hidden">
                     <h3 class="text-xl font-black mb-1">ผลคะแนนสอบ (Post-test)</h3>
                     <div id="score-container" class="space-y-4">
@@ -292,7 +305,7 @@
                         </div>
                         <div id="score-pending" class="hidden py-10 text-center">
                             <div class="text-4xl mb-3 text-slate-700">🔒</div>
-                            <p class="text-slate-400 text-sm">ผลคะแนน Post-test จะประกาศ<br>หลังจากสิ้นสุดกิจกรรมวิชาการ</p>
+                            <p class="text-slate-400 text-sm">ผลคะแนนจะประกาศหลังสิ้นสุดค่าย</p>
                         </div>
                     </div>
                 </div>

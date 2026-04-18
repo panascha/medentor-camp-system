@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camp Schedule - Medentor System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 min-h-screen">
+
+    <nav class="bg-white border-b p-4 sticky top-0 z-50">
+        <div class="max-w-xl mx-auto flex justify-between items-center">
+            <a href="../index.html" class="text-blue-600 font-bold flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd"
+                        d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
+                        clip-rule="evenodd" />
+                </svg>
+                กลับหน้าหลัก
+            </a>
+            <h1 class="text-lg font-black text-slate-800 italic uppercase">Schedule</h1>
+        </div>
+    </nav>
+
+    <main class="max-w-xl mx-auto p-4 space-y-6 pb-20">
+        <!-- Student Info Header -->
+        <div class="bg-blue-600 p-6 rounded-[2rem] text-white shadow-xl shadow-blue-100">
+            <p class="text-[10px] font-black uppercase tracking-widest opacity-70">Your Class ID</p>
+            <h2 id="display-class" class="text-3xl font-black">Class -</h2>
+            <p class="text-xs mt-1 opacity-90">ตารางเรียนจะแสดงเฉพาะวิชาของกลุ่มคุณเท่านั้น</p>
+        </div>
+
+        <!-- Date Filter Tab -->
+        <div id="day-tabs" class="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+            <!-- Days will be generated here -->
+        </div>
+
+        <!-- Schedule Timeline -->
+        <div id="schedule-list" class="space-y-4">
+            <!-- Items will be generated here -->
+            <div class="py-20 text-center text-slate-400">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                กำลังโหลดตารางเรียน...
+            </div>
+        </div>
+    </main>
+
+    <script src="../js/firebase-config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+        const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
+        const db = getDatabase(app);
+
+        const user = checkAuth();
+        let allItems = [];
+        let selectedDay = "";
+        function getSubjectName(key) {
+                const SUBJECTS = {
+                    physic: "ฟิสิกส์",
+                    chemistry: "เคมี",
+                    biology: "ชีววิทยา",
+                    introdent: "Intro to Dent",
+                    intromed: "Intro to Med"
+                };
+                return SUBJECTS[key] || key; // ถ้าไม่เจอให้คืนค่าเดิม
+            }
+
+        function init() {
+            if (!user) { window.location.href = 'login.html'; return; }
+
+            const myClass = user.classID ? user.classID.toUpperCase() : "ยังไม่มีกลุ่ม";
+            document.getElementById('display-class').innerText = "Class " + myClass;
+
+            const scheduleRef = ref(db, 'schedule');
+            onValue(scheduleRef, (snapshot) => {
+                const data = snapshot.val();
+                if (!data) {
+                    document.getElementById('schedule-list').innerHTML = "<p class='text-center py-20 text-slate-400'>ยังไม่มีข้อมูลตารางเรียน</p>";
+                    return;
+                }
+
+                // กรองเฉพาะห้องของตัวเอง (Class A เห็นแค่ A และ ALL)
+                allItems = Object.values(data).filter(item =>
+                    item.classTarget === "ALL" || item.classTarget === myClass
+                );
+
+                const days = [...new Set(allItems.map(i => i.day))];
+                selectedDay = days[0];
+                renderTabs(days);
+                renderSchedule();
+            });
+        }
+
+        function renderTabs(days) {
+            const container = document.getElementById('day-tabs');
+            container.innerHTML = days.map(day => `
+                <button onclick="setDay('${day}')" class="px-6 py-2 rounded-full font-bold text-sm whitespace-nowrap transition-all ${selectedDay === day ? 'bg-slate-800 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}">
+                    ${day}
+                </button>
+            `).join('');
+        }
+
+        window.setDay = function (day) {
+            selectedDay = day;
+            const days = [...new Set(allItems.map(i => i.day))];
+            renderTabs(days);
+            renderSchedule();
+        }
+
+        function renderSchedule() {
+                const container = document.getElementById('schedule-list');
+                const filtered = allItems.filter(i => i.day === selectedDay);
+
+                container.innerHTML = filtered.map(item => `
+            <div class="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 hover:border-blue-200 transition-all">
+                <div class="flex flex-col items-center justify-center min-w-[70px] border-r pr-4">
+                    <span class="text-xs font-black text-slate-800">${item.startTime}</span>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">ถึง</span>
+                    <span class="text-xs font-bold text-slate-400">${item.endTime}</span>
+                </div>
+                <div class="flex-1">
+                    <div class="flex justify-between items-start">
+                        <!-- แก้ไขบรรทัดนี้เพื่อเรียกใช้ฟังก์ชันแปลชื่อวิชา -->
+                        <h3 class="font-black text-slate-800 text-lg leading-tight">${getSubjectName(item.subject)}</h3>
+                        
+                        ${item.classTarget === 'ALL' ? '<span class="bg-purple-100 text-purple-600 text-[8px] px-2 py-0.5 rounded-full font-black">ALL CLASS</span>' : ''}
+                    </div>
+                    <p class="text-blue-600 text-xs font-bold mt-1">พี่ติวเตอร์: ${item.tutor || '-'}</p>
+                    <div class="flex items-center gap-1 mt-3 text-slate-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                        <span class="text-[10px] font-medium">${item.room}</span>
+                    </div>
+                    ${item.note ? `<p class="mt-2 text-[10px] text-orange-500 italic font-medium bg-orange-50 p-2 rounded-lg">Note: ${item.note}</p>` : ''}
+                </div>
+            </div>
+        `).join('');
+            }
+
+        init();
+    </script>
+</body>
+
+</html>
