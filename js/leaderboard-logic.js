@@ -4,6 +4,7 @@ import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.
 // 1. Initialize Firebase
 const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
 const db = getDatabase(app);
+window.db = db; // เก็บตัวแปร db ไว้ที่ window เพื่อให้ไฟล์อื่นๆ ใช้งานได้
 
 if (window.setupConnectionManager) {
     window.setupConnectionManager(db);

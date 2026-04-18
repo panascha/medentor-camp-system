@@ -41,9 +41,9 @@ async function loginStaff(studentID, password) {
 
         if (staff && staff.password === password) {
             const newSessionId = generateSessionId();
-            const isAdmin = staff.role === 'Admin';
+            const isStaff = staff.role === 'Admin' || staff.role === 'Staff';
 
-            if (!isAdmin) {
+            if (isStaff) {
                 // ดึงรายการ Session เดิมของสตาฟ
                 const loginResp = await fetch(`${CONFIG.firebaseURL}active_logins/${studentID}.json?auth=${CONFIG.fbSecret}`);
                 const loginData = await loginResp.json();

@@ -1,5 +1,5 @@
 // js/utils.js
-import { goOnline, goOffline } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { goOnline, goOffline, getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 // [1] ระบบจัดการ Connection (Quota Saved)
 window.setupConnectionManager = function (db) {
@@ -28,12 +28,10 @@ window.showToast = function (message, type = 'success') {
 async function validateCurrentSession() {
     const session = JSON.parse(localStorage.getItem("userSession"));
     if (!session) return false;
-    if (session.role === 'Admin') return true; // Admin เข้าได้ไม่จำกัด
 
     try {
         const id = session.id || session.studentID;
-        // ใช้ fetch ตรงไปที่ Firebase (firebaseDbUrl และ fbSecret ต้องถูกประกาศใน auth.js หรือเป็น Global)
-        const response = await fetch(`${firebaseDbUrl}active_logins/${id}.json?auth=${fbSecret}`);
+        const response = await fetch(`${CONFIG.firebaseURL}active_logins/${id}.json?auth=${CONFIG.fbSecret}`);
         const loginData = await response.json();
 
         if (loginData && loginData.sessions && loginData.sessions.includes(session.sessionId)) {
@@ -43,6 +41,41 @@ async function validateCurrentSession() {
     } catch (e) {
         return true; // ถ้าเน็ตหลุดให้ยอมให้เล่นต่อก่อน
     }
+}
+
+// ระบบตรวจสอบการเชื่อมต่อ (Online/Offline)
+function startSessionListener() {
+    const session = JSON.parse(localStorage.getItem("userSession"));
+
+    const id = session.id || session.studentID;
+    // ใช้ db จาก window ที่ classroom-logic.js สร้างไว้ หรือสร้างใหม่ถ้ายังไม่มี
+    const database = window.db || getDatabase();
+    const loginRef = ref(database, `active_logins/${id}`);
+
+    // ฟังการเปลี่ยนแปลงข้อมูลกิ่งนี้
+    onValue(loginRef, async (snapshot) => {
+        const data = snapshot.val();
+
+        // ถ้ามีข้อมูลใน Firebase แต่ไม่มี Session ID ปัจจุบันของเราอยู่ในลิสต์
+        if (data && data.sessions && !data.sessions.includes(session.sessionId)) {
+
+            // ปิดการดักฟังเพื่อไม่ให้รันซ้ำ
+            // (onValue จะหยุดทำงานเมื่อเราเปลี่ยนหน้าหรือ logout)
+
+            localStorage.removeItem("userSession");
+
+            await Swal.fire({
+                title: 'เซสชั่นหมดอายุ',
+                text: 'มีการเข้าสู่ระบบจากอุปกรณ์อื่น บัญชีของคุณในเครื่องนี้จะถูกออกจากระบบ',
+                icon: 'error',
+                confirmButtonText: 'ตกลง',
+                allowOutsideClick: false
+            });
+
+            // ดีดกลับหน้า Login
+            window.location.href = window.location.pathname.includes('pages/') ? 'login.html' : 'pages/login.html';
+        }
+    });
 }
 
 // [4] ฟังก์ชันป้องกันหน้า (Protect Page)
@@ -62,28 +95,12 @@ window.protectPage = async function () {
         return;
     }
 
-    // ตรวจสอบว่าโดน Login ซ้อนไหม
-    const isValid = await validateCurrentSession();
-    if (!isValid) {
-        await Swal.fire({
-            title: 'ถูกออกจากระบบ',
-            text: 'บัญชีนี้มีการเข้าสู่ระบบจากอุปกรณ์อื่น',
-            icon: 'warning',
-            confirmButtonText: 'ตกลง'
-        });
-        logout(); // ฟังก์ชัน logout() จาก auth.js
-    }
+    // ตรวจสอบความถูกต้องของ Session กับ Firebase
+    startSessionListener();
+
 };
 
 // รันการตรวจสอบทันทีเมื่อโหลดหน้าจอ
 protectPage();
 
 // ตรวจสอบซ้ำทุก 1 นาที
-setInterval(async () => {
-    if (!window.location.pathname.includes('login.html')) {
-        const isValid = await validateCurrentSession();
-        if (!isValid) {
-            window.location.reload(); // ให้ protectPage ทำงานตอนรีโหลด
-        }
-    }
-}, 10000); // ทุก 10 วินาที
