@@ -3,17 +3,17 @@ function generateSessionId() {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
-// --- [1] Login สำหรับนักเรียน (ID, House, Nickname) ---
+// --- [1] Login สำหรับนักเรียน (ให้เข้าได้แค่เครื่องเดียว) ---
 window.loginStudent = async function (id, house, nickname) {
     try {
         const response = await fetch(`${CONFIG.firebaseURL}students/${id}.json?auth=${CONFIG.fbSecret}`);
         const student = await response.json();
 
         if (student && student.house.toString() === house.toString() && student.nickname.trim() === nickname.trim()) {
-
             const newSessionId = generateSessionId();
 
-            // อัปเดต Session ล่าสุดลง Firebase (ทับของเก่าทันที = เข้าได้เครื่องเดียว)
+            // อัปเดต Firebase: บังคับให้เหลือ Session เดียว (Array มีค่าเดียว)
+            // เมื่อค่านี้เปลี่ยน เครื่องเก่าที่ "ฟัง" อยู่จะรู้ทันทีว่า Session ตัวเองไม่อยู่ใน List แล้ว
             await fetch(`${CONFIG.firebaseURL}active_logins/${id}.json?auth=${CONFIG.fbSecret}`, {
                 method: "PUT",
                 body: JSON.stringify({
@@ -33,7 +33,7 @@ window.loginStudent = async function (id, house, nickname) {
     }
 }
 
-// --- [2] Login สำหรับสตาฟ (StudentID, Password) ---
+// --- [2] Login สำหรับสตาฟ (ให้เข้าได้สูงสุด 2 เครื่อง) ---
 window.loginStaff = async function (studentID, password) {
     try {
         const response = await fetch(`${CONFIG.firebaseURL}staff/${studentID}.json?auth=${CONFIG.fbSecret}`);
@@ -46,15 +46,13 @@ window.loginStaff = async function (studentID, password) {
             const loginData = await loginResp.json();
             let sessions = (loginData && loginData.sessions) ? loginData.sessions : [];
 
-            // เพิ่ม Session ใหม่เข้าไป
             sessions.push(newSessionId);
 
-            // ถ้าเกิน 2 เครื่อง ให้เอาเครื่องที่เก่าที่สุดออก (FIFO)
+            // ถ้าเกิน 2 เครื่อง (Browser) ให้เตะเครื่องที่เก่าที่สุดออก (FIFO)
             if (sessions.length > 2) {
                 sessions.shift();
             }
 
-            // อัปเดตกลับไปที่ Firebase
             await fetch(`${CONFIG.firebaseURL}active_logins/${studentID}.json?auth=${CONFIG.fbSecret}`, {
                 method: "PUT",
                 body: JSON.stringify({
@@ -67,10 +65,9 @@ window.loginStaff = async function (studentID, password) {
             localStorage.setItem("userSession", JSON.stringify(sessionData));
             return { success: true, data: sessionData };
         } else {
-            return { success: false, message: "รหัสนักศึกษาหรือรหัสผ่านไม่ถูกต้อง" };
+            return { success: false, message: "รหัสผ่านไม่ถูกต้อง" };
         }
     } catch (e) {
-        console.error(e);
         return { success: false, message: "เชื่อมต่อล้มเหลว" };
     }
 }
