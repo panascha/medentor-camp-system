@@ -4,6 +4,11 @@ import { getDatabase, ref, set, onValue, push, remove, update, get, onDisconnect
 // 1. Initialize Firebase
 const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
 const db = getDatabase(app);
+window.db = db; // แนบ db ไว้กับ window เพื่อให้ไฟล์อื่นๆ ใช้งานได้โดยไม่ต้อง initialize ซ้ำ
+
+if (window.setupConnectionManager) {
+    window.setupConnectionManager(db);
+}
 
 // 2. Local State
 let currentRoom = null;
@@ -112,6 +117,10 @@ window.startSession = async function () {
 function handleSessionUI(session, roomId) {
     const interactionBar = document.getElementById('interaction-bar');
     const roomBadge = document.getElementById('room-badge');
+
+    if (interactionBar) {
+        interactionBar.classList.remove('hidden');
+    }
 
     if (session && session.isOpen) {
         if (roomBadge) roomBadge.innerText = `${roomId.replace('_', ' ')} | ${session.subject.toUpperCase()}`;
@@ -315,44 +324,64 @@ function renderSummaryTable() {
 
     allStudentsInClass.forEach((s) => {
         const history = responsesHistory[s.id] || [];
-        const indivScore = scoresToSync.studentScores[s.id]?.score || 0;
+        const indivData = scoresToSync.studentScores[s.id] || { score: 0, speakCount: 0 };
         const houseScore = scoresToSync.houseScores[s.house] || 0;
         const isOnline = onlineStudents[s.id];
-        const hasVolunteered = history.some(h => h.wantsToTalk);
 
         const isNewHouse = s.house !== lastHouse;
         lastHouse = s.house;
 
         html += `
             <tr class="${isOnline ? 'bg-white' : 'bg-slate-50 opacity-60'} hover:bg-slate-50 transition-colors">
-                <td class="p-4 font-black text-blue-600 border-b">
+                <!-- 1. House -->
+                <td class="p-3 font-black text-blue-600 border-b align-middle">
                     ${isNewHouse ? `<div class="bg-blue-100 py-1 rounded-lg text-center">บ. ${s.house}</div>` : ''}
                 </td>
-                <td class="p-4 border-b">
-                    <p class="font-bold text-slate-800">${s.nickname} ${hasVolunteered ? '🙋‍♂️' : ''}</p>
-                    <p class="text-[10px] text-slate-400 font-mono">${s.id}</p>
+
+                <!-- 2. House Pts (Action ใต้คะแนน) -->
+                <td class="p-3 text-center border-b align-middle">
+    ${isNewHouse ? `
+        <div class="flex flex-col items-center gap-1">
+            <span class="font-black text-orange-600 text-lg">${houseScore}</span>
+            <div class="flex gap-1">
+                <button onclick="giveHouseScore('${s.house}', 5)" class="text-[9px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-bold hover:bg-orange-600 hover:text-white">+5</button>
+                <button onclick="giveHouseScore('${s.house}', -5)" class="text-[9px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded font-bold hover:bg-red-500 hover:text-white">-5</button>
+                <button onclick="customScore('${s.house}', 'บ้าน ${s.house}', 'house')" class="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold hover:bg-slate-800 hover:text-white">✎</button>
+            </div>
+        </div>
+    ` : '<span class="text-slate-200">-</span>'}
+</td>
+
+                <!-- 3. Student Info -->
+                <td class="p-3 border-b align-middle">
+                    <p class="font-bold text-slate-800 leading-none">${s.nickname}</p>
+                    <p class="text-[9px] text-slate-400 font-mono">${s.id}</p>
                 </td>
-                <td class="p-4 text-center border-b">
-                    <button onclick="viewHistory('${s.id}', '${s.nickname}')" class="text-xs font-bold underline text-blue-500">
-                        ${history.length} ครั้ง
+
+                <!-- 4. Responses Count -->
+                <td class="p-3 text-center border-b align-middle">
+                    <button onclick="viewHistory('${s.id}', '${s.nickname}')" class="bg-slate-100 hover:bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-[11px] font-bold transition-all">
+                        💬 ${history.length} ครั้ง
                     </button>
                 </td>
-                <td class="p-4 text-center font-black text-blue-600 border-b">${indivScore}</td>
-                <td class="p-4 text-center font-black text-orange-600 border-b">${isNewHouse ? houseScore : '-'}</td>
-                <td class="p-4 text-right space-x-1 border-b">
-                    <!-- Individual Score Actions -->
-                    <div class="inline-flex items-center bg-slate-100 rounded-lg p-1 mb-1">
-                        <button onclick="giveScore('${s.id}', '${s.nickname}', -5)" class="px-2 text-red-500 font-bold">-</button>
-                        <button onclick="giveScore('${s.id}', '${s.nickname}', 5)" class="px-2 border-x font-bold text-slate-700">STD +5</button>
-                        <button onclick="customScore('${s.id}', '${s.nickname}', 'std')" class="px-2 text-blue-500 font-bold">✎</button>
+
+                <!-- 5. Speak Count (โดนสุ่ม/เสนอตัว) -->
+                <td class="p-3 text-center border-b align-middle">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-50 text-purple-600 font-black border border-purple-100">
+                        ${indivData.speakCount || 0}
                     </div>
-                    <!-- House Score Actions (Only on first house member) -->
-                    ${isNewHouse ? `
-                    <div class="inline-flex items-center bg-orange-50 rounded-lg p-1">
-                        <button onclick="giveHouseScore('${s.house}', -5)" class="px-2 text-red-500 font-bold">-</button>
-                        <button onclick="giveHouseScore('${s.house}', 5)" class="px-2 border-x font-bold text-orange-700">HOUSE +5</button>
-                        <button onclick="customScore('${s.house}', 'บ้าน ${s.house}', 'house')" class="px-2 text-orange-500 font-bold">✎</button>
-                    </div>` : ''}
+                </td>
+
+                <!-- 6. Indiv. Pts (Action ใต้คะแนน) -->
+                <td class="p-3 text-center border-b align-middle">
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="font-black text-blue-600 text-lg">${indivData.score}</span>
+                        <div class="flex gap-1">
+                            <button onclick="giveScore('${s.id}', '${s.nickname}', 5)" class="text-[9px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded font-bold hover:bg-green-600 hover:text-white">+5</button>
+                            <button onclick="giveScore('${s.id}', '${s.nickname}', -5)" class="text-[9px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded font-bold hover:bg-red-500 hover:text-white">-5</button>
+                            <button onclick="customScore('${s.id}', '${s.nickname}', 'std')" class="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold hover:bg-slate-800 hover:text-white">✎</button>
+                        </div>
+                    </div>
                 </td>
             </tr>
         `;
@@ -360,10 +389,9 @@ function renderSummaryTable() {
     tbody.innerHTML = html;
 }
 function renderResponses(data) {
-    const feed = document.getElementById('view-live');
-    if (!feed) return;
+    const grid = document.getElementById('response-grid');
+    if (!grid) return;
 
-    // 1. หาข้อมูลกิจกรรมที่จะแสดง
     let targetActivityId = selectedActivityFilter;
     if (selectedActivityFilter === 'current') {
         const keys = Object.keys(activityLog);
@@ -372,69 +400,52 @@ function renderResponses(data) {
 
     const currentQ = activityLog[targetActivityId];
     if (!currentQ) {
-        feed.innerHTML = `<div class="col-span-full py-20 text-center text-slate-400 italic">ยังไม่มีกิจกรรมที่ถูกสร้าง</div>`;
+        grid.innerHTML = `<div class="py-20 text-center text-slate-300 font-bold italic">ยังไม่มีกิจกรรมที่ถูกสร้าง</div>`;
         return;
     }
 
-    // 2. กรองคำตอบ
-    const entries = Object.entries(data);
+    // เตรียมสถานะ Badge
+    const statusBadge = currentQ.status === 'open'
+        ? `<span class="bg-emerald-500 text-white text-[10px] px-3 py-1 rounded-full animate-pulse font-black">● OPEN</span>`
+        : `<span class="bg-red-500 text-white text-[10px] px-3 py-1 rounded-full font-black">● CLOSED</span>`;
+
+    const entries = Object.entries(data || {});
     const filteredEntries = entries.filter(([key, res]) => res.activityID === targetActivityId).reverse();
 
-    // 3. เตรียม UI Header (แสดงหัวข้อและสถานะ)
-    const statusBadge = currentQ.status === 'open'
-        ? `<span class="bg-emerald-500 text-white text-[10px] px-2 py-1 rounded-full animate-pulse">● LIVE</span>`
-        : `<span class="bg-slate-500 text-white text-[10px] px-2 py-1 rounded-full">● CLOSED</span>`;
-
-    let html = `
-        <div class="mb-6">
-            <div class="flex items-center justify-between mb-3">
-                <div>
-                    <p class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">หัวข้อกิจกรรมปัจจุบัน:</p>
-                    <h3 class="text-2xl font-black text-slate-800">${currentQ.question_title}</h3>
+    // ส่วนหัวของคำถามใน Live Feed
+    let headerHTML = `
+        <div class="col-span-full mb-6 bg-white p-5 rounded-3xl border-2 border-blue-50 shadow-sm">
+            <div class="flex justify-between items-start">
+                <div class="flex-1">
+                    <p class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Current Question:</p>
+                    <h3 class="text-2xl font-black text-slate-800 italic leading-tight">"${currentQ.question_title}"</h3>
                 </div>
-                <div>${statusBadge}</div>
-            </div>
-            <div class="text-[10px] font-bold text-slate-400 uppercase">
-                <span>คำตอบทั้งหมด: ${filteredEntries.length}</span>
+                <div class="ml-4">${statusBadge}</div>
             </div>
         </div>
     `;
 
-    // 4. แสดงรายการคำตอบ
     if (filteredEntries.length === 0) {
-        html += `
-            <div class="col-span-full py-16 text-center bg-white/50 rounded-[2rem] border-2 border-dashed border-slate-200">
-                <p class="text-slate-400 font-bold italic">ยังไม่มีคำตอบส่งเข้ามา... กำลังรอรหัสน้องๆ</p>
-            </div>`;
+        grid.innerHTML = headerHTML + `<div class="py-10 text-center text-slate-300 font-bold italic">กำลังรอคำตอบแรก...</div>`;
     } else {
-        html += filteredEntries.map(([key, res]) => `
-            <div class="bg-white p-6 rounded-[2rem] shadow-sm border-2 ${res.wantsToTalk ? 'border-yellow-400 bg-yellow-50' : 'border-transparent'} transition-all hover:shadow-md relative overflow-hidden group">
-                ${res.wantsToTalk ? '<div class="absolute top-0 right-0 bg-yellow-400 text-[10px] font-black px-4 py-1 rounded-bl-2xl">VOLUNTEER 🙋‍♂️</div>' : ''}
-                
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center font-black shadow-lg shadow-blue-100">
-                        ${res.house}
+        grid.innerHTML = headerHTML + `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                ${filteredEntries.map(([key, res]) => `
+                    <div class="response-card-tutor bg-white p-4 rounded-2xl shadow-sm border ${res.wantsToTalk ? 'border-yellow-400 bg-yellow-50' : 'border-slate-100'}">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-7 h-7 bg-blue-600 text-white rounded-lg flex items-center justify-center font-black text-[10px]">${res.house}</div>
+                            <span class="font-bold text-slate-800 text-sm truncate">${res.nickname}</span>
+                            ${res.wantsToTalk ? '<span class="text-xs">🙋‍♂️</span>' : ''}
+                        </div>
+                        <div class="response-content text-slate-600 font-medium">${res.answer}</div>
+                        <div class="mt-auto pt-3 flex justify-between items-center">
+                            <span class="text-[9px] text-slate-400">${new Date(res.timestamp).toLocaleTimeString('th-TH')}</span>
+                            <button onclick="giveScore('${res.studentID}', '${res.nickname}', 5)" class="bg-blue-50 text-blue-600 text-[10px] px-2 py-1 rounded-lg font-bold hover:bg-blue-600 hover:text-white transition-all">+5 PTS</button>
+                        </div>
                     </div>
-                    <div>
-                        <h4 class="font-black text-lg text-slate-800 leading-tight">${res.nickname}</h4>
-                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                            ${new Date(res.timestamp).toLocaleTimeString('th-TH')} | HOUSE ${res.house}
-                        </p>
-                    </div>
-                </div>
-                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <p class="text-slate-700 font-medium leading-relaxed">${res.answer}</p>
-                </div>
-                
-                <button onclick="giveScore('${res.studentID}', '${res.nickname}', 5)" 
-                    class="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity bg-blue-100 text-blue-600 px-3 py-1 rounded-lg text-[10px] font-black hover:bg-blue-600 hover:text-white">
-                    QUICK +5
-                </button>
-            </div>
-        `).join('');
+                `).join('')}
+            </div>`;
     }
-
-    feed.innerHTML = html;
 }
 
 function listenPrivateQuestions() {
@@ -649,13 +660,36 @@ window.openLiveBoard = function () {
 };
 
 // ฟังก์ชันให้พี่สตาฟกดลบคำถามเมื่อตอบแล้ว
+// ค้นหาหรือวางทับในไฟล์ js/classroom-logic.js
 window.deleteQuestion = function (key) {
-    if (confirm('ตอบคำถามนี้เรียบร้อยแล้วใช่หรือไม่?')) {
-        // ใช้ ref และ db ที่ import มาแล้วที่หัวไฟล์ได้เลย ไม่ต้องมี FB.
-        remove(ref(db, `private_questions/${currentRoom}/${key}`))
-            .then(() => showToast("ลบคำถามแล้ว"))
-            .catch(e => console.error("Delete Question Error:", e));
+    if (!currentRoom) {
+        showToast("ไม่พบข้อมูลห้องเรียน", "error");
+        return;
     }
+
+    Swal.fire({
+        title: 'ยืนยันการลบ?',
+        text: "คุณตอบคำถามส่วนตัวนี้เรียบร้อยแล้วใช่หรือไม่?",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#22c55e',
+        confirmButtonText: 'ใช่, ลบเลย',
+        cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // ใช้ ref และ remove ที่ import มาจาก firebase/database ด้านบนของไฟล์
+            const targetRef = ref(db, `private_questions/${currentRoom}/${key}`);
+
+            remove(targetRef)
+                .then(() => {
+                    showToast("ลบคำถามเรียบร้อยแล้ว");
+                })
+                .catch((error) => {
+                    console.error("Delete Question Error:", error);
+                    showToast("เกิดข้อผิดพลาดในการลบ", "error");
+                });
+        }
+    });
 };
 window.selectManualRoom = function (roomId) {
     // กำหนดค่าห้องที่เลือกให้กับตัวแปร global
@@ -688,30 +722,68 @@ window.viewHistory = function (id, name) {
     });
 }
 window.switchTab = function (tab) {
-    document.getElementById('view-live').classList.toggle('hidden', tab !== 'live');
-    document.getElementById('view-summary').classList.toggle('hidden', tab !== 'summary');
+    const tabs = ['live', 'summary', 'questions'];
 
-    const isLive = tab === 'live';
-    document.getElementById('tab-live').className = isLive ? 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-blue-600 text-blue-600' : 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-transparent text-slate-400';
-    document.getElementById('tab-summary').className = !isLive ? 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-blue-600 text-blue-600' : 'flex-1 py-4 text-sm font-black uppercase tracking-widest border-b-4 border-transparent text-slate-400';
+    tabs.forEach(t => {
+        const viewEl = document.getElementById(`view-${t}`);
+        const btnEl = document.getElementById(`tab-${t}`);
+
+        if (!viewEl || !btnEl) return;
+
+        if (t === tab) {
+            // แสดงผล: ใช้ flex สำหรับหน้า Feed/Summary และ block สำหรับ Q&A
+            viewEl.style.setProperty('display', (t === 'questions' ? 'block' : 'flex'), 'important');
+            viewEl.classList.remove('hidden');
+
+            // สไตล์ปุ่ม Active
+            btnEl.classList.add('border-blue-600', 'text-blue-600');
+            btnEl.classList.remove('border-transparent', 'text-slate-400');
+        } else {
+            // ซ่อน: บังคับ display none
+            viewEl.style.setProperty('display', 'none', 'important');
+            viewEl.classList.add('hidden');
+
+            // สไตล์ปุ่ม Inactive
+            btnEl.classList.remove('border-blue-600', 'text-blue-600');
+            btnEl.classList.add('border-transparent', 'text-slate-400');
+        }
+    });
 };
 window.manualPick = function (id, name) {
     Swal.fire({
         title: `จัดการ: ${name}`,
         text: "เลือกดำเนินการสำหรับนักเรียนคนนี้",
+        icon: 'info',
         showCancelButton: true,
-        confirmButtonText: 'ให้คะแนน +10',
-        denyButtonText: 'เรียกชื่อ (Highlight)',
         showDenyButton: true,
+        confirmButtonText: 'เพิ่มสถิติการพูด (+1)',
+        denyButtonText: 'ให้คะแนนโบนัส (+10)',
+        cancelButtonText: 'ยกเลิก',
+        confirmButtonColor: '#8b5cf6', // ม่วง
+        denyButtonColor: '#22c55e'    // เขียว
     }).then((result) => {
-        if (result.isConfirmed) giveScore(id, name, 10);
+        if (result.isConfirmed) {
+            // เพิ่มสถานะการพูด
+            if (!scoresToSync.studentScores[id]) scoresToSync.studentScores[id] = { name: name, score: 0, speakCount: 0 };
+            scoresToSync.studentScores[id].speakCount = (scoresToSync.studentScores[id].speakCount || 0) + 1;
+            showToast(`${name}: บันทึกการพูดแล้ว`);
+            renderSummaryTable();
+        } else if (result.isDenied) {
+            giveScore(id, name, 10);
+        }
     });
 }
 window.updateActivity = async function (status) {
-    const title = document.getElementById('input-q-title').value.trim() || "กิจกรรมทั่วไป";
+    const inputEl = document.getElementById('input-q-title');
+    let title = inputEl.value.trim();
 
-    // ถ้าจะเปิดรับคำตอบ ให้ยืนยันก่อน
     if (status === 'open') {
+        // 1. ถ้าไม่กรอกชื่อ ให้ตั้งเป็น "คำถามที่ n"
+        if (!title) {
+            const nextNum = Object.keys(activityLog).length + 1;
+            title = `คำถามที่ ${nextNum}`;
+        }
+
         const confirm = await Swal.fire({
             title: 'เริ่มกิจกรรมใหม่?',
             text: `หัวข้อ: ${title}`,
@@ -721,71 +793,90 @@ window.updateActivity = async function (status) {
             cancelButtonText: 'แก้ไขก่อน'
         });
         if (!confirm.isConfirmed) return;
-    }
 
-    const activity_id = "act_" + Date.now();
-    const activityData = {
-        activity_id,
-        question_title: title,
-        status: status, // 'open' หรือ 'closed'
-        timestamp: Date.now()
-    };
+        const activity_id = "act_" + Date.now();
+        const activityData = {
+            activity_id,
+            question_title: title,
+            status: 'open',
+            timestamp: Date.now()
+        };
 
-    try {
-        // 1. อัปเดตข้อมูลลง Firebase
-        await update(ref(db, `active_sessions/${currentRoom}/current_activity`), activityData);
-        await set(ref(db, `active_sessions/${currentRoom}/activities_history/${activity_id}`), activityData);
+        try {
+            // 2. อัปเดตข้อมูลลง Firebase
+            await update(ref(db, `active_sessions/${currentRoom}/current_activity`), activityData);
+            await set(ref(db, `active_sessions/${currentRoom}/activities_history/${activity_id}`), activityData);
 
-        // 2. อัปเดตสถานะในเครื่อง
-        selectedActivityFilter = activity_id;
-        activityLog[activity_id] = activityData;
+            // 3. [สำคัญ] อัปเดตสถานะในเครื่องให้มาดู "คำถามปัจจุบัน"
+            selectedActivityFilter = 'current';
+            activityLog[activity_id] = activityData; // เพิ่มลง log ในเครื่องทันที
 
-        // 3. สั่ง Render ทันที
-        renderActivityFilter();
-        renderResponses({}); // ส่ง Object ว่างเพื่อให้วาดหัวข้อรอไว้เลย
-        switchTab('live');
+            // 4. สั่งวาด UI ใหม่ทันที
+            renderActivityFilter(); // อัปเดต Dropdown
+            renderResponses({});    // สั่งวาด Feed (ส่ง {} เพื่อให้วาด Header รอไว้)
 
-        if (status === 'open') {
+            // 5. สลับไปหน้า Live Feed (กรณีติวเตอร์อยู่ที่หน้าอื่น)
+            window.switchTab('live');
+
+            inputEl.value = ""; // ล้างช่องกรอก
             showToast(`เปิดรับคำตอบ: ${title}`);
-            document.getElementById('input-q-title').value = ""; // ล้างช่องกรอก
-        } else {
-            showToast("ปิดรับคำตอบแล้ว", "info");
+        } catch (e) {
+            showToast("เกิดข้อผิดพลาด", "error");
         }
-    } catch (e) {
-        showToast("เกิดข้อผิดพลาด", "error");
+    }
+    else {
+        // กรณี "ปิดรับคำตอบ"
+        const keys = Object.keys(activityLog);
+        if (keys.length === 0) return;
+
+        const lastId = keys[keys.length - 1];
+        try {
+            await update(ref(db, `active_sessions/${currentRoom}/current_activity`), { status: 'closed' });
+            await update(ref(db, `active_sessions/${currentRoom}/activities_history/${lastId}`), { status: 'closed' });
+
+            // อัปเดตค่าในเครื่องและวาดใหม่เพื่อให้ขึ้นป้ายสีแดง (CLOSED)
+            activityLog[lastId].status = 'closed';
+            // ดึงข้อมูลคำตอบล่าสุดมาวาดใหม่ (เพื่อให้ป้ายสถานะเปลี่ยน)
+            get(ref(db, `responses/${currentRoom}`)).then(snap => renderResponses(snap.val() || {}));
+
+            showToast("ปิดรับคำตอบแล้ว", "info");
+        } catch (e) {
+            showToast("เกิดข้อผิดพลาด", "error");
+        }
     }
 };
 
 window.runRandom = async function (mode) {
     let list = allStudentsInClass;
+
+    // กรองเฉพาะคนที่เป็น Volunteer (ถ้าเลือกโหมด volunteer)
     if (mode === 'volunteer') {
         list = allStudentsInClass.filter(s => responsesHistory[s.id]?.some(h => h.wantsToTalk));
     }
 
     if (list.length === 0) return showToast("ไม่มีรายชื่อให้สุ่ม", "error");
 
-    // อ้างอิง Element ในหน้า Tutor
     const slotList = document.getElementById('slot-list');
+    // สุ่มผู้ชนะไว้ล่วงหน้าเพื่อเตรียมข้อมูลสถิติ
     const winner = list[Math.floor(Math.random() * list.length)];
+    const responseCount = (responsesHistory[winner.id] || []).length;
 
     try {
-        // --- [1] เริ่มการ Roll บนหน้าจอ Liveboard (Firebase) ---
+        // --- [1] เริ่มการ Roll บน Firebase (เพื่อให้ Liveboard แสดงผล) ---
         await set(ref(db, `active_sessions/${currentRoom}/randomizer`), {
             status: 'rolling',
             pool: list,
             ts: Date.now()
         });
 
-        // --- [2] เริ่มการ Roll บนหน้าจอ Tutor (Local UI) ---
+        // --- [2] เริ่มการ Roll บนหน้า Tutor (Local UI) ---
         let tutorRollInterval = setInterval(() => {
             const randomPerson = list[Math.floor(Math.random() * list.length)];
-            // แสดงชื่อในช่อง Slot Item บนหน้า Tutor
             slotList.innerHTML = `<div class="slot-item animate-pulse text-blue-600">${randomPerson.nickname}</div>`;
-        }, 80); // วิ่งความเร็วใกล้เคียงกับหน้าจอใหญ่
+        }, 80);
 
         // --- [3] หน่วงเวลาลุ้น (3.5 วินาที) ---
         setTimeout(async () => {
-            // หยุดการวิ่งบนหน้า Tutor
             clearInterval(tutorRollInterval);
 
             // แสดงชื่อผู้ชนะบนหน้า Tutor
@@ -797,21 +888,24 @@ window.runRandom = async function (mode) {
                 winner: winner
             });
 
-            // แสดง Popup ยืนยันการให้คะแนน
+            // --- [4] แสดง Popup ผลลัพธ์พร้อม Highlight สถิติ ---
             Swal.fire({
                 title: '🎉 ผู้โชคดี!',
                 html: `น้อง <b>${winner.nickname}</b> (บ้าน ${winner.house})`,
                 icon: 'success',
                 showCancelButton: true,
-                confirmButtonText: 'ให้คะแนน +10',
-                cancelButtonText: 'ปิดหน้าจอการสุ่ม',
-                allowOutsideClick: false
+                confirmButtonText: 'นับการตอบ (+1)',
+                cancelButtonText: 'ปิดหน้าจอ',
+                confirmButtonColor: '#22c55e'
             }).then(async (res) => {
-                if (res.isConfirmed) giveScore(winner.id, winner.nickname, 10);
-
-                // รีเซ็ตหน้าจอทั้งคู่กลับสู่สถานะปกติ
+                if (res.isConfirmed) {
+                    // เพิ่มจำนวนการพูดอัตโนมัติ
+                    if (!scoresToSync.studentScores[winner.id]) scoresToSync.studentScores[winner.id] = { name: winner.nickname, score: 0, speakCount: 0 };
+                    scoresToSync.studentScores[winner.id].speakCount = (scoresToSync.studentScores[winner.id].speakCount || 0) + 1;
+                }
                 await set(ref(db, `active_sessions/${currentRoom}/randomizer`), { status: 'idle' });
                 slotList.innerHTML = `<div class="slot-item">READY TO ROLL</div>`;
+                renderSummaryTable(); // อัปเดตตาราง
             });
 
         }, 3500);
@@ -1224,22 +1318,32 @@ window.customScore = async function (id, name, type) {
 window.giveScore = async function (id, name, pts) {
     if (quotaUsed + pts > 100) return Swal.fire("โควต้าเต็ม", "ใช้คะแนนเกิน 100 แล้ว", "warning");
 
-    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + pts });
+    if (!scoresToSync.studentScores[id]) scoresToSync.studentScores[id] = { name: name, score: 0, speakCount: 0 };
 
-    if (!scoresToSync.studentScores[id]) scoresToSync.studentScores[id] = { name: name, score: 0 };
-    scoresToSync.studentScores[id].score += pts;
+    // คำนวณคะแนนใหม่และเช็คไม่ให้ต่ำกว่า 0
+    let newScore = scoresToSync.studentScores[id].score + pts;
+    if (newScore < 0) newScore = 0;
 
-    showToast(`${name}: ${pts > 0 ? '+' : ''}${pts} คะแนน`);
+    const actualDiff = newScore - scoresToSync.studentScores[id].score;
+    scoresToSync.studentScores[id].score = newScore;
+
+    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + actualDiff });
+    showToast(`${name}: ${newScore} คะแนน`);
     renderSummaryTable();
 };
+
 window.giveHouseScore = async function (house, pts) {
     if (quotaUsed + pts > 100) return Swal.fire("โควต้าเต็ม", "ใช้คะแนนเกิน 100 แล้ว", "warning");
 
-    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + pts });
-
     if (!scoresToSync.houseScores[house]) scoresToSync.houseScores[house] = 0;
-    scoresToSync.houseScores[house] += pts;
 
-    showToast(`บ้าน ${house}: ${pts > 0 ? '+' : ''}${pts} คะแนน`);
+    let newScore = scoresToSync.houseScores[house] + pts;
+    if (newScore < 0) newScore = 0;
+
+    const actualDiff = newScore - scoresToSync.houseScores[house];
+    scoresToSync.houseScores[house] = newScore;
+
+    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + actualDiff });
+    showToast(`บ้าน ${house}: ${newScore} คะแนน`);
     renderSummaryTable();
 };
