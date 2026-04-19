@@ -61,7 +61,8 @@
                     <label class="block text-sm font-semibold text-slate-600 mb-1">ค้นหาจากชื่อ</label>
                     <input type="text" id="input-name" placeholder="พิมพ์ชื่อเพื่อค้นหา..."
                         class="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
-                    <div id="suggest-box" class="absolute z-10 w-full bg-white border rounded-xl mt-1 shadow-xl hidden">
+                    <div id="suggest-box" class="absolute z-10 w-full bg-white border rounded-xl mt-1 shadow-xl hidden max-h-60 overflow-y-auto">
+                        <!-- Suggestions จะถูกเติมที่นี่โดย JS -->
                     </div>
                 </div>
             </div>
