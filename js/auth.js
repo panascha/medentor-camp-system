@@ -11,28 +11,19 @@ window.loginStudent = async function (id, house, nickname) {
 
         if (student && student.house.toString() === house.toString() && student.nickname.trim() === nickname.trim()) {
             const newSessionId = generateSessionId();
+            const loginTime = Date.now();
 
-            // ดึงข้อมูลการ Login เดิม
-            const loginResp = await fetch(`${CONFIG.firebaseURL}active_logins/${id}.json?auth=${CONFIG.fbSecret}`);
-            const loginData = await loginResp.json();
-            let sessions = (loginData && loginData.sessions) ? loginData.sessions : [];
-
-            sessions.push(newSessionId);
-
-            // ถ้าเกิน 3 เครื่อง (Browser) ให้เตะเครื่องที่เก่าที่สุดออก (FIFO)
-            if (sessions.length > 3) {
-                sessions.shift();
-            }
-
+            // อัปเดต Firebase: บังคับให้เหลือ Session เดียว (Array มีค่าเดียว)
+            // เมื่อค่านี้เปลี่ยน เครื่องเก่าที่ "ฟัง" อยู่จะรู้ทันทีว่า Session ตัวเองไม่อยู่ใน List แล้ว
             await fetch(`${CONFIG.firebaseURL}active_logins/${id}.json?auth=${CONFIG.fbSecret}`, {
                 method: "PUT",
                 body: JSON.stringify({
-                    sessions: sessions,
+                    sessions: [newSessionId],
                     lastLogin: Date.now()
                 })
             });
 
-            const sessionData = { ...student, userType: 'student', sessionId: newSessionId };
+            const sessionData = { ...student, userType: 'student', sessionId: newSessionId, loginTime: loginTime };
             localStorage.setItem("userSession", JSON.stringify(sessionData));
             return { success: true, data: sessionData };
         } else {
@@ -43,7 +34,7 @@ window.loginStudent = async function (id, house, nickname) {
     }
 }
 
-// --- [2] Login สำหรับสตาฟ (ให้เข้าได้สูงสุด 3 เครื่อง) ---
+// --- [2] Login สำหรับสตาฟ (ให้เข้าได้สูงสุด 2 เครื่อง) ---
 window.loginStaff = async function (studentID, password) {
     try {
         const response = await fetch(`${CONFIG.firebaseURL}staff/${studentID}.json?auth=${CONFIG.fbSecret}`);
@@ -51,6 +42,7 @@ window.loginStaff = async function (studentID, password) {
 
         if (staff && staff.password === password) {
             const newSessionId = generateSessionId();
+            const loginTime = Date.now();
 
             const loginResp = await fetch(`${CONFIG.firebaseURL}active_logins/${studentID}.json?auth=${CONFIG.fbSecret}`);
             const loginData = await loginResp.json();
@@ -58,8 +50,8 @@ window.loginStaff = async function (studentID, password) {
 
             sessions.push(newSessionId);
 
-            // ถ้าเกิน 3 เครื่อง (Browser) ให้เตะเครื่องที่เก่าที่สุดออก (FIFO)
-            if (sessions.length > 3) {
+            // ถ้าเกิน 2 เครื่อง (Browser) ให้เตะเครื่องที่เก่าที่สุดออก (FIFO)
+            if (sessions.length > 2) {
                 sessions.shift();
             }
 
@@ -71,7 +63,7 @@ window.loginStaff = async function (studentID, password) {
                 })
             });
 
-            const sessionData = { ...staff, userType: 'staff', sessionId: newSessionId };
+            const sessionData = { ...staff, userType: 'staff', sessionId: newSessionId, loginTime: loginTime };
             localStorage.setItem("userSession", JSON.stringify(sessionData));
             return { success: true, data: sessionData };
         } else {
@@ -87,6 +79,12 @@ window.validateCurrentSession = async function () {
     const session = JSON.parse(localStorage.getItem("userSession"));
 
     if (!session) return false;
+
+    const EIGHT_HOURS = 8 * 60 * 60 * 1000;
+    if (Date.now() - session.loginTime > EIGHT_HOURS) {
+        console.warn("Session expired (8 hours limit)");
+        return false;
+    }
 
     try {
         const id = session.id || session.studentID;

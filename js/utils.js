@@ -39,49 +39,77 @@ window.showToast = function (message, type = 'success') {
 function startSessionListener() {
     const sessionStr = localStorage.getItem("userSession");
 
-    // ถ้าไม่มี Session ในเครื่อง ให้หยุดทำงานทันที
+    // 1. ตรวจสอบว่ามี Session หรือไม่
     if (!sessionStr) {
-        console.log("[Session] No userSession found in localStorage.");
+        console.log("[Session] No userSession found.");
         return;
     }
 
     const currentLocal = JSON.parse(sessionStr);
     const id = currentLocal.id || currentLocal.studentID;
+    const sessionId = currentLocal.sessionId;
+    const loginTime = currentLocal.loginTime;
 
-    if (!id || !currentLocal.sessionId) {
-        console.error("[Session] Session data is incomplete:", currentLocal);
+    // ตั้งค่าเวลา (ปรับเป็น TEN_SECONDS ได้หากต้องการทดสอบ)
+    const SESSION_LIMIT = 8 * 60 * 60 * 1000;
+
+    // 2. ฟังก์ชันช่วยสำหรับการเตะออก (Force Logout)
+    const forceLogout = (title, reason) => {
+        // ป้องกันการเรียกซ้ำถ้าถูกเตะออกไปแล้ว
+        if (!localStorage.getItem("userSession")) return;
+
+        console.warn(`[Session] Kicking out: ${reason}`);
+        localStorage.removeItem("userSession");
+
+        Swal.fire({
+            title: title,
+            text: reason,
+            icon: 'warning',
+            confirmButtonText: 'ตกลง',
+            allowOutsideClick: false
+        }).then(() => {
+            const isInsidePages = window.location.pathname.includes('pages/');
+            window.location.href = isInsidePages ? 'login.html' : 'pages/login.html';
+        });
+    };
+
+    // 3. ตรวจสอบข้อมูลเบื้องต้น
+    if (!id || !sessionId || !loginTime) {
+        console.error("[Session] Session data is incomplete.");
         return;
     }
 
-    console.log(`[Session] START Monitoring for ID: ${id} (SID: ${currentLocal.sessionId})`);
+    // 4. ระบบคำนวณเวลานับถอยหลัง (เพื่อให้เตะออกทันทีแม้ไม่ได้ขยับหน้าจอ)
+    const timeElapsed = Date.now() - loginTime;
+    const timeRemaining = SESSION_LIMIT - timeElapsed;
 
+    if (timeRemaining <= 0) {
+        forceLogout('เซสชั่นหมดอายุ', 'คุณอยู่ในระบบนานเกินกำหนด กรุณาเข้าสู่ระบบใหม่เพื่อความปลอดภัย');
+        return;
+    } else {
+        // สั่งให้ทำงานอัตโนมัติเมื่อครบเวลาที่เหลือพอดี
+        setTimeout(() => {
+            forceLogout('เซสชั่นหมดอายุ', 'หมดระยะเวลาใช้งาน 8 ชั่วโมงแล้ว กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+        }, timeRemaining);
+
+        console.log(`[Session] ระบบจะเตะออกอัตโนมัติในอีก ${Math.round(timeRemaining / 1000)} วินาที`);
+    }
+
+    console.log(`[Session] START Monitoring for ID: ${id} (SID: ${sessionId})`);
+
+    // 5. ฟังข้อมูลจาก Firebase (เพื่อดูการ Login ซ้ำซ้อน)
     const loginRef = ref(db, `active_logins/${id}`);
-
-    // ดึงข้อมูล Real-time
     onValue(loginRef, (snapshot) => {
         const data = snapshot.val();
-        console.log("[Session] Data received from Firebase:", data);
 
         if (data && data.sessions) {
-            const isStillValid = data.sessions.includes(currentLocal.sessionId);
+            // ตรวจสอบว่า sessionId ยังคง valid หรือไม่ (ถูกคนอื่นเตะหรือไม่)
+            const isStillValid = data.sessions.includes(sessionId);
 
             if (!isStillValid) {
-                console.warn("[Session] INVALID SESSION! Kicking out...");
-
-                localStorage.removeItem("userSession");
-
-                Swal.fire({
-                    title: 'เซสชั่นหมดอายุ',
-                    text: 'มีการเข้าสู่ระบบจากอุปกรณ์อื่น (จำกัด 1 เครื่องสำหรับน้อง / 2 เครื่องสำหรับพี่)',
-                    icon: 'warning',
-                    confirmButtonText: 'ตกลง',
-                    allowOutsideClick: false
-                }).then(() => {
-                    const isInsidePages = window.location.pathname.includes('pages/');
-                    window.location.href = isInsidePages ? 'login.html' : 'pages/login.html';
-                });
+                forceLogout('เซสชั่นซ้ำซ้อน', 'มีการเข้าสู่ระบบจากอุปกรณ์อื่น (ระบบอนุญาตให้ใช้อุปกรณ์ล่าสุดเท่านั้น)');
             } else {
-                console.log("[Session] Session is still valid.");
+                console.log("[Session] Connection is still valid.");
             }
         }
     }, (error) => {
