@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jeopardy Admin Control - Medentor System</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Google Fonts: Prompt -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+
+        .active-house-glow {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.6);
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-100 min-h-screen pb-20">
+
+    <!-- Navigation -->
+    <nav class="bg-slate-900 text-white p-4 sticky top-0 z-50 shadow-lg">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <a href="../index.html" class="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                    </svg>
+                </a>
+                <div>
+                    <h1 class="text-xl font-black tracking-widest text-amber-400">JEOPARDY <span
+                            class="text-white">CONTROL</span></h1>
+                    <p class="text-[10px] text-slate-400 uppercase tracking-widest" id="admin-name">Admin: Loading...
+                    </p>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="switchTab('play')" id="tab-play"
+                    class="bg-blue-600 px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all">🎮
+                    หน้าควบคุมเกม</button>
+                <button onclick="switchTab('manage')" id="tab-manage"
+                    class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg text-sm font-bold transition-all border border-slate-700">📝
+                    จัดการคำถาม</button>
+                    <button id="btn-toggle-game" onclick="toggleJeopardyActive()"
+                        class="flex-1 md:flex-none bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-black text-xs hover:bg-emerald-700 transition-all shadow-md">
+                        เปิดเกมให้น้องเข้า (OFF)
+                    </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto p-4 md:p-6 mt-4">
+
+        <!-- ========================================== -->
+        <!-- TAB 1: GAME CONTROL (หน้าควบคุมหลัก) -->
+        <!-- ========================================== -->
+        <div id="view-play" class="space-y-6 animate-fade-in">
+
+            <!-- Top Dashboard Stats & Global Controls -->
+            <div
+                class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="flex items-center gap-6">
+                    <div class="text-center bg-blue-50 px-6 py-3 rounded-2xl border border-blue-100">
+                        <p class="text-[10px] font-black text-blue-500 uppercase tracking-widest">รอบปัจจุบัน (Round)
+                        </p>
+                        <p class="text-3xl font-black text-blue-700" id="display-round">1</p>
+                    </div>
+                    <div class="text-center bg-amber-50 px-6 py-3 rounded-2xl border border-amber-100">
+                        <p class="text-[10px] font-black text-amber-500 uppercase tracking-widest">คิวเลือกลำดับถัดไป
+                        </p>
+                        <p class="text-3xl font-black text-amber-600">บ้าน <span id="display-turn-house">-</span></p>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2 justify-end">
+                    <button onclick="undoLastAction()"
+                        class="bg-slate-100 text-slate-600 hover:bg-slate-200 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1">
+                        ↩️ Undo
+                    </button>
+                    <button onclick="skipHouseTurn()"
+                        class="bg-slate-100 text-slate-600 hover:bg-orange-100 hover:text-orange-600 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1">
+                        ⏭️ ข้ามคิวบ้านนี้
+                    </button>
+                    <button onclick="resetCurrentQuestion()"
+                        class="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1">
+                        🔄 ล้างสถานะข้อปัจจุบัน
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                <!-- Left Column: Active Question & Steal Controls -->
+                <div class="lg:col-span-7 space-y-6">
+                    <div
+                        class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 min-h-[400px] flex flex-col relative overflow-hidden">
+
+                        <!-- State: No Question Selected -->
+                        <div id="panel-idle"
+                            class="flex-1 flex flex-col items-center justify-center text-center space-y-4">
+                            <div class="text-6xl">🎯</div>
+                            <h2 class="text-2xl font-black text-slate-800">ยังไม่ได้เลือกคำถาม</h2>
+                            <p class="text-slate-400 text-sm">ให้ "บ้าน <span id="idle-turn-house"
+                                    class="text-blue-600 font-bold">-</span>" เลือกแผ่นป้ายจากตารางด้านล่าง</p>
+                        </div>
+
+                        <!-- State: Active Question -->
+                        <div id="panel-active" class="hidden flex-1 flex flex-col">
+                            <!-- Header Info -->
+                            <div class="flex justify-between items-start mb-4 border-b pb-4">
+                                <div>
+                                    <span id="aq-category"
+                                        class="bg-slate-100 text-slate-600 text-[10px] font-black px-2 py-1 rounded uppercase">Category</span>
+                                    <span id="aq-level"
+                                        class="ml-1 bg-emerald-100 text-emerald-600 text-[10px] font-black px-2 py-1 rounded uppercase">Level</span>
+                                    <h3 class="text-xl font-black text-slate-800 mt-2">มูลค่า: <span id="aq-points"
+                                            class="text-amber-500">0</span> Pts</h3>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase">Status</p>
+                                    <span id="aq-status-badge"
+                                        class="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full animate-pulse">LIVE</span>
+                                </div>
+                            </div>
+
+                            <!-- Question Content -->
+                            <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
+                                <div class="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                                    <p class="text-[10px] font-black text-blue-500 uppercase mb-1">โจทย์คำถาม</p>
+                                    <p id="aq-text" class="text-lg font-bold text-slate-800">...</p>
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <p class="text-[10px] font-black text-slate-500 uppercase">ตัวเลือก (ถ้ามี)</p>
+                                        <button onclick="revealOptions()" id="btn-reveal-options"
+                                            class="bg-slate-800 text-white text-[9px] px-2 py-1 rounded font-bold hover:bg-slate-700">เปิดโชว์ตัวเลือกขึ้นจอ</button>
+                                    </div>
+                                    <p id="aq-options" class="text-sm font-medium text-slate-700 whitespace-pre-line">
+                                        ...</p>
+                                </div>
+                                <div class="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                                    <p class="text-[10px] font-black text-emerald-600 uppercase mb-1">เฉลย (Staff Only)
+                                    </p>
+                                    <p id="aq-answer" class="text-base font-black text-emerald-800">...</p>
+                                </div>
+                            </div>
+
+                            <!-- Master Controls (Owner & Steal) -->
+                            <div class="mt-6 pt-4 border-t space-y-4">
+
+                                <!-- Step 1: Owner Turn -->
+                                <div id="ctrl-owner" class="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                                    <p class="text-xs font-black text-slate-600 mb-3 text-center">ตัดสิน: บ้านเจ้าของข้อ
+                                        (บ้าน <span id="ctrl-owner-house" class="text-blue-600">?</span>)</p>
+                                    <div class="flex gap-2">
+                                        <button onclick="judgeOwner(true)"
+                                            class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md transition-all flex justify-center items-center gap-2">
+                                            ✅ ตอบถูก (+เต็ม)
+                                        </button>
+                                        <button onclick="judgeOwner(false)"
+                                            class="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-xl font-bold border border-red-200 transition-all flex justify-center items-center gap-2">
+                                            ❌ ตอบผิด (0)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Step 2: Steal Turn (Hidden initially) -->
+                                <div id="ctrl-steal-open"
+                                    class="hidden text-center bg-orange-50 p-4 rounded-2xl border border-orange-200">
+                                    <p class="text-xs font-black text-orange-600 mb-2">เจ้าของข้อตอบผิด / หมดเวลา!</p>
+                                    <button onclick="openStealBuzzer()"
+                                        class="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black text-lg shadow-lg shadow-orange-200 animate-pulse transition-all">
+                                        🚨 กดเปิดระบบให้บ้านอื่น STEAL
+                                    </button>
+                                </div>
+
+                                <!-- Step 3: Steal Resolution (Hidden initially) -->
+                                <div id="ctrl-steal-judge"
+                                    class="hidden bg-purple-50 p-4 rounded-2xl border border-purple-200">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <p class="text-xs font-black text-purple-700">ตัดสิน: บ้านที่กด Steal ได้</p>
+                                        <span id="steal-winner-badge"
+                                            class="bg-purple-600 text-white px-3 py-1 rounded-full text-sm font-black shadow-md">บ้าน
+                                            ?</span>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="judgeSteal(true)"
+                                            class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md transition-all">
+                                            ✅ ถูก (+เต็ม)
+                                        </button>
+                                        <button onclick="judgeSteal(false)"
+                                            class="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold shadow-md transition-all flex flex-col items-center">
+                                            <span>❌ ผิด</span>
+                                            <span class="text-[9px] font-normal">(โดนหักครึ่งนึง)</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Question Grid (Board) -->
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                        <h3 class="text-sm font-black text-slate-800 uppercase mb-4 flex items-center justify-between">
+                            <span>🗂️ กระดานแผ่นป้ายคำถาม</span>
+                            <span
+                                class="text-[10px] text-slate-400 bg-slate-100 px-2 py-1 rounded">เลือกเพื่อเปิดคำถาม</span>
+                        </h3>
+                        <div id="jeopardy-grid"
+                            class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                            <div class="col-span-full py-10 text-center text-slate-400 italic">กำลังโหลดแผ่นป้าย...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Houses Overview & Session Control -->
+                <div class="lg:col-span-5 space-y-4">
+                    <div class="bg-slate-800 p-6 rounded-3xl shadow-lg text-white">
+                        <h3
+                            class="text-sm font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
+                            <span>🏠</span> สถานะบ้าน & การเข้าสู่ระบบ
+                        </h3>
+                        <div class="grid grid-cols-1 gap-3" id="houses-list">
+                            <!-- JS จะ render 8 บ้านที่นี่ -->
+                        </div>
+                        <p class="text-[9px] text-slate-400 mt-4 text-center">
+                            * ปุ่มสีแดงใช้เตะอุปกรณ์ที่ค้างออก เพื่อให้ตัวแทนบ้าน Login ใหม่ได้
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="mt-8 pt-8 border-t border-slate-200">
+                <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 text-center">Danger Zone</p>
+                <div class="flex flex-wrap justify-center gap-4">
+                    <!-- ปุ่มจบเกม -->
+                    <button onclick="finishJeopardyGame()"
+                        class="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-2xl font-black shadow-lg shadow-emerald-100 transition-all active:scale-95 flex items-center gap-2">
+                        🏁 จบเกม & SYNC คะแนนลง SHEET
+                    </button>
+            
+                    <!-- ปุ่ม Reset -->
+                    <button onclick="resetWholeGame()"
+                        class="bg-white text-red-600 border-2 border-red-100 hover:bg-red-50 px-8 py-3 rounded-2xl font-black transition-all active:scale-95">
+                        ♻️ ล้างค่าเริ่มใหม่ทั้งหมด
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: MANAGE QUESTIONS (หน้าจัดการคำถาม) -->
+        <!-- ========================================== -->
+        <div id="view-manage" class="hidden space-y-6 animate-fade-in">
+            <div class="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+                <div class="flex items-center gap-2 mb-6 border-b pb-4">
+                    <div
+                        class="w-10 h-10 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 text-xl">
+                        ➕</div>
+                    <div>
+                        <h2 class="text-lg font-black text-slate-800 uppercase italic">เพิ่มคำถามใหม่ลงระบบ</h2>
+                        <p class="text-xs text-slate-400 font-bold">ข้อมูลจะถูก Sync ขึ้น Firebase และ Google Sheets
+                            ทันที</p>
+                    </div>
+                </div>
+
+                <form id="form-question" onsubmit="event.preventDefault(); saveQuestion();"
+                    class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <!-- Row 1 -->
+                    <div class="md:col-span-4">
+                        <label
+                            class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">หมวดหมู่</label>
+                        <select id="q-category" required
+                            class="w-full mt-1 p-3 bg-slate-50 border rounded-xl outline-none focus:border-indigo-500 font-bold">
+                            <option value="Physic">ฟิสิกส์ (Physic)</option>
+                            <option value="Chemistry">เคมี (Chemistry)</option>
+                            <option value="Biology">ชีววิทยา (Biology)</option>
+                            <option value="IntroDent">Intro Dent</option>
+                            <option value="IntroMed">Intro Med</option>
+                            <option value="General">ทั่วไป</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-4">
+                        <label
+                            class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">ระดับความยาก</label>
+                        <select id="q-level" required
+                            class="w-full mt-1 p-3 bg-slate-50 border rounded-xl outline-none focus:border-indigo-500 font-bold">
+                            <option value="easy">ง่าย (1.5 นาที)</option>
+                            <option value="medium">ปานกลาง (2 นาที)</option>
+                            <option value="hard">ยาก (2.5 นาที)</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-4">
+                        <label
+                            class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">คะแนนที่จะได้</label>
+                        <input type="number" id="q-points" required step="50" min="50" placeholder="เช่น 100, 200"
+                            class="w-full mt-1 p-3 bg-slate-50 border rounded-xl outline-none focus:border-indigo-500 font-bold text-indigo-600">
+                    </div>
+
+                    <!-- Row 2 -->
+                    <div class="md:col-span-12">
+                        <label
+                            class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">โจทย์คำถาม</label>
+                        <textarea id="q-text" required rows="3"
+                            class="w-full mt-1 p-3 bg-slate-50 border rounded-xl outline-none focus:border-indigo-500"></textarea>
+                    </div>
+
+                    <!-- Row 3 -->
+                    <div class="md:col-span-6">
+                        <label class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">ตัวเลือก
+                            (บรรทัดละข้อ - เว้นว่างถ้าเป็นข้อเขียน)</label>
+                        <textarea id="q-options" rows="4" placeholder="A. คำตอบ 1&#10;B. คำตอบ 2"
+                            class="w-full mt-1 p-3 bg-slate-50 border rounded-xl outline-none focus:border-indigo-500"></textarea>
+                    </div>
+                    <div class="md:col-span-6">
+                        <label
+                            class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">เฉลยพร้อมคำอธิบายสั้นๆ
+                            (แสดงให้ Staff เห็น)</label>
+                        <textarea id="q-answer" required rows="4"
+                            class="w-full mt-1 p-3 bg-emerald-50 border border-emerald-100 rounded-xl outline-none focus:border-emerald-500 font-medium"></textarea>
+                    </div>
+
+                    <!-- Row 4 -->
+                    <div class="md:col-span-6">
+                        <label class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">URL
+                            สื่อประกอบโจทย์ (รูป/วิดีโอ) *ถ้ามี</label>
+                        <input type="url" id="q-media" placeholder="https://..."
+                            class="w-full mt-1 p-3 bg-slate-50 border rounded-xl outline-none focus:border-indigo-500 text-xs">
+                    </div>
+                    <div class="md:col-span-6">
+                        <label class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">URL
+                            สื่อประกอบคำอธิบาย (Canva) *ถ้ามี</label>
+                        <input type="url" id="q-explain-url" placeholder="https://..."
+                            class="w-full mt-1 p-3 bg-slate-50 border rounded-xl outline-none focus:border-indigo-500 text-xs">
+                    </div>
+
+                    <div class="md:col-span-12 text-right mt-4 border-t pt-4">
+                        <button type="submit"
+                            class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all">
+                            💾 บันทึกคำถาม
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- List All Questions (Simple table) -->
+            <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-4 border-b bg-slate-50">
+                    <h3 class="text-sm font-black text-slate-700">คลังคำถามที่มีในระบบ</h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-100 text-slate-500 text-[10px] uppercase">
+                            <tr>
+                                <th class="p-3">ID</th>
+                                <th class="p-3">หมวด/ระดับ</th>
+                                <th class="p-3">คะแนน</th>
+                                <th class="p-3 w-1/3">โจทย์</th>
+                                <th class="p-3 text-center">สถานะ</th>
+                                <th class="p-3 text-right">ลบ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="questions-table-body" class="divide-y divide-slate-100">
+                            <!-- Render via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Scripts -->
+    <script type="importmap">
+        { "imports": { "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js", "firebase/database": "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js" }}
+    </script>
+    <script src="../js/firebase-config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script type="module" src="../js/utils.js"></script>
+    <script type="module" src="../js/jeopardy-logic.js"></script>
+</body>
+
+</html>

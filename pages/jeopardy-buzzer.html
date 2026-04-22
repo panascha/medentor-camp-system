@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jeopardy Buzzer - Medentor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        /* เอฟเฟกต์ปุ่มพร้อมกด (Steal Open) */
+        @keyframes pulse-gold {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7);
+            }
+
+            70% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 20px rgba(251, 191, 36, 0);
+            }
+
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(251, 191, 36, 0);
+            }
+        }
+
+        .buzzer-active {
+            animation: pulse-gold 1s infinite;
+            background: radial-gradient(circle, #fbbf24 0%, #d97706 100%) !important;
+        }
+
+        /* เอฟเฟกต์เมื่อกดติดคนแรก */
+        @keyframes win-glow {
+
+            0%,
+            100% {
+                background-color: #059669;
+            }
+
+            50% {
+                background-color: #10b981;
+            }
+        }
+
+        .buzzer-win {
+            animation: win-glow 0.5s infinite;
+        }
+
+        .buzzer-btn {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-900 text-white min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <nav class="bg-slate-800 p-4 border-b border-slate-700 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <div id="house-badge"
+                class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-black text-xl shadow-lg border-2 border-white/20">
+                ?</div>
+            <div>
+                <p id="display-name" class="text-xs font-bold text-slate-400 leading-tight">Loading...</p>
+                <h1 class="text-sm font-black text-white uppercase tracking-widest">JEOPARDY BUZZER</h1>
+            </div>
+        </div>
+        <button onclick="location.reload()" class="p-2 text-slate-400"><svg xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg></button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col items-center justify-center p-6 gap-8">
+
+        <!-- Game Info Status -->
+        <div id="status-card"
+            class="w-full max-w-sm bg-slate-800/50 p-6 rounded-3xl border border-slate-700 text-center">
+            <p id="game-status-text" class="text-blue-400 font-black uppercase tracking-widest text-sm mb-1 italic">
+                รอเริ่มเกม...</p>
+            <h2 id="question-info" class="text-2xl font-bold text-white">เตรียมตัวให้พร้อม</h2>
+            <div id="timer-display" class="hidden mt-4 text-4xl font-black text-amber-400 tabular-nums">0.0</div>
+        </div>
+
+        <!-- Buzzer Button -->
+        <div class="relative group">
+            <!-- วงแหวนสะท้อนข้างหลัง -->
+            <div id="buzzer-ring"
+                class="absolute inset-0 bg-slate-700 rounded-full blur-xl opacity-20 scale-125 transition-all"></div>
+
+            <!-- ตัวปุ่ม -->
+            <button id="main-buzzer" disabled onclick="handleBuzzIn()"
+                class="buzzer-btn relative w-64 h-64 rounded-full bg-slate-800 border-8 border-slate-700 flex flex-col items-center justify-center shadow-2xl transition-all active:scale-90 active:shadow-inner disabled:opacity-50 disabled:cursor-not-allowed">
+
+                <span id="buzzer-icon" class="text-6xl mb-2">🔒</span>
+                <span id="buzzer-text"
+                    class="text-xl font-black uppercase tracking-tighter text-slate-500">Wait...</span>
+            </button>
+        </div>
+
+        <!-- Notification / Result -->
+        <div id="result-msg" class="hidden w-full max-w-sm p-4 rounded-2xl text-center font-bold animate-bounce">
+            <!-- Message will appear here -->
+        </div>
+
+    </main>
+
+    <!-- Footer Stats -->
+    <footer class="p-6 bg-slate-800/30 border-t border-slate-800">
+        <div class="flex justify-between items-center text-slate-400">
+            <div class="text-center flex-1 border-r border-slate-700">
+                <p class="text-[10px] uppercase font-black tracking-widest">คะแนนปัจจุบัน</p>
+                <p id="my-score" class="text-xl font-black text-white">0</p>
+            </div>
+            <div class="text-center flex-1">
+                <p class="text-[10px] uppercase font-black tracking-widest">ใช้สิทธิ์เลือกไป</p>
+                <p id="my-turns" class="text-xl font-black text-white">0/2</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Firebase SDK & Logic -->
+    <script type="importmap">
+        { "imports": { "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js", "firebase/database": "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js" }}
+    </script>
+    <script src="../js/firebase-config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script type="module">
+        import { initializeApp } from "firebase/app";
+        import { getDatabase, ref, onValue, set, update, runTransaction, get } from "firebase/database";
+
+        const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
+        const db = getDatabase(app);
+
+        // 1. ตรวจสอบสิทธิ์ (ต้องเป็นนักเรียนและมีเลขบ้าน)
+        const user = checkAuth();
+        if (!user || !user.house) {
+            window.location.href = 'login.html';
+        } else {
+            document.getElementById('display-name').innerText = `น้อง${user.nickname} (${user.id})`;
+            document.getElementById('house-badge').innerText = user.house;
+            initBuzzerLogic();
+        }
+
+        let gameState = {};
+        let myHouseId = user.house.toString();
+
+        function initBuzzerLogic() {
+            // ฟังข้อมูล Jeopardy ทั้งหมด
+            onValue(ref(db, 'jeopardy'), (snapshot) => {
+                const data = snapshot.val();
+                if (!data) return;
+                gameState = data;
+
+                updateUI(data);
+            });
+        }
+
+        async function enforceOneDevicePerHouse() {
+                const houseId = user.house;
+                const mySessionId = user.sessionId; // ใช้ sessionId จากระบบ Login เดิม
+                const houseSessionRef = ref(db, `jeopardy/houses/${houseId}/active_session_id`);
+
+                // 1. บันทึก Session ปัจจุบันทับลงไป (เตะคนเก่า)
+                await set(houseSessionRef, mySessionId);
+
+                // 2. ฟังการเปลี่ยนแปลง ถ้าค่าใน DB เปลี่ยนเป็นค่าอื่น (มีคนอื่นเข้าบ้านนี้) ให้เตะตัวเองออก
+                onValue(houseSessionRef, (snapshot) => {
+                    const currentInDb = snapshot.val();
+                    if (currentInDb && currentInDb !== mySessionId) {
+                        Swal.fire({
+                            title: 'ถูกยกเลิกการเชื่อมต่อ',
+                            text: 'มีเครื่องอื่นในบ้านของคุณเข้าสู่หน้าปุ่มกดนี้ (อนุญาต 1 เครื่องต่อบ้าน)',
+                            icon: 'warning',
+                            confirmButtonText: 'กลับหน้าหลัก',
+                            allowOutsideClick: false
+                        }).then(() => {
+                            window.location.href = '../index.html';
+                        });
+                    }
+                });
+            }
+
+            // เรียกใช้หลังจากตรวจสิทธิ์ผ่าน
+            enforceOneDevicePerHouse();
+
+            
+        function updateUI(data) {
+            const gs = data.game_state;
+            const hData = data.houses[myHouseId] || {};
+            const buzzerData = data.buzzers || {};
+
+            // อัปเดตสถิติบ้าน
+            document.getElementById('my-score').innerText = hData.jeopardy_score || 0;
+            document.getElementById('my-turns').innerText = `${hData.turns_played || 0}/2`;
+
+            const btn = document.getElementById('main-buzzer');
+            const icon = document.getElementById('buzzer-icon');
+            const text = document.getElementById('buzzer-text');
+            const statusText = document.getElementById('game-status-text');
+            const questionInfo = document.getElementById('question-info');
+            const resultMsg = document.getElementById('result-msg');
+            const ring = document.getElementById('buzzer-ring');
+
+            // ล้างสถานะสีเก่า
+            btn.className = "buzzer-btn relative w-64 h-64 rounded-full flex flex-col items-center justify-center shadow-2xl transition-all active:scale-90 active:shadow-inner disabled:opacity-50 border-8";
+            ring.className = "absolute inset-0 rounded-full blur-xl opacity-20 scale-125 transition-all";
+            resultMsg.classList.add('hidden');
+
+            // --- ตรวจสอบสถานะเกม ---
+            if (gs.status === 'BOARD') {
+                statusText.innerText = "รอบอร์ดคำถาม";
+                questionInfo.innerText = gs.active_house == myHouseId ? "ถึงตาบ้านคุณเลือก!" : `บ้าน ${gs.active_house} กำลังเลือก`;
+                icon.innerText = "⌛";
+                text.innerText = "Waiting...";
+                btn.disabled = true;
+                btn.classList.add('bg-slate-800', 'border-slate-700');
+            }
+            else if (gs.status === 'QUESTION') {
+                statusText.innerText = "เจ้าของข้อกำลังตอบ";
+                const q = data.questions[gs.active_question_id];
+                questionInfo.innerText = `${q?.category} (${q?.points} Pts)`;
+                icon.innerText = "🚫";
+                text.innerText = "Locked";
+                btn.disabled = true;
+                btn.classList.add('bg-slate-800', 'border-slate-700');
+            }
+            else if (gs.status === 'STEAL_WAIT') {
+                // เข้าสู่โหมดแย่งตอบ
+                const isWinner = buzzerData.winner == myHouseId;
+                const someoneElseWon = buzzerData.winner && buzzerData.winner != myHouseId;
+
+                if (isWinner) {
+                    // เรากดติด!
+                    statusText.innerText = "สำเร็จ!";
+                    questionInfo.innerText = "คุณได้สิทธิ์ตอบข้อนี้";
+                    icon.innerText = "🎯";
+                    text.innerText = "YOU WON!";
+                    btn.classList.add('buzzer-win', 'border-white');
+                    btn.disabled = true;
+                    ring.classList.add('bg-emerald-500', 'opacity-60');
+                }
+                else if (someoneElseWon) {
+                    // บ้านอื่นกดติด
+                    statusText.innerText = "ช้าไปนิดเดียว";
+                    questionInfo.innerText = `บ้าน ${buzzerData.winner} กดติดก่อน`;
+                    icon.innerText = "💨";
+                    text.innerText = "Too Late";
+                    btn.classList.add('bg-red-900/50', 'border-red-500/50');
+                    btn.disabled = true;
+                }
+                else if (gs.is_steal_open) {
+                    // เปิดให้กด Steal! (วินาทีตัดสิน)
+                    statusText.innerText = "เปิดระบบ Steal แล้ว!";
+                    statusText.classList.add('text-amber-400');
+                    questionInfo.innerText = "กดเลย!!!";
+                    icon.innerText = "🚨";
+                    text.innerText = "STEAL!";
+                    text.classList.add('text-white');
+                    btn.disabled = false;
+                    btn.classList.add('buzzer-active', 'border-amber-400');
+                    ring.classList.add('bg-amber-400', 'opacity-40');
+                } else {
+                    // เตรียมตัว Steal (Admin ยังไม่กดปุ่มไฟ)
+                    statusText.innerText = "รอสัญญาณ Steal";
+                    questionInfo.innerText = "เตรียมวางนิ้วที่ปุ่ม...";
+                    icon.innerText = "✋";
+                    text.innerText = "Get Ready";
+                    btn.disabled = true;
+                    btn.classList.add('bg-indigo-900/50', 'border-indigo-500');
+                }
+            }
+        }
+
+        // --- ฟังก์ชันกดปุ่ม (หัวใจของหน้าแผ่นนี้) ---
+        window.handleBuzzIn = async function () {
+            if (!gameState.game_state.is_steal_open || gameState.buzzers?.is_locked) return;
+
+            // ระบบสั่น Feedback
+            if ("vibrate" in navigator) navigator.vibrate(100);
+
+            const buzzerRef = ref(db, 'jeopardy/buzzers');
+
+            try {
+                // ใช้ Transaction เพื่อให้ Firebase ตัดสินคนกดคนแรกที่ Server-side
+                const result = await runTransaction(buzzerRef, (currentData) => {
+                    // ถ้ายังไม่มีคนกด หรือ ระบบยังไม่ล็อค
+                    if (currentData === null || currentData.is_locked === false) {
+                        return {
+                            is_locked: true,
+                            winner: parseInt(myHouseId),
+                            timestamp: Date.now()
+                        };
+                    }
+                    // ถ้ามีคนกดไปแล้ว (currentData มีค่า) ให้คืนค่าเดิมกลับไป (Abort)
+                    return;
+                });
+
+                if (result.committed) {
+                    // เราคือผู้ชนะ! (Transaction สำเร็จ)
+                    console.log("Success! You are the winner.");
+                } else {
+                    // มีคนอื่นตัดหน้าไปก่อนมิลลิวินาทีเดียวกัน
+                    console.log("Too late, someone else buzzed in.");
+                }
+            } catch (error) {
+                console.error("Buzzer Error:", error);
+            }
+        }
+ 
+    </script>
+</body>
+
+</html>
