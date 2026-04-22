@@ -73,6 +73,25 @@ const HOUSE_COLORS = {
     1: 'bg-red-500', 2: 'bg-blue-500', 3: 'bg-emerald-500', 4: 'bg-amber-500',
     5: 'bg-purple-500', 6: 'bg-pink-500', 7: 'bg-indigo-500', 8: 'bg-teal-500'
 };
+function sortRoomDOM(roomEl) {
+    const cards = Array.from(roomEl.children);
+
+    cards.sort((a, b) => {
+        // ดึง House ID จาก class 'house-X'
+        const hA = parseInt(a.className.match(/house-(\d+)/)[1]);
+        const hB = parseInt(b.className.match(/house-(\d+)/)[1]);
+
+        // ดึงคะแนนจาก Badge
+        const sA = parseFloat(a.querySelector('.min-w-\\[30px\\], .min-w-\\[35px\\]').innerText) || 0;
+        const sB = parseFloat(b.querySelector('.min-w-\\[30px\\], .min-w-\\[35px\\]').innerText) || 0;
+
+        // ลอจิก: เรียงบ้าน 1->8 ถ้าบ้านเดียวกัน ให้คะแนนมากไปน้อย
+        return hA - hB || sB - sA;
+    });
+
+    // นำ Card ที่เรียงแล้วใส่กลับเข้าไปใน DOM
+    cards.forEach(card => roomEl.appendChild(card));
+}
 
 function renderRooms(count) {
     const wrapper = document.getElementById('rooms-wrapper');
@@ -83,18 +102,15 @@ function renderRooms(count) {
         const letter = getRoomLetter(i);
         wrapper.innerHTML += `
             <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col h-fit">
+                <!-- ... ส่วน Header ห้องที่เคยเขียนไว้ (สถิติ Mean/Median) ... -->
                 <div class="bg-slate-800 text-white p-5">
                     <div class="flex justify-between items-center mb-3">
                         <h3 class="font-black text-xl italic">ROOM ${letter}</h3>
-                        <span id="count-room-${letter}" class="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black">0 คน</span>
+                        <span id="count-room-${letter}" class="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black">0/20 คน</span>
                     </div>
-                    
-                    <!-- ส่วนแสดงจุดสีบ้าน -->
                     <div id="houses-in-${letter}" class="flex gap-1.5 mb-4 flex-wrap"></div>
-
-                    <!-- ส่วนแสดงสถิติ -->
-                    <div class="grid grid-cols-2 gap-2 pt-3 border-t border-white/10">
-                        <div class="text-center">
+                    <div class="grid grid-cols-2 gap-2 pt-3 border-t border-white/10" id="stats-area-${letter}">
+                         <div class="text-center">
                             <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Mean</p>
                             <p id="mean-room-${letter}" class="text-lg font-black text-blue-400">0.00</p>
                         </div>
@@ -112,13 +128,28 @@ function renderRooms(count) {
         `;
     }
 
-    // ตั้งค่า Sortable ให้กับห้องที่สร้างใหม่
+    // ตั้งค่า Sortable
     document.querySelectorAll('.room-column, #pool').forEach(el => {
         new Sortable(el, {
             group: 'rooms',
-            animation: 200,
+            animation: 300,
             ghostClass: 'ghost-card',
-            onEnd: updateStats
+            onEnd: (evt) => {
+                const item = evt.item;
+                const targetRoom = evt.to; // ห้องปลายทาง
+
+                // 1. เพิ่มไฮไลท์ให้ตัวที่พึ่งย้าย
+                item.classList.add('just-moved');
+                setTimeout(() => item.classList.remove('just-moved'), 1500);
+
+                // 2. ถ้าเป็นการย้ายเข้าห้องเรียน หรือย้ายไปมาระหว่างห้องเรียน ให้เรียงลำดับใหม่ (ยกเว้น Pool)
+                if (targetRoom.id !== 'pool') {
+                    sortRoomDOM(targetRoom);
+                }
+
+                // 3. อัปเดตสถิติต่างๆ
+                updateStats();
+            }
         });
     });
 }
@@ -167,6 +198,107 @@ function createStudentCard(s) {
     `;
 }
 
+// ฟังก์ชันหลักในการอัปเดตข้อมูลบ้าน (เรียกจาก updateStats)
+function updateHouseInsights() {
+    const insightsGrid = document.getElementById('house-insights-grid');
+    if (!insightsGrid) return;
+
+    // 1. กำหนดสไตล์สีตามคลาส
+    const CLASS_THEMES = {
+        'A': { text: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200', dot: 'bg-blue-500' },
+        'B': { text: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-200', dot: 'bg-indigo-500' },
+        'C': { text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+        'D': { text: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', dot: 'bg-amber-500' }
+    };
+
+    // 2. จัดกลุ่มนักเรียน (เหมือนเดิม)
+    const houseGroups = {};
+    for (let i = 1; i <= 8; i++) {
+        houseGroups[i] = { all: [], assigned: { 'A': [], 'B': [], 'C': [], 'D': [], 'pool': [] } };
+    }
+
+    students.forEach(s => {
+        const h = s.house;
+        if (!houseGroups[h]) return;
+        houseGroups[h].all.push(s.score);
+        const cardEl = document.querySelector(`.student-card[data-id="${s.id}"]`);
+        if (cardEl) {
+            const currentRoom = cardEl.parentElement.dataset.room || 'pool';
+            houseGroups[h].assigned[currentRoom].push(s.score);
+        }
+    });
+
+    // 3. วาด UI
+    insightsGrid.innerHTML = Object.keys(houseGroups).map(hId => {
+        const house = houseGroups[hId];
+        const globalMean = house.all.length > 0 ? (house.all.reduce((a, b) => a + b, 0) / house.all.length) : 0;
+        const rooms = ['A', 'B', 'C', 'D'];
+
+        const distHtml = rooms.map(r => {
+            const count = house.assigned[r].length;
+            const mean = count > 0 ? (house.assigned[r].reduce((a, b) => a + b, 0) / count) : 0;
+            const theme = CLASS_THEMES[r];
+
+            // ถ้ามีคนในคลาสนี้ ให้ใช้สีประจำคลาส ถ้าไม่มีให้เป็นสีเทาจาง
+            const statusStyle = count > 0
+                ? `${theme.bg} ${theme.border} ${theme.text} border-2`
+                : `bg-slate-50 border-slate-100 text-slate-300 border`;
+
+            return `
+                <div class="rounded-2xl p-3 ${statusStyle} transition-all duration-300 flex flex-col justify-between">
+                    <div class="flex justify-between items-start mb-1">
+                        <div class="flex items-center gap-1.5">
+                            ${count > 0 ? `<span class="w-1.5 h-1.5 rounded-full ${theme.dot}"></span>` : ''}
+                            <span class="text-[10px] font-black uppercase tracking-tighter">คลาส ${r}</span>
+                        </div>
+                        <span class="text-[11px] font-black">${count} คน</span>
+                    </div>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-[8px] font-bold opacity-60 uppercase">Avg</span>
+                        <span class="text-xs font-black">${mean.toFixed(1)}</span>
+                    </div>
+                    <!-- หลอดไฟเช็คความสมบูรณ์ (ครบ 5 คน) -->
+                    ${count === 5 ? `
+                        <div class="mt-2 pt-1.5 border-t border-current/10 flex items-center gap-1">
+                            <span class="text-[8px] font-black italic">✓ BALANCED</span>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="bg-white border-2 border-slate-100 rounded-[2.5rem] p-5 hover:shadow-xl hover:-translate-y-1 transition-all group">
+                <div class="flex justify-between items-start mb-5">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl bg-house-${hId} text-white flex items-center justify-center font-black text-lg shadow-lg shadow-house-${hId}/30">
+                            ${hId}
+                        </div>
+                        <div>
+                            <h4 class="text-base font-black text-slate-800">บ้าน ${hId}</h4>
+                            <div class="flex items-center gap-1">
+                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Global Mean:</span>
+                                <span class="text-[10px] font-black text-blue-600">${globalMean.toFixed(1)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    ${distHtml}
+                </div>
+                
+                <div class="flex justify-between items-center bg-slate-50 p-3 rounded-2xl">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">คงเหลือใน Pool</span>
+                    <span class="text-sm font-black ${house.assigned['pool'].length > 0 ? 'text-orange-500' : 'text-slate-300'}">
+                        ${house.assigned['pool'].length} <span class="text-[10px]">คน</span>
+                    </span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
 function updateStats() {
     const HOUSE_COLORS_CLASS = {
         1: 'bg-red-500', 2: 'bg-blue-500', 3: 'bg-emerald-500', 4: 'bg-amber-500',
@@ -175,62 +307,54 @@ function updateStats() {
 
     document.querySelectorAll('.room-column').forEach(room => {
         const letter = room.dataset.room;
-        if (letter === 'pool') return; // ไม่คำนวณสถิติให้ Pool
-
-        // ดัก Error: ถ้าไม่มี Element สถิติ ให้ข้ามการทำงานไปก่อน
-        const meanEl = document.getElementById(`mean-room-${letter}`);
-        const medianEl = document.getElementById(`median-room-${letter}`);
-        const countEl = document.getElementById(`count-room-${letter}`);
-        const houseContainer = document.getElementById(`houses-in-${letter}`);
-
-        if (!meanEl || !medianEl || !countEl || !houseContainer) return;
+        if (letter === 'pool') return;
 
         const cards = Array.from(room.querySelectorAll('.student-card'));
-        const count = cards.length;
+        const scores = cards.map(c => parseFloat(c.querySelector('.min-w-\\[30px\\], .min-w-\\[35px\\]').innerText) || 0);
+        const count = scores.length;
 
-        const scores = [];
+        if (count === 0) return;
+
+        // 1. สถิติพื้นฐาน
+        const mean = scores.reduce((a, b) => a + b, 0) / count;
+        const sorted = [...scores].sort((a, b) => a - b);
+        const median = count % 2 !== 0 ? sorted[Math.floor(count / 2)] : (sorted[count / 2 - 1] + sorted[count / 2]) / 2;
+
+        // 2. คำนวณ SD (บอกความเหลื่อมล้ำในห้อง)
+        const v = scores.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / count;
+        const sd = Math.sqrt(v);
+
+        // 3. หาช่วงคะแนน (Gap)
+        const min = sorted[0];
+        const max = sorted[count - 1];
+
+        // --- อัปเดต UI ---
+        document.getElementById(`count-room-${letter}`).innerText = `${count}/20 คน`;
+        document.getElementById(`mean-room-${letter}`).innerText = mean.toFixed(1);
+        document.getElementById(`median-room-${letter}`).innerText = median.toFixed(1);
+
+        // เพิ่มการแสดงผล SD และ Range ลงใน Header (ถ้าคุณเพิ่ม Tag HTML รองรับ)
+        // ตัวอย่างการนำไปใช้แสดงผลเพิ่มเติมในจุดสีบ้าน
         const houseCounts = {};
-
         cards.forEach(card => {
-            // ดึงคะแนนจากตัวเลขใน Card
-            const scoreBadge = card.querySelector('.min-w-\\[35px\\], .min-w-\\[30px\\]');
-            if (scoreBadge) {
-                scores.push(parseFloat(scoreBadge.innerText) || 0);
-            }
-
-            // หา House ID
-            const houseMatch = card.className.match(/house-(\d+)/);
-            if (houseMatch) {
-                const h = houseMatch[1];
-                houseCounts[h] = (houseCounts[h] || 0) + 1;
-            }
+            const h = card.className.match(/house-(\d+)/)[1];
+            houseCounts[h] = (houseCounts[h] || 0) + 1;
         });
 
-        // แสดงผลจำนวนคน
-        countEl.innerText = `${count}/20 คน`;
-
-        // คำนวณ Mean
-        const mean = count > 0 ? (scores.reduce((a, b) => a + b, 0) / count) : 0;
-        meanEl.innerText = mean.toFixed(2);
-
-        // คำนวณ Median
-        let median = 0;
-        if (count > 0) {
-            const sortedScores = [...scores].sort((a, b) => a - b);
-            const mid = Math.floor(count / 2);
-            median = count % 2 !== 0 ? sortedScores[mid] : (sortedScores[mid - 1] + sortedScores[mid]) / 2;
-        }
-        medianEl.innerText = median.toFixed(1);
-
-        // วาดจุดสีบอกบ้าน
-        const houseList = Object.keys(houseCounts).sort((a, b) => a - b);
-        houseContainer.innerHTML = houseList.map(h => `
+        const houseContainer = document.getElementById(`houses-in-${letter}`);
+        houseContainer.innerHTML = `
+            <div class="w-full flex justify-between text-[8px] text-slate-400 font-bold mb-2 border-b border-white/5 pb-1 uppercase tracking-tighter">
+                <span>SD: ${sd.toFixed(2)}</span>
+                <span>Range: ${min}-${max} (Gap: ${max - min})</span>
+            </div>
+        ` + Object.keys(houseCounts).sort().map(h => `
             <div class="flex items-center gap-1 bg-white/10 px-2 py-0.5 rounded-md border ${houseCounts[h] === 5 ? 'border-emerald-400' : 'border-white/5'}">
                 <span class="w-2 h-2 rounded-full ${HOUSE_COLORS_CLASS[h]}"></span>
                 <span class="text-[9px] font-black text-white">${houseCounts[h]}</span>
             </div>
         `).join('');
     });
+    updateHouseInsights();
 }
 
 // async function applySnakeSort() {
@@ -602,4 +726,92 @@ async function distributeRemaining() {
 
     updateStats();
     showToast(`สุ่มนักเรียน ${shuffled.length} คน เข้าห้องเรียนเรียบร้อย`);
+}
+
+
+// --- [DEV TOOLS] ฟังก์ชันสำหรับสุ่มคะแนนนักเรียนทุกคน ---
+async function devGenerateScores() {
+    const confirm = await Swal.fire({
+        title: 'สุ่มคะแนนนักเรียนทุกคน?',
+        text: "ระบบจะสร้างคะแนน Pretest แบบสุ่ม (15-55 คะแนน) ให้กับนักเรียนทุกคนในฐานข้อมูล",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'เริ่มสุ่มคะแนน',
+        cancelButtonText: 'ยกเลิก'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({ title: 'กำลังสุ่มคะแนน...', didOpen: () => Swal.showLoading() });
+
+    try {
+        const updates = {};
+        students.forEach(s => {
+            // สุ่มคะแนนรายวิชาตาม Limit จริง
+            const p = Math.floor(Math.random() * 16); // 0-15
+            const c = Math.floor(Math.random() * 16); // 0-15
+            const b = Math.floor(Math.random() * 7);  // 0-6
+            const d = Math.floor(Math.random() * 13); // 0-12
+            const m = Math.floor(Math.random() * 13); // 0-12
+            const total = p + c + b + d + m;
+
+            updates[`scores/${s.id}/pretest`] = {
+                physic: p,
+                chemistry: c,
+                biology: b,
+                introdent: d,
+                intromed: m,
+                total: total,
+                recordedBy: "System Debug",
+                timestamp: new Date().toISOString()
+            };
+        });
+
+        // ส่งข้อมูลไป Firebase (ใช้ PATCH เพื่ออัปเดตหลายจุดพร้อมกัน)
+        await fetch(`${CONFIG.firebaseURL}.json?auth=${CONFIG.fbSecret}`, {
+            method: 'PATCH',
+            body: JSON.stringify(updates)
+        });
+
+        await Swal.fire('สุ่มคะแนนสำเร็จ!', 'กรุณารอสักครู่ ระบบกำลังรีโหลดข้อมูลใหม่', 'success');
+        location.reload(); // รีโหลดเพื่อให้ข้อมูลในตัวแปร students อัปเดตตาม Firebase
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'ไม่สามารถสุ่มคะแนนได้', 'error');
+    }
+}
+
+// --- [DEV TOOLS] ฟังก์ชันสำหรับล้างคะแนน Pretest ทั้งหมด ---
+async function devClearScores() {
+    const confirm = await Swal.fire({
+        title: 'ล้างคะแนนทั้งหมด?',
+        text: "คะแนน Pretest ของนักเรียนทุกคนจะหายไปจากระบบถาวร",
+        icon: 'danger',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'ยืนยันลบทั้งหมด',
+        cancelButtonText: 'ยกเลิก'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({ title: 'กำลังล้างข้อมูล...', didOpen: () => Swal.showLoading() });
+
+    try {
+        const updates = {};
+        students.forEach(s => {
+            updates[`scores/${s.id}/pretest`] = null; // ตั้งค่าเป็น null เพื่อลบออก
+        });
+
+        await fetch(`${CONFIG.firebaseURL}.json?auth=${CONFIG.fbSecret}`, {
+            method: 'PATCH',
+            body: JSON.stringify(updates)
+        });
+
+        await Swal.fire('ล้างข้อมูลสำเร็จ!', 'คะแนน Pretest ถูกลบทั้งหมดแล้ว', 'success');
+        location.reload();
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'ไม่สามารถล้างข้อมูลได้', 'error');
+    }
 }

@@ -28,8 +28,8 @@
         }
 
         .student-card {
-        transition: all 0.2s ease;
         cursor: grab;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
     .student-card:hover {
         transform: translateY(-2px) scale(1.02);
@@ -85,6 +85,26 @@
         transform: translateY(-3px);
         box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.3);
     }
+
+    /* เอฟเฟกต์ไฮไลท์เมื่อย้าย Card */
+.just-moved {
+    animation: highlight-glow 1.5s ease-out;
+    z-index: 50;
+    position: relative;
+}
+
+@keyframes highlight-glow {
+    0% { 
+        transform: scale(1.05); 
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+        outline: 4px solid #3b82f6;
+    }
+    100% { 
+        transform: scale(1); 
+        box-shadow: none;
+        outline: 0px solid transparent;
+    }
+}
 
 </style>
 </head>
@@ -142,6 +162,27 @@
             <div class="hidden lg:block text-right">
                 <p class="text-xs text-slate-400 font-bold uppercase italic">* Sorting Logic:</p>
                 <p class="text-xs text-slate-400 italic">กระจายคะแนน Pretest แบบสลับฟันปลา</p>
+            </div>
+        </div>
+
+        <!-- House Insights Dashboard -->
+        <div class="bg-white p-6 rounded-3xl shadow-sm mb-8 border border-slate-200">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-800">House Insights & Distribution</h2>
+                    <p class="text-xs text-slate-400">ตรวจสอบความสมดุลของคะแนนเฉลี่ยบ้านที่กระจายลงแต่ละคลาส</p>
+                </div>
+                <div class="flex gap-2">
+                    <div class="flex items-center gap-2 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
+                        <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                        <span class="text-[10px] font-bold text-emerald-600 uppercase">Balanced (5 คน)</span>
+                    </div>
+                </div>
+            </div>
+        
+            <!-- Grid แสดงทั้ง 8 บ้าน -->
+            <div id="house-insights-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- JS will render 8 house cards here -->
             </div>
         </div>
 
