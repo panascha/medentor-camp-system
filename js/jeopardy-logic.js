@@ -80,12 +80,18 @@ onValue(ref(db, 'jeopardy'), (snapshot) => {
 // ---------------------------------------------------------
 // 4. Internal Initializer
 // ---------------------------------------------------------
+// ปรับปรุงในส่วน initializeGameStructure
 async function initializeGameStructure() {
     const initialData = {
         config: {
             is_active: true,
             current_round: 1,
             max_turns_per_house: 2,
+            timer_tiers: {
+                "easy": 90,
+                "medium": 120,
+                "hard": 150
+            },
             picking_house_order: [1, 2, 3, 4, 5, 6, 7, 8]
         },
         game_state: {
@@ -95,13 +101,25 @@ async function initializeGameStructure() {
             current_turn_index: 0,
             answering_house: null,
             is_steal_open: false,
-            options_revealed: false
+            is_timer_running: false,
+            timer_duration: 0,
+            timer_remaining: 0,
+            last_action_log: "Game Started"
         },
-        buzzers: { is_locked: false, winner: null },
+        buzzers: { is_locked: false, winner: null, attempts: {} },
         houses: {}
     };
+
     for (let i = 1; i <= 8; i++) {
-        initialData.houses[i] = { jeopardy_score: 0, turns_played: 0, active_session_id: null };
+        initialData.houses[i] = {
+            jeopardy_score: 0,
+            correct_points: 0,
+            penalty_points: 0,
+            turns_played: 0,
+            can_steal: true,
+            active_session_id: null,
+            last_active_ts: Date.now()
+        };
     }
     await set(ref(db, 'jeopardy'), initialData);
 }
@@ -194,46 +212,69 @@ function renderHouseStatus() {
         const isOnline = !!h.active_session_id;
         const usedAllTurns = h.turns_played >= (state.config?.max_turns_per_house || 2);
 
+        // ข้อมูลจาก Schema ใหม่
+        const canSteal = h.can_steal !== false; // ถ้าเป็น undefined ให้ถือว่าเป็น true
+
         return `
         <div class="relative group">
             <!-- ส่วน Card บ้าน (กดได้เพื่อเลือกเป็น Active House) -->
             <div onclick="setActiveHouse('${hId}')" 
-                class="cursor-pointer flex items-center justify-between p-3 rounded-xl border-2 transition-all 
+                class="cursor-pointer p-3 rounded-xl border-2 transition-all 
                 ${isActive ? 'bg-blue-600 border-blue-400 active-house-glow shadow-lg' : 'bg-slate-700/40 border-transparent hover:border-slate-500'} 
-                ${usedAllTurns && !isActive ? 'opacity-50' : ''}">
+                ${usedAllTurns && !isActive ? 'opacity-60' : ''}">
                 
-                <div class="flex items-center gap-3">
-                    <!-- วงกลมเลขบ้าน -->
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center font-black text-lg shadow-inner
-                        ${isActive ? 'bg-white text-blue-600' : 'bg-slate-800 text-slate-400'}">
-                        ${hId}
-                    </div>
-                    
-                    <div>
-                        <p class="text-sm font-black ${isActive ? 'text-white' : 'text-slate-200'}">
-                            Pts: ${h.jeopardy_score} 
-                            ${isActive ? '<span class="ml-2 text-[10px] bg-blue-400 px-2 py-0.5 rounded-full text-white animate-pulse">กำลังเล่น</span>' : ''}
-                        </p>
-                        <div class="flex items-center gap-2 mt-0.5">
-                            <span class="text-[10px] font-bold ${isActive ? 'text-blue-100' : 'text-slate-400'} uppercase">
-                                เล่นไปแล้ว: ${h.turns_played}/2
-                            </span>
-                            <span class="w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}"></span>
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-3">
+                        <!-- วงกลมเลขบ้าน -->
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center font-black text-lg shadow-inner
+                            ${isActive ? 'bg-white text-blue-600' : 'bg-slate-800 text-slate-400'}">
+                            ${hId}
+                        </div>
+                        
+                        <div>
+                            <p class="text-sm font-black ${isActive ? 'text-white' : 'text-slate-200'}">
+                                Net: ${h.jeopardy_score} 
+                                ${isActive ? '<span class="ml-2 text-[9px] bg-blue-400 px-2 py-0.5 rounded-full text-white animate-pulse uppercase">Choosing</span>' : ''}
+                            </p>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                <span class="text-[9px] font-bold ${isActive ? 'text-blue-100' : 'text-slate-400'} uppercase">
+                                    Turns: ${h.turns_played}/2
+                                </span>
+                                <span class="w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}" title="${isOnline ? 'Online' : 'Offline'}"></span>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- ปุ่ม Kick -->
+                    <button onclick="event.stopPropagation(); kickHouse('${hId}')" 
+                        class="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                    </button>
                 </div>
 
-                <!-- ปุ่ม Action อื่นๆ (Kick) -->
-                <button onclick="event.stopPropagation(); kickHouse('${hId}')" 
-                    class="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                </button>
+                <!-- คะแนนละเอียด (Schema ใหม่: Correct / Penalty / Steal Status) -->
+                <div class="grid grid-cols-3 gap-1 border-t ${isActive ? 'border-blue-400' : 'border-slate-600/50'} pt-2 mt-2">
+                    <div class="text-center">
+                        <p class="text-[8px] font-black ${isActive ? 'text-blue-200' : 'text-slate-500'} uppercase">Correct</p>
+                        <p class="text-[11px] font-black text-emerald-400">+${h.correct_points || 0}</p>
+                    </div>
+                    <div class="text-center border-x ${isActive ? 'border-blue-400' : 'border-slate-600/50'}">
+                        <p class="text-[8px] font-black ${isActive ? 'text-blue-200' : 'text-slate-500'} uppercase">Penalty</p>
+                        <p class="text-[11px] font-black text-red-400">-${h.penalty_points || 0}</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-[8px] font-black ${isActive ? 'text-blue-200' : 'text-slate-500'} uppercase">Steal</p>
+                        <p class="text-[10px] font-black ${canSteal ? 'text-blue-400' : 'text-slate-500'}">
+                            ${canSteal ? 'READY' : '🚫 BLOCKED'}
+                        </p>
+                    </div>
+                </div>
             </div>
             
-            <!-- ตัวบอกใบ้ถ้าเล่นครบแล้ว -->
-            ${usedAllTurns ? `<div class="absolute -top-1 -right-1 text-xs">⚠️</div>` : ''}
+            <!-- ไอคอนเตือนถ้าเล่นครบแล้ว -->
+            ${usedAllTurns ? `<div class="absolute -top-1 -right-1 text-xs" title="บ้านนี้ใช้สิทธิ์เลือกครบ 2 รอบแล้ว">⚠️</div>` : ''}
         </div>`;
     }).join('');
 }
@@ -305,41 +346,19 @@ function renderQuestionsTable() {
 }
 
 function renderBoard() {
-    // ป้องกันการรันในหน้าอื่นที่ไม่ใช่ Board
     if (!window.isBoardPage || !state.questions) return;
 
     const boardContainer = document.getElementById('board-container');
     if (!boardContainer) return;
 
-    // 1. ดึงข้อมูลคำถามออกมาเป็น Array และกรองค่าว่าง
     const allQuestions = Object.values(state.questions).filter(q => q && q.id);
-
-    // 2. เรียงลำดับคำถามตามคะแนน (Points) จากน้อยไปมาก
     allQuestions.sort((a, b) => a.points - b.points);
 
-    // 3. กำหนดสีตามระดับความยาก (Theme สว่าง)
     const difficultyStyles = {
-        easy: {
-            border: 'border-emerald-100',
-            bg: 'bg-emerald-50/50',
-            text: 'text-emerald-600',
-            hover: 'hover:border-emerald-400 hover:bg-emerald-50'
-        },
-        medium: {
-            border: 'border-amber-100',
-            bg: 'bg-amber-50/50',
-            text: 'text-amber-600',
-            hover: 'hover:border-amber-400 hover:bg-amber-50'
-        },
-        hard: {
-            border: 'border-rose-100',
-            bg: 'bg-rose-50/50',
-            text: 'text-rose-600',
-            hover: 'hover:border-rose-400 hover:bg-rose-50'
-        }
+        easy: { border: 'border-emerald-100', bg: 'bg-emerald-50/30', text: 'text-emerald-600' },
+        medium: { border: 'border-amber-100', bg: 'bg-amber-50/30', text: 'text-amber-600' },
+        hard: { border: 'border-rose-100', bg: 'bg-rose-50/30', text: 'text-rose-600' }
     };
-
-    // 4. วาดการ์ดลงใน Grid (ใช้ col-span-5 ตาม HTML เดิม หรือปรับใน HTML เป็น grid-cols-6 เพื่อให้ดูเต็ม)
 
     boardContainer.innerHTML = allQuestions.map(q => {
         const style = difficultyStyles[q.level] || difficultyStyles.easy;
@@ -348,32 +367,18 @@ function renderBoard() {
         return `
         <button onclick="confirmOpenQuestion('${q.id}')" 
             ${isOpened ? 'disabled' : ''}
-            class="jeopardy-card h-32 border-2 rounded-[2rem] flex flex-col items-center justify-center gap-1 shadow-sm transition-all
-            ${isOpened ? 'played' : `${style.bg} ${style.border} ${style.hover}`} ">
+            class="jeopardy-card border-2 rounded-2xl flex flex-col items-center justify-center shadow-sm transition-all
+            ${isOpened ? 'played' : `${style.bg} ${style.border} hover:scale-105 hover:border-blue-400`} ">
             
-            <span class="text-[10px] font-black uppercase tracking-widest opacity-40">${q.category}</span>
-            <span class="text-4xl font-black ${style.text}">${q.points}</span>
-            <div class="flex gap-1 mt-1">
-                ${renderDifficultyDots(q.level)}
-            </div>
+            <span class="cat-text font-black uppercase tracking-tighter">${q.category}</span>
+            <span class="points-text font-black ${style.text}">${q.points}</span>
         </button>`;
     }).join('');
 
-    // อัปเดต Scoreboard และสถานะ Overlay
     renderBoardScoreboard();
     updateBoardGameState();
 }
 
-function renderDifficultyDots(level) {
-    let count = level === 'hard' ? 3 : (level === 'medium' ? 2 : 1);
-    let dots = '';
-    const dotColors = { easy: 'bg-emerald-400', medium: 'bg-amber-400', hard: 'bg-rose-400' };
-
-    for (let i = 0; i < count; i++) {
-        dots += `<span class="w-1.5 h-1.5 rounded-full ${dotColors[level]}"></span>`;
-    }
-    return dots;
-}
 
 function renderBoardScoreboard() {
     const container = document.getElementById('scoreboard');
@@ -487,64 +492,85 @@ window.undoLastAction = async function () {
     }
 }
 
+// ปรับปรุงฟังก์ชัน selectQuestion ในหน้า Admin/Board
 window.selectQuestion = async function (qId) {
-    if (state.game_state.status !== 'BOARD') return Swal.fire("แจ้งเตือน", "มีคำถามกำลังเล่นอยู่", "warning");
+    if (state.game_state.status !== 'BOARD') return;
+
+    const q = state.questions[qId];
+    // ดึงเวลาจาก config.timer_tiers ตามระดับความยาก
+    const seconds = state.config.timer_tiers[q.level] || 90;
+    const durationMs = seconds * 1000;
 
     await saveUndoState();
+
+    // อัปเดตสถานะคำถาม
     await update(ref(db, `jeopardy/questions/${qId}`), { is_opened: true });
 
-    const timerMap = { easy: 90000, medium: 120000, hard: 150000 };
-    const q = state.questions[qId];
-
+    // อัปเดต Game State ตาม Schema ใหม่
     await update(ref(db, 'jeopardy/game_state'), {
         status: 'QUESTION',
         active_question_id: qId,
-        options_revealed: false,
-        is_steal_open: false,
-        timer_duration: timerMap[q.level],
-        timer_remaining: timerMap[q.level],
+        answering_house: state.game_state.active_house,
         is_timer_running: true,
-        timer_start_ts: Date.now()
+        timer_duration: durationMs,
+        timer_remaining: durationMs,
+        timer_start_ts: Date.now(),
+        last_action_log: `House ${state.game_state.active_house} selected ${q.category} ${q.points}`
     });
 
-    await set(ref(db, 'jeopardy/buzzers'), { is_locked: false, winner: null, attempts: {} });
-}
+    // ล้าง Buzzer และรีเซ็ตสิทธิ์ Steal ของทุกบ้านในข้อนี้
+    const housesUpdate = {};
+    for (let i = 1; i <= 8; i++) {
+        housesUpdate[`jeopardy/houses/${i}/can_steal`] = true;
+    }
+    await update(ref(db), {
+        ...housesUpdate,
+        'jeopardy/buzzers': { is_locked: false, winner: null, attempts: {} }
+    });
+};
 
 window.revealOptions = async function () {
     await update(ref(db, 'jeopardy/game_state/options_revealed'), true);
     showToast("แสดงตัวเลือกบนจอแล้ว", "info");
 }
 
-async function processNextTurn(houseToCredit = null, pointsEarned = 0, penaltyPoints = 0) {
+async function processNextTurn(winnerHouseId = null, points = 0, isPenalty = false) {
     const updates = {};
     const gs = state.game_state;
-    const currentActiveHouse = gs.active_house;
+    const q = state.questions[gs.active_question_id];
 
-    // 1. ให้คะแนน (ถ้ามี)
-    if (houseToCredit) {
-        const currentScore = state.houses[houseToCredit].jeopardy_score || 0;
-        updates[`jeopardy/houses/${houseToCredit}/jeopardy_score`] = currentScore + pointsEarned - penaltyPoints;
+    if (winnerHouseId) {
+        const house = state.houses[winnerHouseId];
+        if (isPenalty) {
+            // กรณีตอบผิด (Steal)
+            const newPenalty = (house.penalty_points || 0) + points;
+            updates[`jeopardy/houses/${winnerHouseId}/penalty_points`] = newPenalty;
+            updates[`jeopardy/houses/${winnerHouseId}/jeopardy_score`] = (house.correct_points || 0) - newPenalty;
+            updates[`jeopardy/questions/${gs.active_question_id}/winner_house`] = "PENALTY"; // ทำสัญลักษณ์ว่าเสียแต้ม
+        } else {
+            // กรณีตอบถูก
+            const newCorrect = (house.correct_points || 0) + points;
+            updates[`jeopardy/houses/${winnerHouseId}/correct_points`] = newCorrect;
+            updates[`jeopardy/houses/${winnerHouseId}/jeopardy_score`] = newCorrect - (house.penalty_points || 0);
+            updates[`jeopardy/questions/${gs.active_question_id}/winner_house`] = winnerHouseId;
+        }
     }
 
-    // 2. นับเทิร์นให้บ้านที่เป็นคนเลือกแผ่นป้าย
-    const currentTurns = state.houses[currentActiveHouse].turns_played || 0;
-    updates[`jeopardy/houses/${currentActiveHouse}/turns_played`] = currentTurns + 1;
+    // นับเทิร์นให้บ้านที่ "เป็นเจ้าของคิว" (คนเลือก)
+    const turnHouseId = gs.active_house;
+    updates[`jeopardy/houses/${turnHouseId}/turns_played`] = (state.houses[turnHouseId].turns_played || 0) + 1;
 
-    // 3. คำนวณคิวถัดไปอัตโนมัติ (ตามกติกา 1-8)
-    let nextTurnIndex = gs.current_turn_index + 1;
+    // คำนวณคิวถัดไป
+    let nextIndex = gs.current_turn_index + 1;
     let nextRound = state.config.current_round;
-
-    if (nextTurnIndex >= state.config.picking_house_order.length) {
-        nextTurnIndex = 0;
+    if (nextIndex >= state.config.picking_house_order.length) {
+        nextIndex = 0;
         nextRound++;
     }
 
     updates[`jeopardy/config/current_round`] = nextRound;
-    updates[`jeopardy/game_state/current_turn_index`] = nextTurnIndex;
-    // ตั้งค่า Active House สำหรับข้อถัดไปตามคิวปกติ
-    updates[`jeopardy/game_state/active_house`] = state.config.picking_house_order[nextTurnIndex];
-
-    // 4. รีเซ็ตหน้าจอเข้าสู่บอร์ด
+    updates[`jeopardy/game_state/current_turn_index`] = nextIndex;
+    updates[`jeopardy/game_state/active_house`] = state.config.picking_house_order[nextIndex];
     updates[`jeopardy/game_state/status`] = 'BOARD';
     updates[`jeopardy/game_state/active_question_id`] = null;
     updates[`jeopardy/game_state/is_timer_running`] = false;
@@ -578,17 +604,14 @@ window.judgeSteal = async function (isCorrect) {
     const winnerHouse = state.buzzers.winner;
     const q = state.questions[state.game_state.active_question_id];
 
-    if (!winnerHouse) return;
-
     if (isCorrect) {
-        await processNextTurn(winnerHouse, q.points, 0);
-        showToast(`บ้าน ${winnerHouse} Steal ถูก! ได้ ${q.points} คะแนน`);
+        await processNextTurn(winnerHouse, q.points, false);
     } else {
         const penalty = Math.ceil(q.points / 2);
-        await processNextTurn(winnerHouse, 0, penalty);
-        showToast(`บ้าน ${winnerHouse} Steal ผิด! โดนหัก ${penalty} คะแนน`, "error");
+        // ตอบผิดโดนหักคะแนน และหมดสิทธิ์ Steal ในข้อถัดไป (ถ้ามีกติกาห้าม)
+        await processNextTurn(winnerHouse, penalty, true);
     }
-}
+};
 
 window.skipHouseTurn = async function () {
     const res = await Swal.fire({ title: 'ข้ามคิวบ้านนี้?', text: 'จะทำการข้ามสิทธิ์การเลือกของบ้านนี้ (นับเป็น 1 Turn ที่เสียไป)', icon: 'warning', showCancelButton: true });
@@ -620,38 +643,6 @@ window.showToast = function (message, type = 'success') {
         timerProgressBar: true
     });
     Toast.fire({ icon: type, title: message });
-};
-
-window.selectQuestion = async function (qId) {
-    if (state.game_state.status !== 'BOARD') return;
-
-    // เก็บประวัติสำหรับ Undo (ต้องทำเหมือนหน้า Admin)
-    await set(ref(db, 'jeopardy/history/last_state'), {
-        houses: state.houses,
-        game_state: state.game_state,
-        config: state.config,
-        buzzers: state.buzzers
-    });
-
-    const q = state.questions[qId];
-    const timerMap = { easy: 90000, medium: 120000, hard: 150000 };
-
-    await update(ref(db, `jeopardy/questions/${qId}`), { is_opened: true });
-
-    await update(ref(db, 'jeopardy/game_state'), {
-        status: 'QUESTION',
-        active_question_id: qId,
-        options_revealed: false,
-        is_steal_open: false,
-        timer_duration: timerMap[q.level],
-        timer_remaining: timerMap[q.level],
-        is_timer_running: true,
-        timer_start_ts: Date.now()
-    });
-
-    // ล้างสถานะ Buzzer
-    await set(ref(db, 'jeopardy/buzzers'), { is_locked: false, winner: null, attempts: {} });
-    window.showToast("เปิดคำถามแล้ว");
 };
 
 window.kickHouse = async function (houseId) {
@@ -884,14 +875,11 @@ window.confirmOpenQuestion = function (qId) {
 function updateBoardGameState() {
     const gs = state.game_state;
     const overlay = document.getElementById('question-overlay');
-
-    // ถ้าไม่ใช่หน้า Board หรือไม่มี Overlay ให้หยุดทำงาน
     if (!overlay) return;
 
     if (gs.status === 'BOARD') {
         overlay.classList.add('hidden');
         stopBoardTimer();
-        safeSetText('display-active-house', gs.active_house);
         return;
     }
 
@@ -899,30 +887,36 @@ function updateBoardGameState() {
     const q = state.questions?.[gs.active_question_id];
     if (!q) return;
 
+    // แสดงหมวดหมู่และคะแนน
     safeSetText('overlay-category', q.category);
     safeSetText('overlay-points', `${q.points} PTS`);
     safeSetText('overlay-text', q.question_text);
-    safeSetText('display-active-house', gs.active_house);
 
-    // ใครกำลังตอบ?
+    // จัดการ Media (รูปภาพ/วิดีโอ)
+    const mediaContainer = document.getElementById('media-container'); // ต้องเพิ่ม id นี้ใน HTML
+    if (mediaContainer) {
+        mediaContainer.innerHTML = ''; // ล้างค่าเก่า
+        if (q.media_type === 'image' && q.media_url) {
+            mediaContainer.innerHTML = `<img src="${q.media_url}" class="max-h-64 rounded-xl shadow-lg mb-4">`;
+        } else if (q.media_type === 'video' && q.media_url) {
+            // รองรับ YouTube Embed เบื้องต้น
+            const videoId = q.media_url.split('v=')[1] || q.media_url.split('/').pop();
+            mediaContainer.innerHTML = `<iframe width="560" height="315" src="https://www.youtube.com/embed/${videoId}?autoplay=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen class="rounded-xl shadow-lg mb-4"></iframe>`;
+        }
+    }
+
+    // ใครกำลังตอบ
     const currentAnswering = (gs.status === 'STEAL_WAIT' && state.buzzers?.winner) ? state.buzzers.winner : gs.active_house;
     safeSetText('display-answering-house', currentAnswering);
 
-    const badge = document.getElementById('answering-house-badge');
-    if (badge) badge.innerText = currentAnswering;
-
-    // สถานะ Steal
-    const stealInd = document.getElementById('steal-indicator');
-    if (stealInd) {
-        const isStealVisible = gs.is_steal_open && !state.buzzers?.winner;
-        stealInd.classList.toggle('hidden', !isStealVisible);
-    }
-
-    // จัดการเวลา
+    // จัดการ Timer
     if (gs.is_timer_running) {
         startBoardTimer(gs.timer_duration, gs.timer_start_ts);
     } else {
         stopBoardTimer();
+        // แสดงเวลาที่เหลือค้างไว้ (กรณี Pause)
+        const sec = Math.floor(gs.timer_remaining / 1000);
+        safeSetText('overlay-timer', `${String(sec).padStart(2, '0')}:00`);
     }
 }
 
@@ -933,16 +927,29 @@ function startBoardTimer(duration, startTs) {
     boardTimerInterval = setInterval(() => {
         const elapsed = Date.now() - startTs;
         const remaining = Math.max(0, duration - elapsed);
-        const sec = Math.floor(remaining / 1000);
-        const ms = Math.floor((remaining % 1000) / 10);
+
+        // --- ส่วนที่แก้ไข: คำนวณ นาที และ วินาที ---
+        const totalSeconds = Math.floor(remaining / 1000);
+        const mins = Math.floor(totalSeconds / 60);
+        const secs = totalSeconds % 60;
 
         if (display) {
-            display.innerText = `${String(sec).padStart(2, '0')}:${String(ms).padStart(2, '0')}`;
-            display.className = sec < 10 ? "text-8xl font-black tabular-nums text-red-600 animate-pulse" : "text-8xl font-black tabular-nums text-slate-800";
+            // แสดงผลรูปแบบ 01:30
+            display.innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+            // ถ้าเหลือน้อยกว่า 10 วินาที ให้เป็นสีแดงและกะพริบ
+            if (totalSeconds < 10) {
+                display.className = "text-8xl font-black tabular-nums text-red-600 animate-pulse";
+            } else {
+                display.className = "text-8xl font-black tabular-nums text-slate-800";
+            }
         }
 
-        if (remaining <= 0) clearInterval(boardTimerInterval);
-    }, 50);
+        if (remaining <= 0) {
+            clearInterval(boardTimerInterval);
+            // พ่น Event หรือเล่นเสียงหมดเวลาตรงนี้ได้
+        }
+    }, 200); // ปรับการอัปเดตเป็นทุก 200ms เพื่อประหยัด CPU เพราะไม่ต้องโชว์มิลลิวินาทีแล้ว
 }
 
 function stopBoardTimer() {

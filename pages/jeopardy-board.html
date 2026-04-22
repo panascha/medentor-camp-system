@@ -25,9 +25,18 @@
     #board-container-wrapper::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
 
         .jeopardy-card {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            background: white;
-        }
+        transition: all 0.2s ease-out;
+        height: 5.5rem !important; /* ลดจาก h-32 (8rem) เหลือประมาณ 5.5rem */
+    }
+    .jeopardy-card .points-text {
+        font-size: 1.875rem; /* text-3xl */
+        line-height: 2.25rem;
+    }
+
+    .jeopardy-card .cat-text {
+        font-size: 0.7rem;
+        opacity: 0.6;
+    }
 
         .jeopardy-card:hover:not(.played) {
             transform: translateY(-5px) scale(1.02);
@@ -63,6 +72,22 @@
         .animate-pop {
             animation: open-scale 0.4s ease-out forwards;
         }
+
+        .house-card {
+        padding: 0.75rem 1rem !important;
+        border-radius: 1.25rem !important;
+    }
+
+    .house-card.active-choosing {
+        border-color: #3b82f6 !important;
+        background-color: #eff6ff !important;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+    }
+
+    #overlay-timer {
+        font-family: 'Monaco', 'Consolas', monospace;
+        letter-spacing: -0.05em;
+    }
     </style>
 </head>
 
