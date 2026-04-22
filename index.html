@@ -41,20 +41,52 @@
 <body class="bg-slate-100 min-h-screen">
 
     <!-- Navigation Bar -->
+    <!-- Navigation Bar -->
     <nav class="bg-white shadow-sm border-b sticky top-0 z-50">
         <div class="max-w-6xl mx-auto px-4 h-16 flex justify-between items-center">
+            <!-- ฝั่งซ้าย: Logo & Title -->
             <a href="index.html" class="flex items-center gap-2">
                 <img src="assets/logo.png" alt="Logo" class="h-10 w-10 object-contain rounded-full bg-slate-200">
                 <span class="font-bold text-xl text-slate-800 tracking-tight uppercase">Medentor Camp
                     <span class="text-blue-600 text-sm italic">System</span>
                 </span>
             </a>
+    
+            <!-- ฝั่งขวา: User Profile (ปุ่มกดเปลี่ยนรหัส) -->
             <div class="flex items-center gap-4">
-                <div class="text-right hidden md:block leading-tight">
-                    <p id="nav-user-name" class="text-sm font-bold text-slate-700">Loading...</p>
-                    <p id="nav-user-role" class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                        Authenticating</p>
+                <!-- จุดที่ปรับ: ทำเป็นปุ่ม Group -->
+                <div onclick="openChangePasswordModal()"
+                    class="group flex items-center gap-3 cursor-pointer p-1.5 pr-3 rounded-2xl hover:bg-slate-50 transition-all border border-transparent hover:border-slate-100">
+    
+                    <div class="text-right hidden md:block leading-tight">
+                        <p id="nav-user-name" class="text-sm font-bold text-slate-700 group-hover:text-blue-600">Loading...
+                        </p>
+                        <!-- ข้อความบอกเล็กๆ -->
+                        <p class="text-[9px] font-bold text-blue-500 transition-opacity">
+                            เปลี่ยนรหัสกดตรงนี้ 🔑
+                        </p>
+                        <p id="nav-user-role"
+                            class="text-[10px] uppercase tracking-wider text-slate-400 font-bold group-hover:hidden">
+                            Authenticating
+                        </p>
+                    </div>
+    
+                    <!-- รูปโปรไฟล์/โลโก้ที่ดูเหมือนปุ่ม -->
+                    <div class="relative">
+                        <img src="assets/logo.png" alt="User"
+                            class="h-10 w-10 object-contain rounded-full bg-white p-1 shadow-sm border-2 border-slate-100 group-hover:border-blue-500 group-hover:scale-105 transition-all">
+                        <!-- ไอคอนดินสอเล็กๆ มุมรูป -->
+                        <div
+                            class="absolute -bottom-1 -right-1 bg-blue-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 shadow-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5" viewBox="0 0 20 20"
+                                fill="currentColor">
+                                <path
+                                    d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                            </svg>
+                        </div>
+                    </div>
                 </div>
+    
                 <button onclick="handleLogout()"
                     class="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 border border-red-100">
                     ออกจากระบบ
@@ -581,6 +613,66 @@
             }, 500);
         }
 
+        window.openChangePasswordModal = async function () {
+                const user = checkAuth();
+                // ให้นักเรียนเปลี่ยนไม่ได้ (ถ้าต้องการให้เฉพาะ staff)
+                if (!user || user.userType !== 'staff') {
+                    Swal.fire('แจ้งเตือน', 'ฟังก์ชันเปลี่ยนรหัสผ่านสำหรับพี่สตาฟเท่านั้น', 'info');
+                    return;
+                }
+
+                const { value: newPassword } = await Swal.fire({
+                    title: 'ตั้งรหัสผ่านใหม่',
+                    text: `พี่${user.nickname}: ระบุรหัสผ่านที่จำได้ง่าย`,
+                    input: 'password',
+                    inputPlaceholder: 'รหัสผ่านใหม่...',
+                    inputAttributes: { autocapitalize: 'off', autocorrect: 'off' },
+                    showCancelButton: true,
+                    confirmButtonText: 'ยืนยันเปลี่ยนรหัส',
+                    confirmButtonColor: '#2563eb',
+                    cancelButtonText: 'ยกเลิก',
+                    inputValidator: (value) => {
+                        if (!value || value.length < 4) {
+                            return 'รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร'
+                        }
+                    }
+                });
+
+                if (newPassword) {
+                    Swal.fire({ title: 'กำลังบันทึก...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+                    try {
+                        const staffId = user.id || user.studentID;
+
+                        // 1. อัปเดต Firebase
+                        await fetch(`${CONFIG.firebaseURL}staff/${staffId}/password.json?auth=${CONFIG.fbSecret}`, {
+                            method: "PUT",
+                            body: JSON.stringify(newPassword)
+                        });
+
+                        // 2. อัปเดต Google Sheet (Sync)
+                        await fetch(CONFIG.appscriptUrl, {
+                            method: "POST",
+                            mode: "no-cors",
+                            headers: { "Content-Type": "text/plain" },
+                            body: JSON.stringify({
+                                action: "updateStaffPassword",
+                                key: CONFIG.syncKey,
+                                id: staffId.toString(),
+                                newPassword: newPassword.toString()
+                            })
+                        });
+
+                        // 3. อัปเดตข้อมูลในเครื่อง
+                        user.password = newPassword;
+                        localStorage.setItem("userSession", JSON.stringify(user));
+
+                        Swal.fire('สำเร็จ!', 'เปลี่ยนรหัสผ่านของคุณเรียบร้อยแล้ว', 'success');
+                    } catch (e) {
+                        Swal.fire('ผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
+                    }
+                }
+            }
         // --- จัดการ Logout ---
         async function handleLogout() {
             const result = await Swal.fire({
