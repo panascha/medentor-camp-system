@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tutor Schedule - Medentor System</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         body {
@@ -24,95 +25,100 @@
                         d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
                         clip-rule="evenodd" />
                 </svg>
-                กลับหน้าหลัก
+                กลับ
             </a>
             <h1 class="text-lg font-black text-slate-800 italic uppercase">Teaching Plan</h1>
+            <div id="save-area" class="hidden">
+                <button onclick="saveAllToSheets()"
+                    class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-lg shadow-emerald-100">Sync
+                    All</button>
+            </div>
         </div>
     </nav>
 
     <main class="max-w-xl mx-auto p-4 space-y-6 pb-20">
-        <!-- Tutor Info Header -->
-        <div class="bg-slate-800 p-6 rounded-[2rem] text-white shadow-xl shadow-slate-200">
+        <!-- Tutor Header -->
+        <div class="bg-slate-800 p-6 rounded-[2rem] text-white shadow-xl">
             <div class="flex justify-between items-start">
                 <div>
-                    <p class="text-[10px] font-black uppercase tracking-widest opacity-70">ฝ่าย / Division</p>
+                    <p class="text-[10px] font-black uppercase tracking-widest opacity-70">Division</p>
                     <h2 id="display-division" class="text-2xl font-black text-blue-400">...</h2>
                 </div>
-                <div id="role-badge" class="bg-white/10 px-3 py-1 rounded-full text-[10px] font-bold">STAFF</div>
+                <button id="btn-add-session" onclick="openEditModal(-1)"
+                    class="hidden bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs font-bold transition-all">
+                    + เพิ่มคาบสอน
+                </button>
             </div>
-            <p class="text-xs mt-3 opacity-80">แสดงเฉพาะคาบสอนของฝ่ายคุณ และกิจกรรมรวมของค่าย</p>
         </div>
 
-        <!-- Date Tabs -->
         <div id="day-tabs" class="flex gap-2 overflow-x-auto pb-2 custom-scrollbar"></div>
 
-        <!-- Schedule List -->
         <div id="schedule-list" class="space-y-4">
-            <div class="py-20 text-center text-slate-400 italic">กำลังตรวจสอบตารางสอน...</div>
+            <div class="py-20 text-center text-slate-400 italic">กำลังดึงตารางสอน...</div>
         </div>
     </main>
 
+    <script type="importmap">
+        { "imports": { "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js", "firebase/database": "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js" }}
+    </script>
     <script src="../js/firebase-config.js"></script>
     <script src="../js/auth.js"></script>
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+        import { initializeApp } from "firebase/app";
+        import { getDatabase, ref, onValue, set } from "firebase/database";
 
         const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
         const db = getDatabase(app);
         const user = checkAuth();
 
-        let allItems = [];
+        let allItems = []; // ข้อมูลทั้งหมดจาก Firebase
         let selectedDay = "";
 
-        // Mapping ระหว่าง Subject ID (ในตาราง) กับ Division (ในรายชื่อ Staff)
-        const SUB_TO_DIV = {
-            physic: "ฟิสิกส์",
-            chemistry: "เคมี",
-            biology: "ชีววิทยา",
-            introdent: "IntroDent",
-            intromed: "IntroMed"
+        const SUBJECT_MAP = {
+            physic: "ฟิสิกส์", chemistry: "เคมี", biology: "ชีววิทยา",
+            introdent: "IntroDent", intromed: "IntroMed"
+        };
+
+        const SUBJECT_LABELS = {
+            physic: "ฟิสิกส์", chemistry: "เคมี", biology: "ชีววิทยา",
+            introdent: "Intro to Dent", intromed: "Intro to Med", activity: "กิจกรรมรวม"
         };
 
         function init() {
-            if (!user || user.userType !== 'staff') {
-                window.location.href = 'login.html';
-                return;
-            }
-
+            if (!user || user.userType !== 'staff') { window.location.href = 'login.html'; return; }
             document.getElementById('display-division').innerText = user.division;
-            if (user.role === 'Admin') document.getElementById('role-badge').innerText = "ADMIN";
+
+            // ตรวจสอบสิทธิ์สตาฟเพื่อแสดงปุ่ม "เพิ่ม" และ "Sync"
+            const canEditAny = user.role === 'Admin' || user.division === 'วิชาการ';
+            const isTutor = Object.values(SUBJECT_MAP).includes(user.division);
+
+            if (canEditAny || isTutor) {
+                document.getElementById('save-area').classList.remove('hidden');
+                document.getElementById('btn-add-session').classList.remove('hidden');
+            }
 
             onValue(ref(db, 'schedule'), (snapshot) => {
                 const data = snapshot.val();
-                if (!data) return;
-
-                const myDivision = user.division;
-                const isAdmin = user.role === 'Admin' || user.division === 'วิชาการ';
-
-                // --- LOGIC การกรองข้อมูลสำหรับพี่สตาฟ ---
-                allItems = Object.values(data).filter(item => {
-                    // 1. ถ้าเป็น Admin หรือฝ่ายวิชาการ ให้เห็นทั้งหมด
-                    if (isAdmin) return true;
-                    // 2. ถ้าวิชาในตาราง ตรงกับฝ่ายตัวเอง
-                    if (SUB_TO_DIV[item.subject] === myDivision) return true;
-                    // 3. ถ้าเป็นกิจกรรมรวม (ALL)
-                    if (item.classTarget === "ALL") return true;
-
-                    return false;
-                });
+                allItems = data ? Object.values(data) : [];
 
                 const days = [...new Set(allItems.map(i => i.day))];
-                if (!selectedDay) selectedDay = days[0];
+                if (!selectedDay && days.length > 0) selectedDay = days[0];
                 renderTabs(days);
                 renderSchedule();
             });
         }
 
+        // ฟังก์ชันตรวจสอบว่า User คนนี้แก้ คาบเรียนนี้ (item) ได้หรือไม่
+        function canUserEdit(item) {
+            if (user.role === 'Admin' || user.division === 'วิชาการ') return true;
+            if (SUBJECT_MAP[item.subject] === user.division) return true;
+            return false;
+        }
+
         function renderTabs(days) {
             const container = document.getElementById('day-tabs');
             container.innerHTML = days.map(day => `
-                <button onclick="setDay('${day}')" class="px-6 py-2 rounded-full font-bold text-sm whitespace-nowrap transition-all ${selectedDay === day ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}">
+                <button onclick="window.setDay('${day}')" class="px-6 py-2 rounded-full font-bold text-sm whitespace-nowrap transition-all ${selectedDay === day ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}">
                     ${day}
                 </button>
             `).join('');
@@ -128,15 +134,17 @@
             const container = document.getElementById('schedule-list');
             const filtered = allItems.filter(i => i.day === selectedDay);
 
-            const SUBJECT_NAMES = {
-                physic: "ฟิสิกส์", chemistry: "เคมี", biology: "ชีววิทยา",
-                introdent: "Intro to Dent", intromed: "Intro to Med"
-            };
+            if (filtered.length === 0) {
+                container.innerHTML = `<p class="text-center py-10 text-slate-400">ไม่มีตารางเรียนในวันนี้</p>`;
+                return;
+            }
 
             container.innerHTML = filtered.map(item => {
-                const isMyDept = SUB_TO_DIV[item.subject] === user.division;
+                const itemIndex = allItems.indexOf(item);
+                const editable = canUserEdit(item);
+
                 return `
-                <div class="bg-white p-5 rounded-[2rem] shadow-sm border-2 ${isMyDept ? 'border-blue-500 bg-blue-50/30' : 'border-slate-100'} flex gap-4 transition-all">
+                <div class="bg-white p-5 rounded-[2rem] shadow-sm border-2 ${editable ? 'border-blue-100' : 'border-transparent'} flex gap-4 relative group">
                     <div class="flex flex-col items-center justify-center min-w-[70px] border-r pr-4">
                         <span class="text-xs font-black text-slate-800">${item.startTime}</span>
                         <span class="text-[9px] text-slate-400 font-bold uppercase">TO</span>
@@ -145,24 +153,155 @@
                     <div class="flex-1">
                         <div class="flex justify-between items-start">
                             <h3 class="font-black text-slate-800 text-lg leading-tight">
-                                ${SUBJECT_NAMES[item.subject] || item.subject}
+                                ${SUBJECT_LABELS[item.subject] || item.subject}
                             </h3>
                             <span class="text-[8px] font-black px-2 py-0.5 rounded-full ${item.classTarget === 'ALL' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">
-                                CLASS ${item.classTarget}
+                                ${item.classTarget}
                             </span>
                         </div>
-                        <p class="text-slate-500 text-xs mt-1">ผู้สอน: ${item.tutor || '-'}</p>
-                        <div class="mt-3 flex items-center justify-between">
-                            <div class="flex items-center gap-1 text-slate-400">
-                                <span class="text-[10px] font-bold">📍 ${item.room}</span>
-                            </div>
-                            ${isMyDept ? '<span class="text-[9px] font-black text-blue-600 uppercase tracking-tighter animate-pulse">● Your Session</span>' : ''}
-                        </div>
+                        <p class="text-slate-500 text-xs mt-1">โดย พี่${item.tutor || '-'}</p>
+                        <p class="text-[10px] font-bold text-slate-400 mt-2">📍 ${item.room}</p>
                     </div>
+                    ${editable ? `
+                        <div class="absolute right-4 bottom-4 flex gap-2">
+                            <button onclick="window.openEditModal(${itemIndex})" class="text-blue-500 hover:bg-blue-50 p-2 rounded-full transition-all">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            </button>
+                            <button onclick="window.removeItem(${itemIndex})" class="text-red-400 hover:bg-red-50 p-2 rounded-full transition-all">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        </div>
+                    ` : ''}
                 </div>
                 `;
             }).join('');
         }
+
+        window.openEditModal = async function (index) {
+            const isNew = index === -1;
+            const item = isNew ? { day: selectedDay, startTime: "", endTime: "", subject: "", tutor: user.nickname, classTarget: "ALL", room: "", note: "" } : allItems[index];
+
+            // สร้างตัวเลือกวิชาตามสิทธิ์
+            const canEditAny = user.role === 'Admin' || user.division === 'วิชาการ';
+            let subjectOptions = "";
+
+            if (canEditAny) {
+                subjectOptions = Object.keys(SUBJECT_LABELS).map(k => `<option value="${k}" ${item.subject === k ? 'selected' : ''}>${SUBJECT_LABELS[k]}</option>`).join('');
+            } else {
+                // ถ้าเป็นสตาฟวิชา ให้เลือกได้แค่วิชาตัวเอง
+                const mySubKey = Object.keys(SUBJECT_MAP).find(key => SUBJECT_MAP[key] === user.division);
+                subjectOptions = `<option value="${mySubKey}">${SUBJECT_LABELS[mySubKey]}</option>`;
+            }
+
+            const { value: formValues } = await Swal.fire({
+                title: isNew ? 'เพิ่มคาบเรียน' : 'แก้ไขคาบเรียน',
+                html: `
+                    <div class="text-left space-y-3">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">วันที่</label>
+                        <input id="swal-day" class="swal2-input !m-0 !w-full" value="${item.day}">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-400 uppercase">เริ่ม</label>
+                                <input id="swal-start" class="swal2-input !m-0 !w-full" value="${item.startTime}" placeholder="09:00">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-400 uppercase">จบ</label>
+                                <input id="swal-end" class="swal2-input !m-0 !w-full" value="${item.endTime}" placeholder="10:30">
+                            </div>
+                        </div>
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">วิชา</label>
+                        <select id="swal-subject" class="swal2-input !m-0 !w-full">${subjectOptions}</select>
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">กลุ่มเป้าหมาย</label>
+                        <select id="swal-target" class="swal2-input !m-0 !w-full">
+                            <option value="ALL" ${item.classTarget === 'ALL' ? 'selected' : ''}>ทุกกลุ่ม (ALL)</option>
+                            <option value="A" ${item.classTarget === 'A' ? 'selected' : ''}>Group A</option>
+                            <option value="B" ${item.classTarget === 'B' ? 'selected' : ''}>Group B</option>
+                            <option value="C" ${item.classTarget === 'C' ? 'selected' : ''}>Group C</option>
+                            <option value="D" ${item.classTarget === 'D' ? 'selected' : ''}>Group D</option>
+                        </select>
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">พี่ติวเตอร์</label>
+                        <input id="swal-tutor" class="swal2-input !m-0 !w-full" value="${item.tutor}">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">สถานที่</label>
+                        <input id="swal-room" class="swal2-input !m-0 !w-full" value="${item.room}">
+                    </div>
+                `,
+                focusConfirm: false,
+                showCancelButton: true,
+                confirmButtonText: 'ตกลง',
+                cancelButtonText: 'ยกเลิก',
+                preConfirm: () => {
+                    return {
+                        day: document.getElementById('swal-day').value,
+                        startTime: document.getElementById('swal-start').value,
+                        endTime: document.getElementById('swal-end').value,
+                        subject: document.getElementById('swal-subject').value,
+                        tutor: document.getElementById('swal-tutor').value,
+                        classTarget: document.getElementById('swal-target').value,
+                        room: document.getElementById('swal-room').value,
+                        note: item.note || ""
+                    }
+                }
+            });
+
+            if (formValues) {
+                if (isNew) allItems.push(formValues);
+                else allItems[index] = formValues;
+
+                // จัดเรียงตามเวลาใหม่ (Sort)
+                allItems.sort((a, b) => a.day.localeCompare(b.day) || a.startTime.localeCompare(b.startTime));
+                renderSchedule();
+                showToast("อัปเดตรายการแล้ว อย่าลืมกด Sync เพื่อบันทึก", "info");
+            }
+        };
+
+        window.removeItem = async function (index) {
+            const res = await Swal.fire({
+                title: 'ลบคาบเรียน?',
+                text: "ต้องการลบคาบนี้ออกจากรายการชั่วคราวใช่หรือไม่?",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'ลบ',
+                confirmButtonColor: '#ef4444'
+            });
+            if (res.isConfirmed) {
+                allItems.splice(index, 1);
+                renderSchedule();
+            }
+        };
+
+        window.saveAllToSheets = async function () {
+            const res = await Swal.fire({
+                title: 'ยืนยันการบันทึก?',
+                text: "ข้อมูลจะถูกส่งเข้า Google Sheet และ Firebase เพื่อให้น้องๆ เห็นทันที",
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Sync Now',
+                confirmButtonColor: '#059669'
+            });
+
+            if (res.isConfirmed) {
+                Swal.fire({ title: 'กำลังซิงค์...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                try {
+                    // ส่งไป Apps Script
+                    await fetch(CONFIG.appscriptUrl, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            action: "updateFullSchedule",
+                            key: CONFIG.syncKey,
+                            scheduleArray: allItems
+                        })
+                    });
+
+                    // บันทึกลง Firebase (Real-time)
+                    await set(ref(db, 'schedule'), allItems);
+
+                    Swal.fire('สำเร็จ!', 'ตารางเรียนอัปเดตเรียบร้อยแล้ว', 'success');
+                } catch (e) {
+                    Swal.fire('Error', 'ไม่สามารถบันทึกได้: ' + e.message, 'error');
+                }
+            }
+        };
 
         init();
     </script>
