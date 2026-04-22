@@ -21,10 +21,20 @@ if (!user || user.userType !== 'staff' || (user.role !== 'Admin' && user.divisio
     if (adminNameEl) adminNameEl.innerText = `Admin: ${user.nickname || user.fullName}`;
 }
 
+function safeSetText(id, text) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.innerText = text;
+        return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------
 // 2. Global State
 // ---------------------------------------------------------
 let state = {};
+let boardTimerInterval = null;
 
 // ---------------------------------------------------------
 // 3. Main Listener (Real-time Sync)
@@ -33,29 +43,37 @@ onValue(ref(db, 'jeopardy'), (snapshot) => {
     const data = snapshot.val() || {};
     state = data;
 
+    // 1. จัดการปุ่ม Toggle (เฉพาะหน้า Admin)
     const btn = document.getElementById('btn-toggle-game');
     if (btn && state.config) {
         const isActive = state.config.is_active;
-
-        if (isActive) {
-            // สถานะปัจจุบันคือ "เปิดเกมอยู่" -> ปุ่มต้องเป็นสีแดงเพื่อให้กด "ปิด"
-            btn.innerText = "ปิดเกมซ่อนทางเข้า (ON)";
-            btn.className = "flex-1 md:flex-none bg-red-600 text-white px-6 py-2.5 rounded-xl font-black text-xs hover:bg-red-700 transition-all shadow-md";
-        } else {
-            // สถานะปัจจุบันคือ "ปิดเกมอยู่" -> ปุ่มต้องเป็นสีเขียวเพื่อให้กด "เปิด"
-            btn.innerText = "เปิดเกมให้น้องเข้า (OFF)";
-            btn.className = "flex-1 md:flex-none bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-black text-xs hover:bg-emerald-700 transition-all shadow-md";
-        }
+        btn.innerText = isActive ? "ปิดเกมซ่อนทางเข้า (ON)" : "เปิดเกมให้น้องเข้า (OFF)";
+        btn.className = isActive
+            ? "flex-1 md:flex-none bg-red-600 text-white px-6 py-2.5 rounded-xl font-black text-xs hover:bg-red-700 transition-all shadow-md"
+            : "flex-1 md:flex-none bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-black text-xs hover:bg-emerald-700 transition-all shadow-md";
     }
 
-    // ตรวจสอบโครงสร้างพื้นฐาน
     if (!state.config) {
         initializeGameStructure();
     } else {
-        renderDashboard();
-        renderHouseStatus();
-        renderQuestionGrid();
-        renderQuestionsTable();
+        // 2. อัปเดตข้อมูลพื้นฐาน (ใช้ safeSetText เพื่อป้องกัน Error)
+        safeSetText('display-round', state.config.current_round);
+        safeSetText('display-turn-house', state.game_state.active_house || 'END');
+        safeSetText('display-active-house', state.game_state.active_house || '-');
+
+        // 3. หน้า Admin Tools
+        if (document.getElementById('houses-list')) renderHouseStatus();
+        if (document.getElementById('jeopardy-grid')) renderQuestionGrid();
+        if (document.getElementById('questions-table-body')) renderQuestionsTable();
+
+        // 4. หน้า Admin Dashboard (Panel)
+        const panelIdle = document.getElementById('panel-idle');
+        if (panelIdle) renderDashboard();
+
+        // 5. หน้า Board (Projector)
+        if (window.isBoardPage) {
+            renderBoard();
+        }
     }
 });
 
@@ -96,21 +114,26 @@ function renderDashboard() {
 
     const gs = state.game_state;
     const turnHouse = gs.active_house;
-    
-    document.getElementById('display-round').innerText = state.config.current_round;
-    document.getElementById('display-turn-house').innerText = turnHouse || 'END';
-    document.getElementById('idle-turn-house').innerText = turnHouse || '-';
+
+    // ใช้ safeSetText แทนการสั่งตรงๆ
+    safeSetText('display-round', state.config.current_round);
+    safeSetText('display-turn-house', turnHouse || 'END');
+    safeSetText('display-active-house', turnHouse || '-'); // สำหรับหน้า Board
+    safeSetText('idle-turn-house', turnHouse || '-');
 
     const panelIdle = document.getElementById('panel-idle');
     const panelActive = document.getElementById('panel-active');
 
-    if (gs.status === 'BOARD') {
-        panelIdle.classList.remove('hidden');
-        panelActive.classList.add('hidden');
-    } else {
-        panelIdle.classList.add('hidden');
-        panelActive.classList.remove('hidden');
-        renderActiveQuestion(gs);
+    // ถ้าเป็นหน้า Admin (มี Panel) ถึงจะรัน Logic ส่วนนี้
+    if (panelIdle && panelActive) {
+        if (gs.status === 'BOARD') {
+            panelIdle.classList.remove('hidden');
+            panelActive.classList.add('hidden');
+        } else {
+            panelIdle.classList.add('hidden');
+            panelActive.classList.remove('hidden');
+            renderActiveQuestion(gs);
+        }
     }
 }
 
@@ -281,6 +304,111 @@ function renderQuestionsTable() {
     `).join('');
 }
 
+function renderBoard() {
+    // ป้องกันการรันในหน้าอื่นที่ไม่ใช่ Board
+    if (!window.isBoardPage || !state.questions) return;
+
+    const boardContainer = document.getElementById('board-container');
+    if (!boardContainer) return;
+
+    // 1. ดึงข้อมูลคำถามออกมาเป็น Array และกรองค่าว่าง
+    const allQuestions = Object.values(state.questions).filter(q => q && q.id);
+
+    // 2. เรียงลำดับคำถามตามคะแนน (Points) จากน้อยไปมาก
+    allQuestions.sort((a, b) => a.points - b.points);
+
+    // 3. กำหนดสีตามระดับความยาก (Theme สว่าง)
+    const difficultyStyles = {
+        easy: {
+            border: 'border-emerald-100',
+            bg: 'bg-emerald-50/50',
+            text: 'text-emerald-600',
+            hover: 'hover:border-emerald-400 hover:bg-emerald-50'
+        },
+        medium: {
+            border: 'border-amber-100',
+            bg: 'bg-amber-50/50',
+            text: 'text-amber-600',
+            hover: 'hover:border-amber-400 hover:bg-amber-50'
+        },
+        hard: {
+            border: 'border-rose-100',
+            bg: 'bg-rose-50/50',
+            text: 'text-rose-600',
+            hover: 'hover:border-rose-400 hover:bg-rose-50'
+        }
+    };
+
+    // 4. วาดการ์ดลงใน Grid (ใช้ col-span-5 ตาม HTML เดิม หรือปรับใน HTML เป็น grid-cols-6 เพื่อให้ดูเต็ม)
+
+    boardContainer.innerHTML = allQuestions.map(q => {
+        const style = difficultyStyles[q.level] || difficultyStyles.easy;
+        const isOpened = q.is_opened;
+
+        return `
+        <button onclick="confirmOpenQuestion('${q.id}')" 
+            ${isOpened ? 'disabled' : ''}
+            class="jeopardy-card h-32 border-2 rounded-[2rem] flex flex-col items-center justify-center gap-1 shadow-sm transition-all
+            ${isOpened ? 'played' : `${style.bg} ${style.border} ${style.hover}`} ">
+            
+            <span class="text-[10px] font-black uppercase tracking-widest opacity-40">${q.category}</span>
+            <span class="text-4xl font-black ${style.text}">${q.points}</span>
+            <div class="flex gap-1 mt-1">
+                ${renderDifficultyDots(q.level)}
+            </div>
+        </button>`;
+    }).join('');
+
+    // อัปเดต Scoreboard และสถานะ Overlay
+    renderBoardScoreboard();
+    updateBoardGameState();
+}
+
+function renderDifficultyDots(level) {
+    let count = level === 'hard' ? 3 : (level === 'medium' ? 2 : 1);
+    let dots = '';
+    const dotColors = { easy: 'bg-emerald-400', medium: 'bg-amber-400', hard: 'bg-rose-400' };
+
+    for (let i = 0; i < count; i++) {
+        dots += `<span class="w-1.5 h-1.5 rounded-full ${dotColors[level]}"></span>`;
+    }
+    return dots;
+}
+
+function renderBoardScoreboard() {
+    const container = document.getElementById('scoreboard');
+    if (!container || !state.houses) return;
+
+    container.innerHTML = Object.keys(state.houses).map(hId => {
+        const h = state.houses[hId];
+        const isActive = parseInt(hId) === state.game_state.active_house;
+        const isBuzzerWinner = state.buzzers?.winner == hId;
+
+        // เพิ่มการตรวจสอบ cursor และการตอบสนองเมื่อ hover
+        return `
+        <div onclick="window.setActiveHouse('${hId}')" 
+            class="p-4 bg-white rounded-3xl border-2 transition-all cursor-pointer hover:shadow-md active:scale-95
+            ${isActive ? 'border-blue-500 bg-blue-50 shadow-md scale-[1.02]' : 'border-slate-100 opacity-80 hover:opacity-100'} 
+            ${isBuzzerWinner ? 'ring-4 ring-orange-500' : ''}">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-lg 
+                        ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}">
+                        ${hId}
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">House ${hId}</p>
+                        <p class="text-2xl font-black text-slate-800 leading-none">${h.jeopardy_score}</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <span class="text-[9px] font-black text-slate-300 uppercase italic">Turns: ${h.turns_played}/2</span>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
 // ---------------------------------------------------------
 // 6. Game Logic Functions (Bind to Window)
 // ---------------------------------------------------------
@@ -292,31 +420,42 @@ window.saveUndoState = async function () {
         buzzers: state.buzzers
     });
 };
+// ใน jeopardy-logic.js
 window.setActiveHouse = async function (houseId) {
+    if (!state.houses || !state.houses[houseId]) return;
     const h = state.houses[houseId];
 
-    // แจ้งเตือนถ้าบ้านนั้นเล่นครบ 2 รอบแล้ว (แต่ยังให้เลือกได้เผื่อพิธีกรอนุญาตพิเศษ)
+    // 1. แจ้งเตือนเรื่องโควต้า (เฉพาะหน้าที่มี Swal หรือหน้า Admin)
+    // ถ้าคลิกจากหน้า Board อาจจะไม่ต้องถามซ้ำซ้อน แต่ถ้าต้องการให้ถามเหมือนกันโค้ดนี้ใช้ได้เลยครับ
     if (h.turns_played >= 2) {
         const confirm = await Swal.fire({
             title: 'บ้านนี้เล่นครบ 2 รอบแล้ว',
             text: `บ้าน ${houseId} ได้ใช้สิทธิ์เลือกไปแล้วครบโควต้า ต้องการให้เล่นต่อหรือไม่?`,
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: 'ยืนยันเลือกบ้านนี้',
-            cancelButtonText: 'ยกเลิก'
+            confirmButtonText: 'ยืนยัน',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#3b82f6',
         });
         if (!confirm.isConfirmed) return;
     }
 
     try {
+        // หาตำแหน่งในคิวการเล่น
+        let orderIndex = state.config.picking_house_order.indexOf(parseInt(houseId));
+        if (orderIndex === -1) orderIndex = 0; // fallback ถ้าหาไม่เจอ
+
         await update(ref(db, 'jeopardy/game_state'), {
             active_house: parseInt(houseId),
-            // ปรับ current_turn_index ให้ตรงกับตำแหน่งใน picking_house_order เผื่อจะใช้ระบบ Auto ถัดไป
-            current_turn_index: state.config.picking_house_order.indexOf(parseInt(houseId))
+            current_turn_index: orderIndex
         });
-        showToast(`บ้าน ${houseId} เป็นคนเลือกแผ่นป้าย`, "success");
+
+        if (typeof showToast === 'function') {
+            showToast(`บ้าน ${houseId} เป็นคนเลือกแผ่นป้าย`, "success");
+        }
     } catch (e) {
-        showToast("ไม่สามารถเปลี่ยนบ้านได้", "error");
+        console.error(e);
+        if (typeof showToast === 'function') showToast("ไม่สามารถเปลี่ยนบ้านได้", "error");
     }
 };
 
@@ -481,17 +620,6 @@ window.showToast = function (message, type = 'success') {
         timerProgressBar: true
     });
     Toast.fire({ icon: type, title: message });
-};
-
-window.setActiveHouse = async function (houseId) {
-    try {
-        await update(ref(db, 'jeopardy/game_state'), {
-            active_house: parseInt(houseId),
-            // ค้นหาตำแหน่งบ้านใน order เพื่อรันคิวต่อไปได้ถูกต้อง
-            current_turn_index: state.config.picking_house_order.indexOf(parseInt(houseId))
-        });
-        window.showToast(`บ้าน ${houseId} เป็นคนเลือกแผ่นป้าย`);
-    } catch (e) { console.error(e); }
 };
 
 window.selectQuestion = async function (qId) {
@@ -731,3 +859,107 @@ window.switchTab = function (tab) {
         playTab.className = "bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg text-sm font-bold transition-all border border-slate-700";
     }
 }
+
+
+/// ---------------------------------------------------------
+// 9. Board
+// ---------------------------------------------------------
+
+window.confirmOpenQuestion = function (qId) {
+    if (state.game_state.status !== 'BOARD') return;
+
+    Swal.fire({
+        title: 'เปิดคำถามนี้?',
+        text: `มูลค่า ${state.questions[qId].points} แต้ม`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#3b82f6',
+        confirmButtonText: 'ยืนยัน',
+        cancelButtonText: 'ยกเลิก'
+    }).then((res) => {
+        if (res.isConfirmed) selectQuestion(qId);
+    });
+};
+
+function updateBoardGameState() {
+    const gs = state.game_state;
+    const overlay = document.getElementById('question-overlay');
+
+    // ถ้าไม่ใช่หน้า Board หรือไม่มี Overlay ให้หยุดทำงาน
+    if (!overlay) return;
+
+    if (gs.status === 'BOARD') {
+        overlay.classList.add('hidden');
+        stopBoardTimer();
+        safeSetText('display-active-house', gs.active_house);
+        return;
+    }
+
+    overlay.classList.remove('hidden');
+    const q = state.questions?.[gs.active_question_id];
+    if (!q) return;
+
+    safeSetText('overlay-category', q.category);
+    safeSetText('overlay-points', `${q.points} PTS`);
+    safeSetText('overlay-text', q.question_text);
+    safeSetText('display-active-house', gs.active_house);
+
+    // ใครกำลังตอบ?
+    const currentAnswering = (gs.status === 'STEAL_WAIT' && state.buzzers?.winner) ? state.buzzers.winner : gs.active_house;
+    safeSetText('display-answering-house', currentAnswering);
+
+    const badge = document.getElementById('answering-house-badge');
+    if (badge) badge.innerText = currentAnswering;
+
+    // สถานะ Steal
+    const stealInd = document.getElementById('steal-indicator');
+    if (stealInd) {
+        const isStealVisible = gs.is_steal_open && !state.buzzers?.winner;
+        stealInd.classList.toggle('hidden', !isStealVisible);
+    }
+
+    // จัดการเวลา
+    if (gs.is_timer_running) {
+        startBoardTimer(gs.timer_duration, gs.timer_start_ts);
+    } else {
+        stopBoardTimer();
+    }
+}
+
+function startBoardTimer(duration, startTs) {
+    if (boardTimerInterval) clearInterval(boardTimerInterval);
+    const display = document.getElementById('overlay-timer');
+
+    boardTimerInterval = setInterval(() => {
+        const elapsed = Date.now() - startTs;
+        const remaining = Math.max(0, duration - elapsed);
+        const sec = Math.floor(remaining / 1000);
+        const ms = Math.floor((remaining % 1000) / 10);
+
+        if (display) {
+            display.innerText = `${String(sec).padStart(2, '0')}:${String(ms).padStart(2, '0')}`;
+            display.className = sec < 10 ? "text-8xl font-black tabular-nums text-red-600 animate-pulse" : "text-8xl font-black tabular-nums text-slate-800";
+        }
+
+        if (remaining <= 0) clearInterval(boardTimerInterval);
+    }, 50);
+}
+
+function stopBoardTimer() {
+    if (boardTimerInterval) clearInterval(boardTimerInterval);
+}
+
+// ผูกฟังก์ชันเฉลยเพื่อเด้งไปดู Canva/คำอธิบาย
+document.getElementById('btn-reveal-answer')?.addEventListener('click', () => {
+    const q = state.questions[state.game_state.active_question_id];
+    Swal.fire({
+        title: 'เฉลยคำตอบ',
+        html: `
+            <div class="text-left p-4 bg-slate-50 rounded-2xl border">
+                <p class="font-black text-2xl text-emerald-600 mb-4">${q.answer_text}</p>
+                ${q.explain_url ? `<a href="${q.explain_url}" target="_blank" class="block w-full bg-blue-600 text-white p-3 rounded-xl text-center font-bold">ดูคำอธิบาย (Canva)</a>` : ''}
+            </div>
+        `,
+        confirmButtonText: 'กลับสู่บอร์ด'
+    });
+});

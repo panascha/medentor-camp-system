@@ -458,47 +458,64 @@
         import { initializeApp } from "firebase/app";
         import { getDatabase, ref, onValue } from "firebase/database";
 
-        // 1. Initialize Firebase
         const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
         const db = getDatabase(app);
 
         document.addEventListener('DOMContentLoaded', () => {
             const user = checkAuth();
-            if (!user || user.userType !== 'staff') return;
+            if (!user) return;
 
-            const myName = user.nickname || user.fullName;
-            const sessionSection = document.getElementById('tutor-active-session');
-            const sessionText = document.getElementById('active-session-text');
-            const liveBoardBtn = document.getElementById('btn-quick-liveboard');
-
-            // 2. ฟังข้อมูลจากกิ่ง active_sessions ทั้งหมด
-            onValue(ref(db, `active_sessions`), (snapshot) => {
-                const sessions = snapshot.val() || {};
-                let isUserTeaching = false;
-                let activeRoom = "";
-                let activeSubject = "";
-
-                // 3. วนลูปเช็คว่ามีห้องไหนที่ "ชื่อติวเตอร์" ตรงกับเราไหม
-                for (const roomId in sessions) {
-                    const session = sessions[roomId];
-                    // เช็คว่าเป็นติวเตอร์คนนี้ และห้องยังเปิดอยู่
-                    if (session.isOpen && session.tutor === myName) {
-                        isUserTeaching = true;
-                        activeRoom = roomId;
-                        activeSubject = session.subject;
-                        break;
+            // --- ส่วนที่ 1: สำหรับ Staff (เช็คห้องเรียนที่กำลังสอน) ---
+            if (user.userType === 'staff') {
+                const myName = user.nickname || user.fullName;
+                onValue(ref(db, `active_sessions`), (snapshot) => {
+                    const sessions = snapshot.val() || {};
+                    let isUserTeaching = false;
+                    let activeRoom = "";
+                    let activeSubject = "";
+                    for (const roomId in sessions) {
+                        const session = sessions[roomId];
+                        if (session.isOpen && session.tutor === myName) {
+                            isUserTeaching = true;
+                            activeRoom = roomId;
+                            activeSubject = session.subject;
+                            break;
+                        }
                     }
-                }
+                    if (isUserTeaching) {
+                        document.getElementById('tutor-active-session').classList.remove('hidden');
+                        document.getElementById('active-session-text').innerText = `คุณกำลังสอนในห้อง ${activeRoom.replace('_', ' ')} | วิชา ${activeSubject.toUpperCase()}`;
+                        document.getElementById('btn-quick-liveboard').href = `pages/liveboard.html?room=${activeRoom}`;
+                    } else {
+                        document.getElementById('tutor-active-session').classList.add('hidden');
+                    }
+                });
+            }
 
-                // 4. แสดง/ซ่อน UI ตามสถานะ
-                if (isUserTeaching) {
-                    sessionSection.classList.remove('hidden');
-                    sessionText.innerText = `คุณกำลังสอนในห้อง ${activeRoom.replace('_', ' ')} | วิชา ${activeSubject.toUpperCase()}`;
-                    liveBoardBtn.href = `pages/liveboard.html?room=${activeRoom}`;
-                } else {
-                    sessionSection.classList.add('hidden');
-                }
-            });
+            // --- ส่วนที่ 2: สำหรับ Student (เช็คสถานะเกม Jeopardy) ---
+            if (user.userType === 'student') {
+                onValue(ref(db, 'jeopardy/config/is_active'), (snapshot) => {
+                    const isActive = snapshot.val();
+                    const surpriseCard = document.getElementById('jeopardy-surprise-card');
+                    if (surpriseCard) {
+                        if (isActive) {
+                            surpriseCard.classList.remove('hidden');
+                            if (!localStorage.getItem('jeopardy_announced')) {
+                                Swal.fire({
+                                    title: 'ARE YOU READY?',
+                                    text: 'เกม Jeopardy เริ่มขึ้นแล้ว! ให้ตัวแทนบ้านกดเข้าสู่ห้องเกมได้เลย',
+                                    icon: 'info',
+                                    confirmButtonColor: '#f59e0b'
+                                });
+                                localStorage.setItem('jeopardy_announced', 'true');
+                            }
+                        } else {
+                            surpriseCard.classList.add('hidden');
+                            localStorage.removeItem('jeopardy_announced');
+                        }
+                    }
+                });
+            }
         });
     </script>
     <script>
@@ -536,30 +553,6 @@
 
                 // ดึงข้อมูลล่าสุดจาก Firebase (เพื่อดูห้องเรียนและคะแนน)
                 await fetchFreshStudentData(user.id);
-
-                const activeRef = ref(db, 'jeopardy/config/is_active');
-                onValue(activeRef, (snapshot) => {
-                    const isActive = snapshot.val();
-                    const surpriseCard = document.getElementById('jeopardy-surprise-card');
-                    if (surpriseCard) {
-                        if (isActive) {
-                            surpriseCard.classList.remove('hidden');
-                            // แจ้งเตือนเล็กน้อยเมื่อเกมเปิดครั้งแรก
-                            if (!localStorage.getItem('jeopardy_announced')) {
-                                Swal.fire({
-                                    title: 'ARE YOU READY?',
-                                    text: 'เกม Jeopardy เริ่มขึ้นแล้ว! ให้ตัวแทนบ้านกดเข้าสู่ห้องเกมได้เลย',
-                                    icon: 'info',
-                                    confirmButtonColor: '#f59e0b'
-                                });
-                                localStorage.setItem('jeopardy_announced', 'true');
-                            }
-                        } else {
-                            surpriseCard.classList.add('hidden');
-                            localStorage.removeItem('jeopardy_announced');
-                        }
-                    }
-                });
             }
         });
 
