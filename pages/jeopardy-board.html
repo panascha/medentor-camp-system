@@ -15,79 +15,85 @@
             background-color: #f8fafc;
             color: #1e293b;
         }
-
+    
+        /* ปรับ Layout หลักให้ Fix ความสูงเท่ากันทั้งสองฝั่ง */
+        .main-game-area {
+            height: calc(100vh - 140px);
+            /* ความสูงรวมของพื้นที่เล่นเกม */
+        }
+    
+        /* ฝั่งบอร์ดคำถาม: ปรับความสูงให้เต็มพื้นที่ */
         #board-container-wrapper {
-        overflow-y: auto;
-        height: calc(100vh - 180px); /* หักลบความสูง Header */
-        padding-right: 10px;
-    }
-    #board-container-wrapper::-webkit-scrollbar { width: 6px; }
-    #board-container-wrapper::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-
-        .jeopardy-card {
+            height: 100%;
+            padding-right: 10px;
+            overflow-y: auto;
+        }
+    
+        /* ฝั่งคะแนนบ้าน: ใช้ Flex กระจายให้เต็มความสูงพอดี 8 ใบ */
+        #scoreboard {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            /* กระจาย 8 หลังให้สูงพอดีขอบบน-ล่าง */
+            height: 100%;
+            gap: 6px;
+        }
+    
+        /* ดีไซน์การ์ดบ้านแบบ Slim ให้พอดีพื้นที่ */
+        .house-card-compact {
+        flex: 1;
+        min-height: 55px; /* กำหนดความสูงขั้นต่ำเพื่อให้เห็นข้อมูลชัดเจน */
+        padding: 0 0.75rem !important; /* ลด padding ลงเล็กน้อย */
+        display: flex;
+        align-items: center;
+        background: white;
+        border-radius: 1rem;
         transition: all 0.2s ease-out;
-        height: 5.5rem !important; /* ลดจาก h-32 (8rem) เหลือประมาณ 5.5rem */
-    }
-    .jeopardy-card .points-text {
-        font-size: 1.875rem; /* text-3xl */
-        line-height: 2.25rem;
+        overflow: hidden;
     }
 
-    .jeopardy-card .cat-text {
-        font-size: 0.7rem;
-        opacity: 0.6;
+    .house-card-compact.active-choosing {
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.1);
     }
-
+    
+        /* สไตล์แผ่นป้ายคำถามเดิม */
+        .jeopardy-card {
+            transition: all 0.2s ease-out;
+            height: 5.5rem !important;
+        }
+    
+        .jeopardy-card .points-text {
+            font-size: 1.875rem;
+            line-height: 2.25rem;
+        }
+    
+        .jeopardy-card .cat-text {
+            font-size: 0.7rem;
+            opacity: 0.6;
+        }
+    
         .jeopardy-card:hover:not(.played) {
-            transform: translateY(-5px) scale(1.02);
-            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
             border-color: #3b82f6;
         }
-
+    
         .played {
             opacity: 0.2;
             pointer-events: none;
             filter: grayscale(1);
             background: #e2e8f0 !important;
         }
-
-        .active-house-glow {
-            background: #eff6ff;
-            border-color: #3b82f6 !important;
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+    
+        #overlay-timer {
+            font-family: 'Monaco', 'Consolas', monospace;
+            letter-spacing: -0.05em;
         }
-
-        @keyframes open-scale {
-            from {
-                transform: scale(0.8);
-                opacity: 0;
-            }
-
-            to {
-                transform: scale(1);
-                opacity: 1;
-            }
+    
+        header {
+            padding: 0.75rem 1rem !important;
+            margin-bottom: 1rem !important;
         }
-
-        .animate-pop {
-            animation: open-scale 0.4s ease-out forwards;
-        }
-
-        .house-card {
-        padding: 0.75rem 1rem !important;
-        border-radius: 1.25rem !important;
-    }
-
-    .house-card.active-choosing {
-        border-color: #3b82f6 !important;
-        background-color: #eff6ff !important;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
-    }
-
-    #overlay-timer {
-        font-family: 'Monaco', 'Consolas', monospace;
-        letter-spacing: -0.05em;
-    }
     </style>
 </head>
 
@@ -117,22 +123,17 @@
         </div>
     </header>
 
-    <div class="flex-1 grid grid-cols-12 gap-6 overflow-hidden">
+    <div class="flex-1 grid grid-cols-12 gap-6 overflow-hidden main-game-area">
         <!-- Main Board -->
-        <main class="col-span-9 bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm flex flex-col">
-            <div id="board-container-wrapper">
-            <div id="board-container" class="grid grid-cols-5 gap-4 h-full">
-                <!-- JS will render columns here -->
-                <div class="col-span-5 flex items-center justify-center text-slate-300 italic">
-                    กำลังโหลดข้อมูลกระดาน...
-                </div>
-            </div>
+        <main class="col-span-9 bg-white rounded-[2.5rem] border border-slate-200 p-6 shadow-sm flex flex-col">
+            <div id="board-container" class="grid grid-cols-5 gap-3 h-full">
+                <!-- Questions -->
             </div>
         </main>
-
+    
         <!-- Scoreboard Sidebar -->
-        <aside class="col-span-3 flex flex-col gap-3 overflow-y-auto pr-1" id="scoreboard">
-            <!-- Houses 1-8 -->
+        <aside class="col-span-3 p-6" id="scoreboard">
+            <!-- JS will render 8 houses here -->
         </aside>
     </div>
 

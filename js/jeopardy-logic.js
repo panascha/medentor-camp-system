@@ -389,25 +389,44 @@ function renderBoardScoreboard() {
         const isActive = parseInt(hId) === state.game_state.active_house;
         const isBuzzerWinner = state.buzzers?.winner == hId;
 
-        // เพิ่มการตรวจสอบ cursor และการตอบสนองเมื่อ hover
+        // ดึงข้อมูลคะแนน
+        const correct = h.correct_points || 0;
+        const penalty = h.penalty_points || 0;
+        const score = h.jeopardy_score || 0;
+
         return `
         <div onclick="window.setActiveHouse('${hId}')" 
-            class="p-4 bg-white rounded-3xl border-2 transition-all cursor-pointer hover:shadow-md active:scale-95
-            ${isActive ? 'border-blue-500 bg-blue-50 shadow-md scale-[1.02]' : 'border-slate-100 opacity-80 hover:opacity-100'} 
-            ${isBuzzerWinner ? 'ring-4 ring-orange-500' : ''}">
-            <div class="flex justify-between items-center">
-                <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-lg 
-                        ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}">
-                        ${hId}
-                    </div>
-                    <div>
-                        <p class="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">House ${hId}</p>
-                        <p class="text-2xl font-black text-slate-800 leading-none">${h.jeopardy_score}</p>
-                    </div>
+            class="house-card-compact border-2 transition-all cursor-pointer hover:shadow-md active:scale-95
+            ${isActive ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-100 opacity-90'} 
+            ${isBuzzerWinner ? 'ring-4 ring-orange-500 animate-pulse' : ''}">
+            
+            <div class="flex items-center justify-between w-full gap-2">
+                <!-- 1. ส่วนเลขบ้าน -->
+                <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center font-black text-sm 
+                    ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-400'}">
+                    ${hId}
                 </div>
-                <div class="text-right">
-                    <span class="text-[9px] font-black text-slate-300 uppercase italic">Turns: ${h.turns_played}/2</span>
+                
+                <!-- 2. ส่วนคะแนนหลัก -->
+                <div class="flex-1">
+                    <p class="text-2xl font-black ${isActive ? 'text-blue-700' : 'text-slate-800'} leading-none">
+                        ${score}
+                    </p>
+                </div>
+
+                <!-- 3. ส่วนสถิติละเอียด (Correct / Penalty) -->
+                <div class="flex flex-col items-end text-[10px] font-bold leading-tight border-x border-slate-100 px-2 min-w-[65px]">
+                    <span class="text-emerald-500">+${correct}</span>
+                    <span class="text-red-400">-${penalty}</span>
+                </div>
+
+                <!-- 4. ส่วน Turns และสถานะ -->
+                <div class="text-right flex flex-col items-end gap-1 min-w-[50px]">
+                    <span class="text-[9px] font-black text-slate-300 uppercase">T: ${h.turns_played}/2</span>
+                    <div class="flex items-center">
+                        ${isActive ? '<span class="text-blue-500 text-[10px] animate-bounce">●</span>' : ''}
+                        ${isBuzzerWinner ? '<span class="text-orange-500 text-sm">🔔</span>' : ''}
+                    </div>
                 </div>
             </div>
         </div>`;
