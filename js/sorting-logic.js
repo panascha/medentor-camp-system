@@ -68,28 +68,51 @@ document.addEventListener('DOMContentLoaded', async () => {
 function getRoomLetter(index) {
     return String.fromCharCode(64 + parseInt(index));
 }
+
+const HOUSE_COLORS = {
+    1: 'bg-red-500', 2: 'bg-blue-500', 3: 'bg-emerald-500', 4: 'bg-amber-500',
+    5: 'bg-purple-500', 6: 'bg-pink-500', 7: 'bg-indigo-500', 8: 'bg-teal-500'
+};
+
 function renderRooms(count) {
     const wrapper = document.getElementById('rooms-wrapper');
+    if (!wrapper) return;
     wrapper.innerHTML = '';
+
     for (let i = 1; i <= count; i++) {
-        const letter = getRoomLetter(i); // เปลี่ยนเลขเป็นตัวอักษร
+        const letter = getRoomLetter(i);
         wrapper.innerHTML += `
-            <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-fit">
-                <div class="bg-slate-800 text-white p-4 flex justify-between items-center">
-                    <h3 class="font-bold flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-blue-400"></span>
-                        ห้องเรียน ${letter}
-                    </h3>
-                    <span id="count-room-${letter}" class="bg-white/20 px-2 py-0.5 rounded-lg text-[10px] font-bold">0 คน</span>
+            <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col h-fit">
+                <div class="bg-slate-800 text-white p-5">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="font-black text-xl italic">ROOM ${letter}</h3>
+                        <span id="count-room-${letter}" class="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black">0 คน</span>
+                    </div>
+                    
+                    <!-- ส่วนแสดงจุดสีบ้าน -->
+                    <div id="houses-in-${letter}" class="flex gap-1.5 mb-4 flex-wrap"></div>
+
+                    <!-- ส่วนแสดงสถิติ -->
+                    <div class="grid grid-cols-2 gap-2 pt-3 border-t border-white/10">
+                        <div class="text-center">
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Mean</p>
+                            <p id="mean-room-${letter}" class="text-lg font-black text-blue-400">0.00</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Median</p>
+                            <p id="median-room-${letter}" class="text-lg font-black text-emerald-400">0.0</p>
+                        </div>
+                    </div>
                 </div>
                 <div id="room-${letter}" 
-                     class="room-column p-4 space-y-3 bg-slate-50/50 min-h-[150px]" 
+                     class="room-column p-4 space-y-3 bg-slate-50/50 min-h-[200px]" 
                      data-room="${letter}">
                 </div>
             </div>
         `;
     }
-    // Init Sortable ให้กลุ่ม 'rooms' ทำงานร่วมกันได้
+
+    // ตั้งค่า Sortable ให้กับห้องที่สร้างใหม่
     document.querySelectorAll('.room-column, #pool').forEach(el => {
         new Sortable(el, {
             group: 'rooms',
@@ -113,20 +136,30 @@ function distributeExistingStudents() {
 }
 
 function createStudentCard(s) {
+    // กำหนดสีตัวเลขคะแนนตามความเก่ง
     let scoreColor = 'text-slate-400 bg-slate-100';
     if (s.score >= 45) scoreColor = 'text-emerald-700 bg-emerald-100';
     else if (s.score >= 30) scoreColor = 'text-orange-700 bg-orange-100';
 
     return `
-        <div class="student-card bg-white p-4 rounded-2xl border border-slate-200 shadow-sm house-${s.house} hover:border-blue-500 cursor-pointer" 
+        <div class="student-card bg-white p-3 rounded-2xl border border-slate-200 shadow-sm house-${s.house} hover:border-blue-500 cursor-pointer transition-all" 
              onclick="showRoomSelector('${s.id}', '${s.name}', '${s.nickname}', '${s.house}', '${s.score}')"
              data-id="${s.id}">
-            <div class="flex justify-between items-start">
-                <div class="min-w-0">
-                    <p class="font-bold text-base text-slate-800 truncate">${s.name}</p>
-                    <p class="text-xs text-slate-400 font-medium uppercase">ID: ${s.id} | บ. ${s.house} (${s.nickname})</p>
+            <div class="flex justify-between items-start gap-2">
+                <div class="flex items-start gap-2 min-w-0">
+                    <!-- Badge สีประจำบ้าน -->
+                    <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white bg-house-${s.house} shadow-sm">
+                        ${s.house}
+                    </div>
+                    <div class="min-w-0">
+                        <p class="font-bold text-sm text-slate-800 truncate">${s.name}</p>
+                        <p class="text-[10px] text-slate-400 font-medium uppercase truncate">
+                            ID: ${s.id} | ${s.nickname}
+                        </p>
+                    </div>
                 </div>
-                <div class="${scoreColor} px-2 py-1 rounded-lg text-xs font-black min-w-[35px] text-center shadow-sm">
+                <!-- คะแนน Pretest -->
+                <div class="${scoreColor} px-2 py-0.5 rounded-lg text-[10px] font-black min-w-[30px] text-center shadow-sm">
                     ${s.score}
                 </div>
             </div>
@@ -135,19 +168,126 @@ function createStudentCard(s) {
 }
 
 function updateStats() {
+    const HOUSE_COLORS_CLASS = {
+        1: 'bg-red-500', 2: 'bg-blue-500', 3: 'bg-emerald-500', 4: 'bg-amber-500',
+        5: 'bg-purple-500', 6: 'bg-pink-500', 7: 'bg-indigo-500', 8: 'bg-teal-500'
+    };
+
     document.querySelectorAll('.room-column').forEach(room => {
-        const count = room.children.length;
-        const id = room.dataset.room;
-        const countEl = document.getElementById(`count-room-${id}`);
-        if (countEl) countEl.innerText = `${count} คน`;
+        const letter = room.dataset.room;
+        if (letter === 'pool') return; // ไม่คำนวณสถิติให้ Pool
+
+        // ดัก Error: ถ้าไม่มี Element สถิติ ให้ข้ามการทำงานไปก่อน
+        const meanEl = document.getElementById(`mean-room-${letter}`);
+        const medianEl = document.getElementById(`median-room-${letter}`);
+        const countEl = document.getElementById(`count-room-${letter}`);
+        const houseContainer = document.getElementById(`houses-in-${letter}`);
+
+        if (!meanEl || !medianEl || !countEl || !houseContainer) return;
+
+        const cards = Array.from(room.querySelectorAll('.student-card'));
+        const count = cards.length;
+
+        const scores = [];
+        const houseCounts = {};
+
+        cards.forEach(card => {
+            // ดึงคะแนนจากตัวเลขใน Card
+            const scoreBadge = card.querySelector('.min-w-\\[35px\\], .min-w-\\[30px\\]');
+            if (scoreBadge) {
+                scores.push(parseFloat(scoreBadge.innerText) || 0);
+            }
+
+            // หา House ID
+            const houseMatch = card.className.match(/house-(\d+)/);
+            if (houseMatch) {
+                const h = houseMatch[1];
+                houseCounts[h] = (houseCounts[h] || 0) + 1;
+            }
+        });
+
+        // แสดงผลจำนวนคน
+        countEl.innerText = `${count}/20 คน`;
+
+        // คำนวณ Mean
+        const mean = count > 0 ? (scores.reduce((a, b) => a + b, 0) / count) : 0;
+        meanEl.innerText = mean.toFixed(2);
+
+        // คำนวณ Median
+        let median = 0;
+        if (count > 0) {
+            const sortedScores = [...scores].sort((a, b) => a - b);
+            const mid = Math.floor(count / 2);
+            median = count % 2 !== 0 ? sortedScores[mid] : (sortedScores[mid - 1] + sortedScores[mid]) / 2;
+        }
+        medianEl.innerText = median.toFixed(1);
+
+        // วาดจุดสีบอกบ้าน
+        const houseList = Object.keys(houseCounts).sort((a, b) => a - b);
+        houseContainer.innerHTML = houseList.map(h => `
+            <div class="flex items-center gap-1 bg-white/10 px-2 py-0.5 rounded-md border ${houseCounts[h] === 5 ? 'border-emerald-400' : 'border-white/5'}">
+                <span class="w-2 h-2 rounded-full ${HOUSE_COLORS_CLASS[h]}"></span>
+                <span class="text-[9px] font-black text-white">${houseCounts[h]}</span>
+            </div>
+        `).join('');
     });
 }
 
-async function applySnakeSort() {
+// async function applySnakeSort() {
+//     const result = await Swal.fire({
+//         title: 'ยืนยันการจัดห้องใหม่?',
+//         text: "ระบบจะคำนวณ Snake Sort ตามคะแนน Pretest และล้างห้องเดิมออกทั้งหมด",
+//         icon: 'warning',
+//         showCancelButton: true,
+//         confirmButtonText: 'ตกลง, จัดเลย!',
+//         cancelButtonText: 'ยกเลิก'
+//     });
+
+//     if (!result.isConfirmed) return;
+
+//     const roomCount = parseInt(document.getElementById('room-count').value);
+//     renderRooms(roomCount);
+
+//     // Logic: Snake Sort
+//     const sorted = [...students].sort((a, b) => b.score - a.score);
+//     let roomsData = Array.from({ length: roomCount }, () => []);
+//     let forward = true;
+//     let roomIdx = 0;
+
+//     sorted.forEach(s => {
+//         roomsData[roomIdx].push(s);
+//         if (forward) {
+//             if (roomIdx === roomCount - 1) forward = false;
+//             else roomIdx++;
+//         } else {
+//             if (roomIdx === 0) forward = true;
+//             else roomIdx--;
+//         }
+//     });
+
+//     // --- จุดที่แก้ไข: เปลี่ยนจากเลข i+1 เป็นตัวอักษร A, B, C... ---
+//     roomsData.forEach((roomStudents, i) => {
+//         const letter = getRoomLetter(i + 1); // แปลง 1 เป็น A, 2 เป็น B...
+//         const roomEl = document.getElementById(`room-${letter}`);
+//         if (roomEl) {
+//             roomEl.innerHTML = roomStudents.map(s => createStudentCard(s)).join('');
+//         }
+//     });
+
+//     updateStats();
+//     renderPool();
+//     showToast("จัดห้องเรียนแบบ Snake Sort เรียบร้อย!");
+// }
+
+// ฟังก์ชันคลิกเพื่อย้ายห้อง
+
+
+// ฟังก์ชันสำหรับจัดห้องแบบ Balanced (Rank Sum + Zig-Zag)
+async function applyBalancedSort() {
     const result = await Swal.fire({
-        title: 'ยืนยันการจัดห้องใหม่?',
-        text: "ระบบจะคำนวณ Snake Sort ตามคะแนน Pretest และล้างห้องเดิมออกทั้งหมด",
-        icon: 'warning',
+        title: 'ยืนยันการจัดห้องแบบ Balanced?',
+        text: "ระบบจะคำนวณความเก่งของบ้านและแบ่งกลุ่มนักเรียนตามสูตร Zig-Zag เพื่อความเท่าเทียม",
+        icon: 'info',
         showCancelButton: true,
         confirmButtonText: 'ตกลง, จัดเลย!',
         cancelButtonText: 'ยกเลิก'
@@ -155,41 +295,83 @@ async function applySnakeSort() {
 
     if (!result.isConfirmed) return;
 
-    const roomCount = parseInt(document.getElementById('room-count').value);
-    renderRooms(roomCount);
+    // 1. คำนวณคะแนนเฉลี่ยของแต่ละบ้าน
+    const houseStats = {};
+    for (let i = 1; i <= 8; i++) houseStats[i] = { id: i, totalScore: 0, count: 0 };
 
-    // Logic: Snake Sort
-    const sorted = [...students].sort((a, b) => b.score - a.score);
-    let roomsData = Array.from({ length: roomCount }, () => []);
-    let forward = true;
-    let roomIdx = 0;
-
-    sorted.forEach(s => {
-        roomsData[roomIdx].push(s);
-        if (forward) {
-            if (roomIdx === roomCount - 1) forward = false;
-            else roomIdx++;
-        } else {
-            if (roomIdx === 0) forward = true;
-            else roomIdx--;
+    students.forEach(s => {
+        if (houseStats[s.house]) {
+            houseStats[s.house].totalScore += s.score;
+            houseStats[s.house].count++;
         }
     });
 
-    // --- จุดที่แก้ไข: เปลี่ยนจากเลข i+1 เป็นตัวอักษร A, B, C... ---
-    roomsData.forEach((roomStudents, i) => {
-        const letter = getRoomLetter(i + 1); // แปลง 1 เป็น A, 2 เป็น B...
+    // 2. เรียงลำดับบ้านตามคะแนนเฉลี่ย (Rank 1 คือเก่งสุด)
+    const rankedHouses = Object.values(houseStats)
+        .map(h => ({ id: h.id, avg: h.count > 0 ? h.totalScore / h.count : 0 }))
+        .sort((a, b) => b.avg - a.avg);
+
+    // สร้าง Map เพื่อดูว่าบ้าน ID ไหน ได้อันดับที่เท่าไหร่ (0-indexed)
+    const houseRankMap = {};
+    rankedHouses.forEach((h, index) => { houseRankMap[h.id] = index + 1; });
+
+    // 3. เตรียมห้องเรียน A-D
+    renderRooms(4);
+    const roomsData = { 'A': [], 'B': [], 'C': [], 'D': [] };
+
+    // 4. จัดกลุ่มนักเรียนในแต่ละบ้านแบบ Zig-Zag (X และ Y)
+    // แบ่งกลุ่มตาม House ID เพื่อแยกจัดการทีละบ้าน
+    const studentsByHouse = {};
+    students.forEach(s => {
+        if (!studentsByHouse[s.house]) studentsByHouse[s.house] = [];
+        studentsByHouse[s.house].push(s);
+    });
+
+    Object.keys(studentsByHouse).forEach(houseId => {
+        // เรียงลำดับเด็กในบ้านนั้นๆ (เก่ง -> น้อย)
+        const sortedInHouse = studentsByHouse[houseId].sort((a, b) => b.score - a.score);
+
+        // ดึงอันดับของบ้านนี้ (1-8)
+        const rank = houseRankMap[houseId];
+
+        // แบ่งกลุ่ม X (อันดับ 1, 4, 5, 8, 9) และ Y (อันดับ 2, 3, 6, 7, 10)
+        const groupX = [];
+        const groupY = [];
+        const xIndices = [0, 3, 4, 7, 8]; // Index 0-based ของ 1, 4, 5, 8, 9
+
+        sortedInHouse.forEach((student, index) => {
+            if (xIndices.includes(index)) groupX.push(student);
+            else groupY.push(student);
+        });
+
+        // 5. กระจายกลุ่ม X, Y ลงห้อง A, B, C, D ตามเงื่อนไข Rank Sum Equality
+        if (rank === 1) { roomsData['A'].push(...groupX); roomsData['B'].push(...groupY); }
+        else if (rank === 4) { roomsData['B'].push(...groupX); roomsData['A'].push(...groupY); }
+        else if (rank === 6) { roomsData['B'].push(...groupX); roomsData['A'].push(...groupY); }
+        else if (rank === 7) { roomsData['A'].push(...groupX); roomsData['B'].push(...groupY); }
+
+        else if (rank === 2) { roomsData['C'].push(...groupX); roomsData['D'].push(...groupY); }
+        else if (rank === 3) { roomsData['D'].push(...groupX); roomsData['C'].push(...groupY); }
+        else if (rank === 5) { roomsData['D'].push(...groupX); roomsData['C'].push(...groupY); }
+        else if (rank === 8) { roomsData['C'].push(...groupX); roomsData['D'].push(...groupY); }
+    });
+
+    // 6. วาด Card ลงใน UI
+    Object.keys(roomsData).forEach(letter => {
         const roomEl = document.getElementById(`room-${letter}`);
         if (roomEl) {
-            roomEl.innerHTML = roomStudents.map(s => createStudentCard(s)).join('');
+            roomEl.innerHTML = roomsData[letter].map(s => createStudentCard(s)).join('');
         }
     });
 
     updateStats();
-    renderPool();
-    showToast("จัดห้องเรียนแบบ Snake Sort เรียบร้อย!");
+    renderPool(); // ล้างคนออกจาก Pool
+
+    // แสดงสรุปผล
+    const houseRankOrder = rankedHouses.map((h, i) => `${i + 1}. บ้าน ${h.id}`).join('\n');
+    Swal.fire('จัดห้องสำเร็จ!', `ลำดับความเก่งของบ้าน:\n${houseRankOrder}`, 'success');
 }
 
-// ฟังก์ชันคลิกเพื่อย้ายห้อง
 async function showRoomSelector(studentId, studentName, nickname, house, score) {
     const card = document.querySelector(`.student-card[data-id="${studentId}"]`);
     const currentRoomId = card.parentElement.dataset.room;
