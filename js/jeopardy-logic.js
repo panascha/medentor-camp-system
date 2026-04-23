@@ -35,6 +35,7 @@ function safeSetText(id, text) {
 // ---------------------------------------------------------
 let state = {};
 let boardTimerInterval = null;
+let countdownInterval = null;
 
 // ---------------------------------------------------------
 // 3. Main Listener (Real-time Sync)
@@ -171,6 +172,21 @@ function renderActiveQuestion(gs) {
     const ctrlOwner = document.getElementById('ctrl-owner');
     const ctrlStealOpen = document.getElementById('ctrl-steal-open');
     const ctrlStealJudge = document.getElementById('ctrl-steal-judge');
+    const timerBtn = document.getElementById('btn-toggle-timer');
+    const timerIcon = document.getElementById('timer-icon');
+    const timerText = document.getElementById('timer-text');
+
+    if (timerBtn) {
+        if (gs.is_timer_running) {
+            timerBtn.className = "bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md hover:bg-amber-600 transition-all flex items-center gap-2";
+            timerIcon.innerText = "⏸️";
+            timerText.innerText = "หยุดเวลา";
+        } else {
+            timerBtn.className = "bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md hover:bg-emerald-600 transition-all flex items-center gap-2 animate-pulse";
+            timerIcon.innerText = "▶️";
+            timerText.innerText = "เดินเวลาต่อ";
+        }
+    }
 
     if (!ctrlOwner || !ctrlStealOpen || !ctrlStealJudge) return;
 
@@ -631,16 +647,25 @@ window.judgeOwner = async function (isCorrect) {
 };
 
 window.openStealBuzzer = async function () {
-    await update(ref(db, 'jeopardy/game_state'), {
-        is_steal_open: true
+    // ล้างข้อมูล Buzzer เก่า (ล้าง attempts และ winner)
+    await update(ref(db), {
+        'jeopardy/buzzers': {
+            is_locked: false,
+            winner: null,
+            attempts: {} // ล้างประวัติข้อเก่า
+        },
+        'jeopardy/game_state/is_steal_open': true,
+        'jeopardy/game_state/steal_start_ts': Date.now() // บันทึกเวลาเริ่ม
     });
-    showToast("ระบบ Steal เปิดแล้ว! รอน้องกด...", "info");
-};
+    showToast("เปิดระบบปุ่มกด Steal แล้ว!", "warning");
+}
 
 window.judgeSteal = async function (isCorrect) {
     await saveUndoState();
     const winnerHouse = state.buzzers.winner;
     const q = state.questions[state.game_state.active_question_id];
+    if (countdownInterval) clearInterval(countdownInterval); // หยุดการนับเวลาถอยหลัง
+    countdownInterval = null;
 
     if (isCorrect) {
         await processNextTurn(winnerHouse, q.points, false);
@@ -897,6 +922,13 @@ window.switchTab = function (tab) {
 // 9. Board
 // ---------------------------------------------------------
 
+window.closeStealBanner = function () {
+    const stealAlert = document.getElementById('steal-alert-container');
+    if (stealAlert) {
+        stealAlert.classList.add('hidden');
+    }
+};
+
 window.confirmOpenQuestion = function (qId) {
     if (state.game_state.status !== 'BOARD') return;
 
@@ -913,66 +945,203 @@ window.confirmOpenQuestion = function (qId) {
     });
 };
 
+window.revealAnswerOnBoard = function () {
+    const answerArea = document.getElementById('answer-reveal-area');
+    const expLink = document.getElementById('link-explanation');
+    const q = state.questions[state.game_state.active_question_id];
+
+    answerArea.classList.remove('hidden');
+    if (q.explain_url) expLink.classList.remove('hidden');
+
+    // หยุดเวลาทันทีเมื่อดูเฉลย
+    if (state.game_state.is_timer_running) {
+        window.toggleTimer();
+    }
+};
+
 function updateBoardGameState() {
     const gs = state.game_state;
     const overlay = document.getElementById('question-overlay');
+    const stealAlert = document.getElementById('steal-alert-container');
+    const buzz = state.buzzers; // ดึงข้อมูล Buzzer มาใช้
+
     if (!overlay) return;
 
+    // --- [1] สถานะกลับสู่บอร์ดหลัก (Reset ทุกอย่าง) ---
     if (gs.status === 'BOARD') {
         overlay.classList.add('hidden');
+        document.getElementById('answer-reveal-area')?.classList.add('hidden');
+        document.getElementById('link-explanation')?.classList.add('hidden');
+        if (stealAlert) {
+            stealAlert.classList.add('hidden');
+            stealAlert.innerHTML = "";
+        }
+        if (countdownInterval) clearInterval(countdownInterval);
         stopBoardTimer();
         return;
     }
 
+    // --- [2] แสดงหน้าจอคำถาม (Overlay) ---
     overlay.classList.remove('hidden');
     const q = state.questions?.[gs.active_question_id];
     if (!q) return;
 
-    // 1. ข้อมูลหัวข้อ
+    // อัปเดตข้อมูลพื้นฐาน
     safeSetText('overlay-category', q.category);
     safeSetText('overlay-points', `${q.points} PTS`);
     safeSetText('overlay-text', q.question_text);
+    safeSetText('display-final-answer', q.answer_text);
 
-    // 2. จัดการตัวเลือก (Kahoot Style)
+    // --- [3] จัดการข้อมูล Started By / Steal By (Badges ด้านล่าง) ---
+    const ownerId = gs.answering_house;
+    safeSetText('display-owner-house', ownerId);
+    if (document.getElementById('owner-house-badge')) {
+        document.getElementById('owner-house-badge').innerText = ownerId;
+    }
+
+    const stealArea = document.getElementById('steal-status-area');
+    if (stealArea) {
+        if (gs.status === 'STEAL_WAIT' && buzz?.winner) {
+            stealArea.classList.remove('hidden');
+            const stealerId = buzz.winner;
+            safeSetText('display-stealer-house', stealerId);
+            if (document.getElementById('stealer-house-badge')) {
+                document.getElementById('stealer-house-badge').innerText = stealerId;
+            }
+        } else {
+            stealArea.classList.add('hidden');
+        }
+    }
+
+    // --- [4] จัดการ STEAL ALERT (แบนเนอร์กลางจอ) ---
+    if (stealAlert) {
+        if (gs.status === 'STEAL_WAIT') {
+            stealAlert.classList.remove('hidden');
+            const closeBtn = `<div class="close-banner-btn" onclick="window.closeStealBanner()" title="ปิดการแจ้งเตือน">✕</div>`;
+
+            if (!gs.is_steal_open) {
+                // จังหวะรอ Admin ปล่อยไฟ
+                stealAlert.innerHTML = `
+                    <div class="steal-prep-banner relative">
+                        ${closeBtn}
+                        <p class="text-2xl font-black text-amber-600 uppercase tracking-widest mb-2">❌ เจ้าของข้อตอบผิด / หมดเวลา!</p>
+                        <h2 class="text-6xl font-black text-slate-800 mb-4">เตรียมตัว STEAL...</h2>
+                        <p class="text-xl font-bold text-amber-700 animate-pulse">⚠️ รอสัญญาณไฟเหลืองจากพี่สตาฟฟ์</p>
+                    </div>`;
+                if (countdownInterval) clearInterval(countdownInterval);
+            } else {
+                // จังหวะปล่อยไฟแล้ว / มีผู้ชนะแล้ว
+                const attempts = buzz?.attempts || {};
+                const winnerId = buzz?.winner;
+                const startTime = gs.steal_start_ts || Date.now();
+                const sortedAttempts = Object.entries(attempts).sort((a, b) => a[1] - b[1]);
+
+                // --- ส่วนคำนวณการนับถอยหลัง 5 วินาทีหลังจากบ้านแรกกด ---
+                let countdownHTML = '';
+                if (winnerId && buzz.timestamp) {
+                    const elapsed = Date.now() - buzz.timestamp;
+                    const remaining = Math.max(0, (5000 - elapsed) / 1000);
+
+                    if (remaining > 0) {
+                        countdownHTML = `<p class="text-orange-500 font-black animate-pulse">🔒 ระบบจะปิดรับใน: ${remaining.toFixed(1)} วินาที</p>`;
+                        // สั่งให้หน้าจอรีเฟรชตัวเองเพื่อลดตัวเลขวินาที
+                        if (!countdownInterval) {
+                            countdownInterval = setInterval(() => { updateBoardGameState(); }, 100);
+                        }
+                    } else {
+                        countdownHTML = `<p class="text-red-600 font-black">🚫 ปิดรับการกดแล้ว (หมดเวลา 5s)</p>`;
+                        if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+                    }
+                } else {
+                    countdownHTML = `<p class="text-xl font-black text-orange-500 uppercase tracking-widest animate-pulse">--- ระบบเปิดแล้ว ---</p>`;
+                }
+
+                // สร้างรายการบ้านที่กดทัน
+                const attemptsHTML = sortedAttempts.map(([hId, ts]) => {
+                    const diff = (ts - startTime) / 1000;
+                    const isWinner = winnerId == hId;
+                    return `
+                        <div class="flex items-center gap-2 px-4 py-1.5 rounded-full ${isWinner ? 'bg-orange-600 text-white shadow-md scale-110' : 'bg-white/80 border border-orange-200'} transition-all">
+                            <span class="font-black ${isWinner ? 'text-white' : 'text-orange-600'} text-sm">H${hId}:</span>
+                            <span class="font-mono text-xs font-bold ${isWinner ? 'text-orange-100' : 'text-slate-600'}">+${diff.toFixed(3)}s</span>
+                        </div>`;
+                }).join('');
+
+                const headerContent = winnerId
+                    ? `<p class="text-2xl font-black text-emerald-600 uppercase tracking-widest mb-2 animate-bounce">🎉 SUCCESS!</p>
+                       <h2 class="text-7xl font-black text-slate-900 mb-2 italic">บ้าน ${winnerId} กดติด!</h2>`
+                    : `<p class="text-2xl font-black text-orange-600 uppercase tracking-[0.5em] mb-2 animate-pulse">⚡ RELEASED</p>
+                       <h2 class="text-7xl font-black text-slate-900 mb-2 italic">กดปุ่มเลย!!!</h2>`;
+
+                stealAlert.innerHTML = `
+                    <div class="steal-prep-banner steal-active-banner relative" style="border-color: ${winnerId ? '#10b981' : '#ea580c'}; background: ${winnerId ? '#f0fdf4' : '#fff7ed'}; max-width: 900px;">
+                        ${closeBtn}
+                        ${headerContent}
+                        <div class="mb-6">${countdownHTML}</div>
+                        
+                        <div class="border-t ${winnerId ? 'border-emerald-200' : 'border-orange-200'} pt-5 mt-2">
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Press History (Reaction Time)</p>
+                            <div class="flex flex-wrap justify-center gap-3">
+                                ${attemptsHTML || '<p class="text-slate-300 italic text-sm">Waiting for first press...</p>'}
+                            </div>
+                        </div>
+                    </div>`;
+            }
+        } else {
+            stealAlert.classList.add('hidden');
+        }
+    }
+
+    // --- [5] เตรียมลิงก์คำอธิบาย ---
+    const expLink = document.getElementById('link-explanation');
+    if (expLink) {
+        if (q.explain_url) {
+            expLink.href = q.explain_url;
+            expLink.classList.remove('hidden');
+        } else {
+            expLink.classList.add('hidden');
+        }
+    }
+
+    // --- [6] จัดการตัวเลือก (Kahoot Style) ---
     const optionsContainer = document.getElementById('overlay-options');
     if (optionsContainer) {
         if (q.options && q.options.trim() !== "") {
             optionsContainer.classList.remove('hidden');
-            optionsContainer.className = "kahoot-grid"; // ใส่ Grid class
+            const choices = q.options.split(/\r?\n|\\n/).filter(line => line.trim() !== "");
+            const symbols = ['▲', '◆', '●', '■'];
+            const letters = ['A', 'B', 'C', 'D'];
 
-            if (gs.options_revealed) {
-                // หน่วงเวลานิดเดียวเพื่อให้ Transition ของ Overlay ทำงานเสร็จก่อน แล้วค่อยเด้ง Option ตาม
-                setTimeout(() => {
-                    optionsContainer.classList.add('revealed');
-                }, 100);
-            }
-
-            // แยกบรรทัดเป็นตัวเลือก
-            const choices = q.options.split('\n').filter(line => line.trim() !== "");
-            const symbols = ['▲', '◆', '●', '■']; // สัญลักษณ์เลียนแบบ Kahoot
-
-            optionsContainer.innerHTML = choices.map((choice, index) => `
-                <div class="kahoot-option opt-${index % 4}">
-                    <span class="kahoot-symbol">${symbols[index % 4]}</span>
-                    <span class="choice-text">${choice}</span>
-                </div>
-            `).join('');
+            optionsContainer.innerHTML = choices.map((choice, index) => {
+                let cleanChoice = choice.trim().replace(/^[A-D][.:]\s*/i, "");
+                return `
+                    <div class="kahoot-option opt-${index % 4}">
+                        <span class="kahoot-symbol">${symbols[index % 4]}</span>
+                        <span class="kahoot-text">
+                            <b>${letters[index % 4]}:</b> ${cleanChoice}
+                        </span>
+                    </div>`;
+            }).join('');
+            optionsContainer.classList.add('revealed');
         } else {
             optionsContainer.classList.add('hidden');
+            optionsContainer.classList.remove('revealed');
         }
     }
 
-    // 3. ใครกำลังตอบ
-    const currentAnswering = (gs.status === 'STEAL_WAIT' && state.buzzers?.winner) ? state.buzzers.winner : gs.active_house;
+    // --- [7] จัดการ Answering House (ใครกำลังตอบ) ---
+    const currentAnswering = (gs.status === 'STEAL_WAIT' && buzz?.winner) ? buzz.winner : gs.active_house;
     safeSetText('display-answering-house', currentAnswering);
 
-    // 4. จัดการ Timer (นาที:วินาที)
+    // --- [8] จัดการ Timer (นาที:วินาที) ---
     if (gs.is_timer_running) {
         startBoardTimer(gs.timer_duration, gs.timer_start_ts);
     } else {
         stopBoardTimer();
-        const sec = Math.floor(gs.timer_remaining / 1000);
-        safeSetText('overlay-timer', `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`);
+        const secTotal = Math.floor(gs.timer_remaining / 1000);
+        const mins = Math.floor(secTotal / 60);
+        const secs = secTotal % 60;
+        safeSetText('overlay-timer', `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`);
     }
 }
 
@@ -1007,6 +1176,31 @@ function startBoardTimer(duration, startTs) {
         }
     }, 200); // ปรับการอัปเดตเป็นทุก 200ms เพื่อประหยัด CPU เพราะไม่ต้องโชว์มิลลิวินาทีแล้ว
 }
+
+window.toggleTimer = async function () {
+    const gs = state.game_state;
+    const isRunning = gs.is_timer_running;
+
+    if (isRunning) {
+        // --- จังหวะกด "หยุด" ---
+        // คำนวณเวลาที่เหลืออยู่ ณ วินาทีที่กดหยุด
+        const elapsed = Date.now() - gs.timer_start_ts;
+        const remaining = Math.max(0, gs.timer_duration - elapsed);
+
+        await update(ref(db, 'jeopardy/game_state'), {
+            is_timer_running: false,
+            timer_remaining: remaining // เก็บเวลาที่เหลือไว้ใน DB
+        });
+        showToast("หยุดเวลาชั่วคราว", "warning");
+    } else {
+        await update(ref(db, 'jeopardy/game_state'), {
+            is_timer_running: true,
+            timer_duration: gs.timer_remaining,
+            timer_start_ts: Date.now()
+        });
+        showToast("เดินเวลาต่อ", "success");
+    }
+};
 
 function stopBoardTimer() {
     if (boardTimerInterval) clearInterval(boardTimerInterval);
