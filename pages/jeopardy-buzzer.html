@@ -135,8 +135,11 @@
     
         <!-- Game Info Status -->
         <div id="status-card"
-            class="w-full max-w-sm bg-slate-800/50 p-5 rounded-[2rem] border border-slate-700 text-center">
-            <p id="game-status-text" class="text-blue-400 font-black uppercase tracking-widest text-xs mb-1 italic">
+            class="w-full max-w-sm bg-slate-800/50 p-5 rounded-[2rem] border border-slate-700 text-center shadow-2xl">
+            <!-- เพิ่ม id="game-status-dot" -->
+            <div id="game-status-dot" class="inline-block w-2 h-2 rounded-full bg-slate-500 mb-1 mr-1"></div>
+            <p id="game-status-text"
+                class="inline-block text-blue-400 font-black uppercase tracking-widest text-xs mb-1 italic">
                 รอเริ่มเกม...</p>
             <h2 id="question-info" class="text-xl font-bold text-white">เตรียมตัวให้พร้อม</h2>
             <div id="timer-display" class="hidden mt-2 text-3xl font-black text-amber-400 tabular-nums">0.0</div>
@@ -147,19 +150,25 @@
             <div id="buzzer-ring"
                 class="absolute inset-0 bg-slate-700 rounded-full blur-2xl opacity-20 scale-125 transition-all"></div>
     
-            <!-- ปรับตรงนี้: ใช้ vw ให้ขนาดปรับตามหน้าจอ และ max-w/max-h ล็อคขนาดไม่ให้ใหญ่เกินไป -->
             <button id="main-buzzer" disabled onclick="handleBuzzIn()"
-                class="buzzer-btn relative w-[75vw] h-[75vw] max-w-[280px] max-h-[280px] rounded-full bg-slate-800 border-[10px] border-slate-700 flex flex-col items-center justify-center shadow-2xl transition-all active:scale-90 active:shadow-inner disabled:opacity-50 disabled:cursor-not-allowed">
+                class="buzzer-btn relative w-[75vw] h-[75vw] max-w-[280px] max-h-[280px] rounded-full bg-slate-800 border-[10px] border-slate-700 flex flex-col items-center justify-center shadow-2xl transition-all active:scale-95 disabled:opacity-50">
     
                 <span id="buzzer-icon" class="text-5xl md:text-6xl mb-1">🔒</span>
                 <span id="buzzer-text"
                     class="text-lg md:text-xl font-black uppercase tracking-tighter text-slate-500">Wait...</span>
+    
+                <!-- เพิ่ม id="inner-glow" -->
+                <div id="inner-glow"
+                    class="absolute inset-0 rounded-full opacity-0 transition-opacity duration-300 pointer-events-none"
+                    style="box-shadow: inset 0 0 40px rgba(255,255,255,0.5);"></div>
             </button>
         </div>
     
+        <!-- เพิ่ม id="early-msg-container" -->
+        <div id="early-msg-container" class="h-8 text-red-500 font-bold overflow-hidden mt-2"></div>
+    
         <!-- Notification / Result -->
         <div id="result-msg" class="hidden w-full max-w-sm p-3 rounded-2xl text-center font-bold animate-bounce text-sm">
-            <!-- Message will appear here -->
         </div>
     
     </main>
@@ -252,96 +261,116 @@
         }
 
         function updateUI(data) {
-            const gs = data.game_state;
-            const hData = data.houses[myHouseId] || {};
-            const buzzerData = data.buzzers || {};
+                const gs = data.game_state;
+                const hData = data.houses[myHouseId] || {};
+                const buzzerData = data.buzzers || {};
 
-            document.getElementById('my-score').innerText = hData.jeopardy_score || 0;
-            document.getElementById('my-turns').innerText = `${hData.turns_played || 0}/2`;
+                // 1. อัปเดตสถิติตัวเลข (คะแนนและเทิร์น)
+                const scoreEl = document.getElementById('my-score');
+                const turnsEl = document.getElementById('my-turns');
+                if (scoreEl) scoreEl.innerText = hData.jeopardy_score || 0;
+                if (turnsEl) turnsEl.innerText = `${hData.turns_played || 0}/2`;
 
-            const btn = document.getElementById('main-buzzer');
-            const icon = document.getElementById('buzzer-icon');
-            const text = document.getElementById('buzzer-text');
-            const statusText = document.getElementById('game-status-text');
-            const statusDot = document.getElementById('game-status-dot');
-            const questionInfo = document.getElementById('question-info');
-            const ring = document.getElementById('buzzer-ring');
-            const body = document.getElementById('main-body');
-            const innerGlow = document.getElementById('inner-glow');
+                // 2. อ้างอิง Elements หลัก
+                const btn = document.getElementById('main-buzzer');
+                const icon = document.getElementById('buzzer-icon');
+                const text = document.getElementById('buzzer-text');
+                const statusText = document.getElementById('game-status-text');
+                const statusDot = document.getElementById('game-status-dot');
+                const questionInfo = document.getElementById('question-info');
+                const ring = document.getElementById('buzzer-ring');
+                const body = document.getElementById('main-body');
+                const innerGlow = document.getElementById('inner-glow');
 
-            // Reset UI
-            btn.className = "buzzer-btn relative w-72 h-72 rounded-full flex flex-col items-center justify-center shadow-2xl transition-all active:scale-95 disabled:opacity-40 border-[12px]";
-            body.className = "bg-slate-950 text-white min-h-screen flex flex-col transition-all duration-500";
-            ring.className = "absolute inset-0 rounded-full blur-3xl opacity-0 scale-150 transition-all";
-            innerGlow.style.opacity = "0";
-            statusDot.className = "inline-block w-2 h-2 rounded-full mr-1";
+                // ตรวจสอบเบื้องต้นว่ามีปุ่มให้กดไหม ถ้าไม่มีให้หยุดทำงานป้องกัน Error
+                if (!btn) return;
 
-            if (gs.status === 'BOARD') {
-                const isMyTurn = gs.active_house == myHouseId;
-                statusText.innerText = "Board Phase";
-                questionInfo.innerText = isMyTurn ? "ถึงตาบ้านคุณ! เลือกแผ่นป้ายได้เลย" : `บ้าน ${gs.active_house} กำลังเลือก...`;
-                icon.innerText = isMyTurn ? "🎯" : "⌛";
-                text.innerText = isMyTurn ? "YOUR TURN" : "WAITING";
-                btn.disabled = true;
-                btn.classList.add('bg-slate-900', 'border-slate-800');
-                if (isMyTurn) statusDot.classList.add('bg-blue-500', 'animate-pulse');
-            }
-            else if (gs.status === 'QUESTION') {
-                statusText.innerText = "Question Phase";
-                const q = data.questions[gs.active_question_id];
-                questionInfo.innerText = `${q?.category || 'Question'} (${q?.points || 0} Pts)`;
-                icon.innerText = "🚫";
-                text.innerText = "LOCKED";
-                btn.disabled = true;
-                btn.classList.add('bg-slate-900', 'border-slate-800');
-            }
-            else if (gs.status === 'STEAL_WAIT') {
-                const isWinner = buzzerData.winner == myHouseId;
-                const someoneElseWon = buzzerData.winner && buzzerData.winner != myHouseId;
+                // 3. Reset UI พื้นฐาน (Clear ทุกสถานะก่อนเริ่มเงื่อนไขใหม่)
+                btn.className = "buzzer-btn relative w-[75vw] h-[75vw] max-w-[280px] max-h-[280px] rounded-full flex flex-col items-center justify-center shadow-2xl transition-all active:scale-95 disabled:opacity-50 border-[10px]";
+                if (body) body.className = "bg-slate-950 text-white min-h-screen flex flex-col transition-all duration-500";
+                if (ring) ring.className = "absolute inset-0 rounded-full blur-2xl opacity-0 scale-125 transition-all";
+                if (innerGlow) innerGlow.style.opacity = "0";
+                if (statusDot) statusDot.className = "inline-block w-2 h-2 rounded-full mr-1";
+                if (statusText) statusText.classList.remove('text-yellow-400');
 
-                if (isWinner) {
-                    statusText.innerText = "YOU BUZZED IN!";
-                    body.classList.add('state-win');
-                    questionInfo.innerText = "บ้านคุณได้สิทธิ์ตอบ!";
-                    icon.innerText = "🎯";
-                    text.innerText = "ANSWER NOW";
-                    btn.classList.add('buzzer-win');
+                // 4. ตรวจสอบสถานะเกม (Logic)
+                if (gs.status === 'BOARD') {
+                    const isMyTurn = gs.active_house == myHouseId;
+                    if (statusText) statusText.innerText = "Board Phase";
+                    if (questionInfo) questionInfo.innerText = isMyTurn ? "ถึงตาบ้านคุณ! เลือกแผ่นป้าย" : `บ้าน ${gs.active_house} กำลังเลือก...`;
+                    if (icon) icon.innerText = isMyTurn ? "🎯" : "⌛";
+                    if (text) text.innerText = isMyTurn ? "YOUR TURN" : "WAITING";
+
                     btn.disabled = true;
-                    ring.classList.add('bg-emerald-500', 'opacity-30');
-                    innerGlow.style.opacity = "1";
+                    btn.classList.add('bg-slate-900', 'border-slate-800');
+                    if (isMyTurn && statusDot) statusDot.classList.add('bg-blue-500', 'animate-pulse');
                 }
-                else if (someoneElseWon) {
-                    statusText.innerText = "TOO LATE!";
-                    questionInfo.innerText = `บ้าน ${buzzerData.winner} กดติดก่อน`;
-                    icon.innerText = "💨";
-                    text.innerText = "TOO SLOW";
-                    btn.classList.add('bg-red-950', 'border-red-900');
+                else if (gs.status === 'QUESTION') {
+                    if (statusText) statusText.innerText = "Question Phase";
+                    const q = data.questions?.[gs.active_question_id];
+                    if (questionInfo) questionInfo.innerText = `${q?.category || 'Question'} (${q?.points || 0} Pts)`;
+                    if (icon) icon.innerText = "🚫";
+                    if (text) text.innerText = "LOCKED";
+
                     btn.disabled = true;
+                    btn.classList.add('bg-slate-900', 'border-slate-800');
                 }
-                else if (gs.is_steal_open) {
-                    statusText.innerText = "STEAL NOW!";
-                    statusText.classList.add('text-yellow-400');
-                    body.classList.add('state-steal-open');
-                    questionInfo.innerText = "กดเลยยยยย!!!";
-                    icon.innerText = "🚨";
-                    text.innerText = "PRESS!";
-                    text.classList.add('text-white');
-                    btn.disabled = false;
-                    btn.classList.add('buzzer-active', 'border-white');
-                    ring.classList.add('bg-yellow-500', 'opacity-40');
-                    innerGlow.style.opacity = "1";
-                    statusDot.classList.add('bg-yellow-400', 'animate-ping');
-                } else {
-                    statusText.innerText = "READY TO STEAL";
-                    questionInfo.innerText = "เตรียมตัวกดปุ่ม...";
-                    icon.innerText = "✋";
-                    text.innerText = "GET READY";
-                    btn.disabled = false; // ให้กดได้เพื่อแสดง alert "เร็วไป"
-                    btn.classList.add('bg-indigo-950', 'border-indigo-800');
-                    statusDot.classList.add('bg-indigo-400');
+                else if (gs.status === 'STEAL_WAIT') {
+                    const isWinner = buzzerData.winner == myHouseId;
+                    const someoneElseWon = buzzerData.winner && buzzerData.winner != myHouseId;
+
+                    if (isWinner) {
+                        // กรณีบ้านเรากดติด
+                        if (statusText) statusText.innerText = "YOU BUZZED IN!";
+                        if (body) body.classList.add('state-win');
+                        if (questionInfo) questionInfo.innerText = "บ้านคุณได้สิทธิ์ตอบ!";
+                        if (icon) icon.innerText = "🎯";
+                        if (text) text.innerText = "ANSWER NOW";
+
+                        btn.classList.add('buzzer-win');
+                        btn.disabled = true;
+                        if (ring) ring.classList.add('bg-emerald-500', 'opacity-30');
+                        if (innerGlow) innerGlow.style.opacity = "1";
+                    }
+                    else if (someoneElseWon) {
+                        // กรณีบ้านอื่นกดติด
+                        if (statusText) statusText.innerText = "TOO LATE!";
+                        if (questionInfo) questionInfo.innerText = `บ้าน ${buzzerData.winner} กดติดก่อน`;
+                        if (icon) icon.innerText = "💨";
+                        if (text) text.innerText = "TOO SLOW";
+
+                        btn.classList.add('bg-red-950', 'border-red-900');
+                        btn.disabled = true;
+                    }
+                    else if (gs.is_steal_open) {
+                        // กรณีระบบเปิดให้แย่งกด (สถานะสำคัญ)
+                        if (statusText) {
+                            statusText.innerText = "STEAL NOW!";
+                            statusText.classList.add('text-yellow-400');
+                        }
+                        if (body) body.classList.add('state-steal-open');
+                        if (questionInfo) questionInfo.innerText = "กดเลยยยยย!!!";
+                        if (icon) icon.innerText = "🚨";
+                        if (text) text.innerText = "PRESS!";
+
+                        btn.disabled = false;
+                        btn.classList.add('buzzer-active', 'border-white');
+                        if (ring) ring.classList.add('bg-yellow-500', 'opacity-40');
+                        if (innerGlow) innerGlow.style.opacity = "1";
+                        if (statusDot) statusDot.classList.add('bg-yellow-400', 'animate-ping');
+                    } else {
+                        // กรณีรอสัญญาณ Steal
+                        if (statusText) statusText.innerText = "READY TO STEAL";
+                        if (questionInfo) questionInfo.innerText = "เตรียมตัวกดปุ่ม...";
+                        if (icon) icon.innerText = "✋";
+                        if (text) text.innerText = "GET READY";
+
+                        btn.disabled = false; // ให้กดได้เพื่อ trigger showEarlyAlert
+                        btn.classList.add('bg-indigo-950', 'border-indigo-800');
+                        if (statusDot) statusDot.classList.add('bg-indigo-400');
+                    }
                 }
             }
-        }
 
         window.handleBuzzIn = async function () {
                 const now = Date.now();

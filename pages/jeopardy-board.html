@@ -9,90 +9,106 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;800&display=swap" rel="stylesheet">
+
     <style>
+        /* เพิ่มฟอนต์ Sarabun และสไตล์พื้นฐาน */
         body {
-            font-family: 'Prompt', sans-serif;
+            font-family: 'Sarabun', sans-serif;
             background-color: #f8fafc;
             color: #1e293b;
         }
     
-        /* ปรับ Layout หลักให้ Fix ความสูงเท่ากันทั้งสองฝั่ง */
-        .main-game-area {
-            height: calc(100vh - 140px);
-            /* ความสูงรวมของพื้นที่เล่นเกม */
+        /* Kahoot-Style Options Grid */
+        .kahoot-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            /* แบ่ง 2 คอลัมน์ */
+            gap: 1rem;
+            width: 100%;
+            max-width: 1000px;
+            margin-top: 2rem;
+            perspective: 1000px;
         }
     
-        /* ฝั่งบอร์ดคำถาม: ปรับความสูงให้เต็มพื้นที่ */
-        #board-container-wrapper {
-            height: 100%;
-            padding-right: 10px;
-            overflow-y: auto;
+        .kahoot-option {
+            display: flex;
+            align-items: center;
+            padding: 1.2rem 1.5rem;
+            border-radius: 12px;
+            color: white;
+            font-size: 2.2rem;
+            /* ขนาดตัวอักษรใหญ่พิเศษ */
+            font-weight: 800;
+            box-shadow: 0 6px 0 rgba(0, 0, 0, 0.2);
+            opacity: 0;
+            /* ซ่อนไว้ก่อนจนกว่า Admin จะสั่งโชว์ */
+            transform: translateY(30px) rotateX(-15deg);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
     
-        /* ฝั่งคะแนนบ้าน: ใช้ Flex กระจายให้เต็มความสูงพอดี 8 ใบ */
+        /* เมื่อ Admin สั่ง Reveal */
+        .revealed .kahoot-option {
+            opacity: 1;
+            transform: translateY(0) rotateX(0);
+        }
+    
+        /* สัญลักษณ์และสีประจำข้อ */
+        .opt-0 {
+            background-color: #e21b3c;
+        }
+    
+        /* สีแดง - สามเหลี่ยม */
+        .opt-1 {
+            background-color: #1368ce;
+        }
+    
+        /* สีน้ำเงิน - ขนมเปียกปูน */
+        .opt-2 {
+            background-color: #d89e00;
+        }
+    
+        /* สีเหลือง - วงกลม */
+        .opt-3 {
+            background-color: #26890c;
+        }
+    
+        /* สีเขียว - สี่เหลี่ยม */
+    
+        .kahoot-symbol {
+            font-size: 2.5rem;
+            margin-right: 1.5rem;
+            filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.2));
+            min-width: 50px;
+            text-align: center;
+        }
+    
+        /* ปรับแต่ง Question Text ให้เด่น */
+        #overlay-text {
+            font-size: 4rem;
+            line-height: 1.2;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 0px rgba(255, 255, 255, 1);
+        }
+    
+        /* ส่วน Scoreboard ด้านข้าง (Slim เหมือนเดิม) */
         #scoreboard {
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            /* กระจาย 8 หลังให้สูงพอดีขอบบน-ล่าง */
             height: 100%;
             gap: 6px;
         }
     
-        /* ดีไซน์การ์ดบ้านแบบ Slim ให้พอดีพื้นที่ */
         .house-card-compact {
-        flex: 1;
-        min-height: 55px; /* กำหนดความสูงขั้นต่ำเพื่อให้เห็นข้อมูลชัดเจน */
-        padding: 0 0.75rem !important; /* ลด padding ลงเล็กน้อย */
-        display: flex;
-        align-items: center;
-        background: white;
-        border-radius: 1rem;
-        transition: all 0.2s ease-out;
-        overflow: hidden;
-    }
-
-    .house-card-compact.active-choosing {
-        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.1);
-    }
-    
-        /* สไตล์แผ่นป้ายคำถามเดิม */
-        .jeopardy-card {
-            transition: all 0.2s ease-out;
-            height: 5.5rem !important;
-        }
-    
-        .jeopardy-card .points-text {
-            font-size: 1.875rem;
-            line-height: 2.25rem;
-        }
-    
-        .jeopardy-card .cat-text {
-            font-size: 0.7rem;
-            opacity: 0.6;
-        }
-    
-        .jeopardy-card:hover:not(.played) {
-            transform: translateY(-3px) scale(1.02);
-            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
-            border-color: #3b82f6;
-        }
-    
-        .played {
-            opacity: 0.2;
-            pointer-events: none;
-            filter: grayscale(1);
-            background: #e2e8f0 !important;
-        }
-    
-        #overlay-timer {
-            font-family: 'Monaco', 'Consolas', monospace;
-            letter-spacing: -0.05em;
-        }
-    
-        header {
-            padding: 0.75rem 1rem !important;
-            margin-bottom: 1rem !important;
+            flex: 1;
+            min-height: 50px;
+            padding: 0 0.75rem !important;
+            display: flex;
+            align-items: center;
+            background: white;
+            border-radius: 1rem;
+            border: 2px solid #e2e8f0;
         }
     </style>
 </head>
@@ -155,7 +171,7 @@
             </div>
 
             <div class="flex-1 flex flex-col justify-center items-center text-center px-10">
-                <h3 id="overlay-text" class="text-5xl md:text-6xl font-black leading-tight text-slate-800 italic">
+                <h3 id="overlay-text" class="text-5xl md:text-6xl font-black leading-tight text-slate-800">
                     ...คำถาม...</h3>
 
                 <div id="overlay-options" class="grid grid-cols-2 gap-4 w-full mt-12 hidden">

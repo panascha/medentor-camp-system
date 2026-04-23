@@ -159,41 +159,54 @@ function renderActiveQuestion(gs) {
     const q = state.questions?.[gs.active_question_id];
     if (!q) return;
 
-    document.getElementById('aq-category').innerText = q.category;
-    document.getElementById('aq-level').innerText = q.level;
-    document.getElementById('aq-points').innerText = q.points;
-    document.getElementById('aq-text').innerText = q.question_text;
-    document.getElementById('aq-options').innerText = q.options || "ไม่มีตัวเลือก (ข้อเขียน)";
-    document.getElementById('aq-answer').innerText = q.answer_text;
+    // 1. อัปเดตข้อมูลโจทย์และเฉลยบนหน้าจอ Admin
+    safeSetText('aq-category', q.category);
+    safeSetText('aq-level', q.level);
+    safeSetText('aq-points', q.points);
+    safeSetText('aq-text', q.question_text);
+    safeSetText('aq-options', q.options || "ไม่มีตัวเลือก (ข้อเขียน)");
+    safeSetText('aq-answer', q.answer_text);
 
+    // 2. อ้างอิง Panel ต่างๆ
     const ctrlOwner = document.getElementById('ctrl-owner');
     const ctrlStealOpen = document.getElementById('ctrl-steal-open');
     const ctrlStealJudge = document.getElementById('ctrl-steal-judge');
 
-    const turnHouse = state.config.picking_house_order[gs.current_turn_index];
-    document.getElementById('ctrl-owner-house').innerText = turnHouse;
+    if (!ctrlOwner || !ctrlStealOpen || !ctrlStealJudge) return;
 
+    // ซ่อนแผงควบคุมทั้งหมดก่อนเพื่อล้างสถานะเก่า
+    ctrlOwner.classList.add('hidden');
+    ctrlStealOpen.classList.add('hidden');
+    ctrlStealJudge.classList.add('hidden');
+
+    // 3. แสดงแผงควบคุมตามสถานะปัจจุบัน (gs.status)
     if (gs.status === 'QUESTION') {
+        // --- ช่วงที่ 1: เจ้าของข้อกำลังตอบ ---
         ctrlOwner.classList.remove('hidden');
-        ctrlStealOpen.classList.add('hidden');
-        ctrlStealJudge.classList.add('hidden');
+        safeSetText('ctrl-owner-house', gs.active_house);
     }
     else if (gs.status === 'STEAL_WAIT') {
-        ctrlOwner.classList.add('hidden');
+        // --- ช่วงที่ 2: รอการ Steal ---
+
         if (state.buzzers?.winner) {
-            ctrlStealOpen.classList.add('hidden');
+            // จังหวะที่ A: มีบ้านกดติดแล้ว -> แสดงปุ่มตัดสินคะแนน
             ctrlStealJudge.classList.remove('hidden');
-            document.getElementById('steal-winner-badge').innerText = `บ้าน ${state.buzzers.winner}`;
+            safeSetText('steal-winner-badge', `บ้าน ${state.buzzers.winner}`);
         } else {
+            // จังหวะที่ B: ยังไม่มีคนกดติด -> แสดงปุ่มให้ Admin สั่งเปิดระบบ
             ctrlStealOpen.classList.remove('hidden');
-            ctrlStealJudge.classList.add('hidden');
             const btnSteal = ctrlStealOpen.querySelector('button');
+
             if (gs.is_steal_open) {
-                btnSteal.innerText = "กำลังจับเวลา STEAL... (รอน้องกด)";
-                btnSteal.className = "w-full bg-slate-300 text-slate-600 py-4 rounded-xl font-black text-lg shadow-inner cursor-not-allowed";
+                // ระบบเปิดอยู่แต่ยังไม่มีคนกด
+                btnSteal.innerText = "⏳ ระบบเปิดแล้ว... รอน้องกดปุ่ม";
+                btnSteal.disabled = true;
+                btnSteal.className = "w-full bg-slate-200 text-slate-500 py-4 rounded-xl font-black cursor-not-allowed";
             } else {
-                btnSteal.innerText = "🚨 กดเปิดระบบให้บ้านอื่น STEAL";
-                btnSteal.className = "w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black text-lg shadow-lg shadow-orange-200 animate-pulse transition-all";
+                // ระบบยังปิดอยู่ (รอ Admin สั่ง 3-2-1)
+                btnSteal.innerText = "⚡ ปล่อยไฟเหลือง (เริ่ม STEAL)";
+                btnSteal.disabled = false;
+                btnSteal.className = "w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black shadow-lg shadow-orange-200 animate-pulse transition-all";
             }
         }
     }
@@ -534,6 +547,7 @@ window.selectQuestion = async function (qId) {
         timer_duration: durationMs,
         timer_remaining: durationMs,
         timer_start_ts: Date.now(),
+        options_revealed: true,
         last_action_log: `House ${state.game_state.active_house} selected ${q.category} ${q.points}`
     });
 
@@ -599,24 +613,29 @@ async function processNextTurn(winnerHouseId = null, points = 0, isPenalty = fal
 
 window.judgeOwner = async function (isCorrect) {
     await saveUndoState();
-    const turnHouse = state.config.picking_house_order[state.game_state.current_turn_index];
-    const q = state.questions[state.game_state.active_question_id];
+    const gs = state.game_state;
+    const turnHouse = state.config.picking_house_order[gs.current_turn_index];
+    const q = state.questions[gs.active_question_id];
 
     if (isCorrect) {
-        await processNextTurn(turnHouse, q.points, 0);
+        await processNextTurn(turnHouse, q.points, false);
         showToast(`บ้าน ${turnHouse} ตอบถูก! ได้ ${q.points} คะแนน`);
     } else {
         await update(ref(db, 'jeopardy/game_state'), {
             status: 'STEAL_WAIT',
+            is_steal_open: false,
             is_timer_running: false
         });
+        showToast("เจ้าของข้อตอบผิด! เตรียมตัว STEAL", "warning");
     }
-}
+};
 
 window.openStealBuzzer = async function () {
-    await update(ref(db, 'jeopardy/game_state'), { is_steal_open: true });
-    showToast("เปิดระบบปุ่มกด Steal แล้ว!", "warning");
-}
+    await update(ref(db, 'jeopardy/game_state'), {
+        is_steal_open: true
+    });
+    showToast("ระบบ Steal เปิดแล้ว! รอน้องกด...", "info");
+};
 
 window.judgeSteal = async function (isCorrect) {
     await saveUndoState();
@@ -625,10 +644,12 @@ window.judgeSteal = async function (isCorrect) {
 
     if (isCorrect) {
         await processNextTurn(winnerHouse, q.points, false);
+        showToast(`บ้าน ${winnerHouse} STEAL สำเร็จ! +${q.points}`, "success");
     } else {
         const penalty = Math.ceil(q.points / 2);
-        // ตอบผิดโดนหักคะแนน และหมดสิทธิ์ Steal ในข้อถัดไป (ถ้ามีกติกาห้าม)
+        // ตอบผิดโดนหักคะแนน (Penalty)
         await processNextTurn(winnerHouse, penalty, true);
+        showToast(`บ้าน ${winnerHouse} ตอบผิด! หัก -${penalty}`, "error");
     }
 };
 
@@ -637,6 +658,7 @@ window.skipHouseTurn = async function () {
     if (res.isConfirmed) {
         await saveUndoState();
         await processNextTurn(null, 0, 0);
+        showToast("ข้ามคิวบ้านนี้แล้ว", "info");
     }
 }
 
@@ -906,36 +928,51 @@ function updateBoardGameState() {
     const q = state.questions?.[gs.active_question_id];
     if (!q) return;
 
-    // แสดงหมวดหมู่และคะแนน
+    // 1. ข้อมูลหัวข้อ
     safeSetText('overlay-category', q.category);
     safeSetText('overlay-points', `${q.points} PTS`);
     safeSetText('overlay-text', q.question_text);
 
-    // จัดการ Media (รูปภาพ/วิดีโอ)
-    const mediaContainer = document.getElementById('media-container'); // ต้องเพิ่ม id นี้ใน HTML
-    if (mediaContainer) {
-        mediaContainer.innerHTML = ''; // ล้างค่าเก่า
-        if (q.media_type === 'image' && q.media_url) {
-            mediaContainer.innerHTML = `<img src="${q.media_url}" class="max-h-64 rounded-xl shadow-lg mb-4">`;
-        } else if (q.media_type === 'video' && q.media_url) {
-            // รองรับ YouTube Embed เบื้องต้น
-            const videoId = q.media_url.split('v=')[1] || q.media_url.split('/').pop();
-            mediaContainer.innerHTML = `<iframe width="560" height="315" src="https://www.youtube.com/embed/${videoId}?autoplay=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen class="rounded-xl shadow-lg mb-4"></iframe>`;
+    // 2. จัดการตัวเลือก (Kahoot Style)
+    const optionsContainer = document.getElementById('overlay-options');
+    if (optionsContainer) {
+        if (q.options && q.options.trim() !== "") {
+            optionsContainer.classList.remove('hidden');
+            optionsContainer.className = "kahoot-grid"; // ใส่ Grid class
+
+            if (gs.options_revealed) {
+                // หน่วงเวลานิดเดียวเพื่อให้ Transition ของ Overlay ทำงานเสร็จก่อน แล้วค่อยเด้ง Option ตาม
+                setTimeout(() => {
+                    optionsContainer.classList.add('revealed');
+                }, 100);
+            }
+
+            // แยกบรรทัดเป็นตัวเลือก
+            const choices = q.options.split('\n').filter(line => line.trim() !== "");
+            const symbols = ['▲', '◆', '●', '■']; // สัญลักษณ์เลียนแบบ Kahoot
+
+            optionsContainer.innerHTML = choices.map((choice, index) => `
+                <div class="kahoot-option opt-${index % 4}">
+                    <span class="kahoot-symbol">${symbols[index % 4]}</span>
+                    <span class="choice-text">${choice}</span>
+                </div>
+            `).join('');
+        } else {
+            optionsContainer.classList.add('hidden');
         }
     }
 
-    // ใครกำลังตอบ
+    // 3. ใครกำลังตอบ
     const currentAnswering = (gs.status === 'STEAL_WAIT' && state.buzzers?.winner) ? state.buzzers.winner : gs.active_house;
     safeSetText('display-answering-house', currentAnswering);
 
-    // จัดการ Timer
+    // 4. จัดการ Timer (นาที:วินาที)
     if (gs.is_timer_running) {
         startBoardTimer(gs.timer_duration, gs.timer_start_ts);
     } else {
         stopBoardTimer();
-        // แสดงเวลาที่เหลือค้างไว้ (กรณี Pause)
         const sec = Math.floor(gs.timer_remaining / 1000);
-        safeSetText('overlay-timer', `${String(sec).padStart(2, '0')}:00`);
+        safeSetText('overlay-timer', `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`);
     }
 }
 
