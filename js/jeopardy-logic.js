@@ -357,21 +357,44 @@ function renderQuestionGrid() {
 
 function renderQuestionsTable() {
     const tbody = document.getElementById('questions-table-body');
+    const filterBadge = document.getElementById('q-filter-count');
     if (!state.questions || !tbody) return;
 
-    const qs = Object.values(state.questions).filter(q => q && q.id);
-    // เรียงตาม ID
+    let qs = Object.values(state.questions).filter(q => q && q.id);
+
+    // --- ส่วนที่เพิ่ม: กรองข้อมูลตามคำค้นหา ---
+    if (currentQSearchQuery) {
+        qs = qs.filter(q =>
+            q.id.toLowerCase().includes(currentQSearchQuery) ||
+            q.category.toLowerCase().includes(currentQSearchQuery) ||
+            q.question_text.toLowerCase().includes(currentQSearchQuery)
+        );
+
+        if (filterBadge) {
+            filterBadge.innerText = `พบ ${qs.length} รายการ`;
+            filterBadge.classList.remove('hidden');
+        }
+    } else {
+        if (filterBadge) filterBadge.classList.add('hidden');
+    }
+
+    // เรียงตาม ID (A-Z)
     qs.sort((a, b) => a.id.localeCompare(b.id));
 
+    if (qs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-10 text-center text-slate-400 italic">ไม่พบข้อมูลที่ตรงกับการค้นหา</td></tr>`;
+        return;
+    }
+
     tbody.innerHTML = qs.map(q => `
-        <tr class="hover:bg-slate-50 border-b">
+        <tr class="hover:bg-slate-50 border-b transition-colors">
             <td class="p-3 font-mono text-[11px] font-bold text-blue-600">${q.id}</td>
             <td class="p-3">
                 <p class="font-bold text-slate-700 leading-none">${q.category}</p>
-                <p class="text-[9px] text-slate-400 uppercase">${q.level}</p>
+                <p class="text-[9px] text-slate-400 uppercase font-black mt-1">${q.level}</p>
             </td>
             <td class="p-3 font-black text-indigo-600">${q.points}</td>
-            <td class="p-3 text-xs text-slate-600 max-w-[250px] truncate">${q.question_text}</td>
+            <td class="p-3 text-xs text-slate-600 max-w-[250px] truncate" title="${q.question_text}">${q.question_text}</td>
             <td class="p-3 text-center">
                 ${q.is_opened
             ? '<span class="bg-red-100 text-red-600 text-[9px] px-2 py-1 rounded font-bold">เล่นแล้ว</span>'
@@ -379,11 +402,11 @@ function renderQuestionsTable() {
             </td>
             <td class="p-3 text-right">
                 <div class="flex gap-2 justify-end">
-                    <button onclick="editQuestion('${q.id}')" class="text-blue-500 hover:bg-blue-50 p-1 rounded">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2.25 2.25 0 113.182 3.182L12 18.25H8.75V15L17.586 6.172z" /></svg>
+                    <button onclick="editQuestion('${q.id}')" class="text-blue-500 hover:bg-blue-100 p-2 rounded-xl transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2.25 2.25 0 113.182 3.182L12 18.25H8.75V15L17.586 6.172z" /></svg>
                     </button>
-                    <button onclick="deleteQuestion('${q.id}')" class="text-red-400 hover:bg-red-50 p-1 rounded">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    <button onclick="deleteQuestion('${q.id}')" class="text-red-400 hover:bg-red-100 p-2 rounded-xl transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
                 </div>
             </td>
@@ -866,9 +889,10 @@ window.resetWholeGame = async function () {
 // 7. Question Management
 // ---------------------------------------------------------
 let editingQuestionId = null;
+let currentQSearchQuery = "";
 
 window.saveQuestion = async function () {
-    const idInput = document.getElementById('q-id-manual').value.trim(); // ID ที่กำหนดเอง เช่น IM_E01
+    const idInput = document.getElementById('q-id-manual').value.trim();
     const category = document.getElementById('q-category').value;
     const level = document.getElementById('q-level').value;
     const points = parseInt(document.getElementById('q-points').value);
@@ -883,44 +907,46 @@ window.saveQuestion = async function () {
         return Swal.fire('ข้อมูลไม่ครบ', 'กรุณาระบุ ID, โจทย์, เฉลย และคะแนน', 'warning');
     }
 
-    Swal.fire({ title: 'กำลังบันทึก...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+    // แสดง Loading สั้นๆ
+    Swal.fire({ title: 'กำลังบันทึกลงระบบ...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
 
     try {
-        // ใช้ ID ที่กรอกเองเป็นคีย์หลัก
         const qId = editingQuestionId || idInput;
-
         const qData = {
             id: qId,
-            category: category,
-            level: level,
-            points: points,
+            category, level, points,
             question_text: questionText,
-            options: options,
+            options,
             answer_text: answerText,
             media_url: mediaUrl,
             explain_url: explainUrl,
             explanation_text: explanationText,
-            is_opened: false, // สถานะเริ่มต้น
+            is_opened: false,
             timestamp: Date.now()
         };
 
-        // 1. บันทึกลง Firebase
+        // 1. บันทึกลง Firebase (จุดนี้เร็วมาก)
         await set(ref(db, `jeopardy/questions/${qId}`), qData);
 
-        // 2. Sync ไปยัง Google Sheets
-        await fetch(CONFIG.appscriptUrl, {
+        // 2. ปิด Loading และบอกว่าสำเร็จทันที (ไม่ต้องรอข้อ 3)
+        Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', timer: 1000, showConfirmButton: false });
+
+        // 3. Sync ไปยัง Google Sheets ในเบื้องหลัง (เอา await ออก)
+        fetch(CONFIG.appscriptUrl, {
             method: 'POST',
-            mode: 'no-cors',
+            mode: 'no-cors', // สำคัญ: ป้องกันปัญหาการรอนาน
             headers: { "Content-Type": "text/plain" },
             body: JSON.stringify({
                 action: "syncJeopardyQuestions",
                 key: CONFIG.syncKey,
                 data: qData
             })
-        });
+        }).catch(err => console.error("Sheet Sync Error (Background):", err));
 
-        Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', timer: 1500, showConfirmButton: false });
-        resetQuestionForm();
+        editingQuestionId = qId;
+        const btn = document.querySelector('#form-question button[type="submit"]');
+        btn.innerText = "🆙 อัปเดตข้อมูลข้อเดิม";
+        btn.className = "bg-amber-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-amber-700 transition-all";
 
     } catch (e) {
         console.error(e);
@@ -943,6 +969,12 @@ window.editQuestion = function (id) {
     document.getElementById('q-media').value = q.media_url || "";
     document.getElementById('q-explain-url').value = q.explain_url || "";
     document.getElementById('q-explanation').value = q.explanation_text || "";
+
+    document.querySelectorAll('.auto-resize-textarea').forEach(el => {
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+    });
+
     // เลื่อนหน้าจอขึ้นไปที่ฟอร์ม
     document.getElementById('form-question').scrollIntoView({ behavior: 'smooth' });
     showToast("เข้าสู่โหมดแก้ไข: " + id, "info");
@@ -953,15 +985,81 @@ window.editQuestion = function (id) {
     btn.className = "bg-amber-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-amber-700 transition-all";
 }
 
+window.navigateQuestion = function (direction) {
+    if (!state.questions) {
+        showToast("ไม่พบข้อมูลคำถามในระบบ", "error");
+        return;
+    }
+
+    // 1. ดึง ID ทั้งหมดมาทำเป็น List และเรียงลำดับ (ตาม ID เหมือนในตาราง)
+    const sortedIds = Object.values(state.questions)
+        .filter(q => q && q.id)
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map(q => q.id);
+
+    if (sortedIds.length === 0) return;
+
+    // 2. หาตำแหน่งปัจจุบัน (Index)
+    let currentIndex = -1;
+    if (editingQuestionId) {
+        currentIndex = sortedIds.indexOf(editingQuestionId);
+    } else {
+        // ถ้ายังไม่ได้กดแก้ข้อไหนเลย ให้เริ่มที่ข้อแรก (กรณีคลิก 'ถัดไป') หรือข้อสุดท้าย (กรณีคลิก 'ก่อนหน้า')
+        if (direction === 1) {
+            editQuestion(sortedIds[0]);
+            return;
+        } else {
+            editQuestion(sortedIds[sortedIds.length - 1]);
+            return;
+        }
+    }
+
+    // 3. คำนวณ Index ใหม่
+    let nextIndex = currentIndex + direction;
+
+    // ตรวจสอบขอบเขต
+    if (nextIndex < 0) {
+        showToast("นี่คือข้อแรกแล้ว", "info");
+        return;
+    }
+    if (nextIndex >= sortedIds.length) {
+        showToast("นี่คือข้อสุดท้ายแล้ว", "info");
+        return;
+    }
+
+    // 4. เข้าสู่โหมดแก้ไขข้อที่คำนวณได้
+    editQuestion(sortedIds[nextIndex]);
+};
+
 function resetQuestionForm() {
     editingQuestionId = null;
     document.getElementById('form-question').reset();
     document.getElementById('q-id-manual').disabled = false;
     document.getElementById('q-explanation').value = "";
+    document.querySelectorAll('.auto-resize-textarea').forEach(el => {
+        el.style.height = 'auto'; // กลับมาสูงเท่า min-height ที่ตั้งใน CSS
+    });
+    
     const btn = document.querySelector('#form-question button[type="submit"]');
     btn.innerText = "💾 บันทึกคำถาม";
     btn.className = "bg-indigo-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-indigo-700 transition-all";
 }
+window.prepareNewQuestion = function () {
+    editingQuestionId = null;
+    document.getElementById('form-question').reset();
+    document.getElementById('q-id-manual').disabled = false;
+    document.getElementById('q-id-manual').focus();
+
+    document.querySelectorAll('.auto-resize-textarea').forEach(el => {
+        el.style.height = 'auto';
+    });
+
+    const btn = document.querySelector('#form-question button[type="submit"]');
+    btn.innerText = "💾 บันทึกคำถามใหม่";
+    btn.className = "bg-indigo-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-indigo-700 transition-all";
+
+    showToast("เข้าสู่โหมดเพิ่มคำถามใหม่", "info");
+};
 
 window.deleteQuestion = async function (id) {
     const res = await Swal.fire({ title: 'ลบคำถามนี้?', text: 'การกระทำนี้ลบถาวร', icon: 'error', showCancelButton: true });
@@ -990,7 +1088,45 @@ window.switchTab = function (tab) {
     }
 }
 
+window.handleQuestionSearch = function (val) {
+    currentQSearchQuery = val.trim().toLowerCase();
 
+    // แสดง/ซ่อนปุ่ม X (Clear)
+    const btnClear = document.getElementById('btn-clear-qsearch');
+    if (btnClear) btnClear.classList.toggle('hidden', val.length === 0);
+
+    renderQuestionsTable();
+};
+
+window.clearQSearch = function () {
+    const input = document.getElementById('q-search-input');
+    if (input) input.value = "";
+    currentQSearchQuery = "";
+    document.getElementById('btn-clear-qsearch').classList.add('hidden');
+    renderQuestionsTable();
+};
+
+// ฟังก์ชันปรับความสูง Textarea
+function initAutoResize() {
+    const textareas = document.querySelectorAll('.auto-resize-textarea');
+
+    textareas.forEach(el => {
+        // สร้างฟังก์ชันปรับขนาด
+        const adjustHeight = () => {
+            el.style.height = 'auto'; // รีเซ็ตเพื่อคำนวณใหม่
+            el.style.height = el.scrollHeight + 'px'; // ตั้งตามความสูงจริง
+        };
+
+        // 1. ปรับตอนผู้ใช้พิมพ์
+        el.addEventListener('input', adjustHeight);
+
+        // 2. ปรับตอนโหลดหน้า (เผื่อมีค่าค้าง)
+        adjustHeight();
+    });
+}
+
+// เรียกใช้เมื่อ DOM โหลดเสร็จ
+document.addEventListener('DOMContentLoaded', initAutoResize);
 /// ---------------------------------------------------------
 // 9. Board
 // ---------------------------------------------------------
@@ -1284,9 +1420,9 @@ function startBoardTimer(duration, startTs) {
 
             // ถ้าเหลือน้อยกว่า 10 วินาที ให้เป็นสีแดงและกะพริบ
             if (totalSeconds < 10) {
-                display.className = "text-8xl font-black tabular-nums text-red-600 animate-pulse";
+                display.className = "text-4xl font-black tabular-nums text-red-600 animate-pulse";
             } else {
-                display.className = "text-8xl font-black tabular-nums text-slate-800";
+                display.className = "text-4xl font-black tabular-nums text-slate-800";
             }
         }
 

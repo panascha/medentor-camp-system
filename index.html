@@ -539,7 +539,9 @@
             if (user.userType === 'staff') {
                 // --- โหมดสตาฟ ---
                 document.getElementById('staff-section').classList.remove('hidden');
+                if (user.division === 'IntroMed' || user.role === 'Admin') {
                 document.getElementById('card-jeopardy-admin')?.classList.remove('hidden');
+                }
                 if (user.role === 'Admin') {
                     document.getElementById('card-sorting').classList.remove('hidden');
                     document.getElementById('admin-badge').classList.remove('hidden');
