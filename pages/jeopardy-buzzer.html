@@ -114,6 +114,9 @@
             <div id="house-badge"
                 class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center font-black text-2xl shadow-lg border-2 border-white/20">
                 ?</div>
+                <div class="ml-2 text-[8px] font-mono opacity-50">
+                    Ping: <span id="local-ping-display">--</span>
+                </div>
             <div>
                 <p id="display-name" class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Loading...
                 </p>
@@ -200,6 +203,13 @@
         const db = getDatabase(app);
         const user = checkAuth();
 
+        let gameState = {};
+            let myHouseId = user.house ? user.house.toString() : null;
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            let lastClickTime = 0;
+            const SPAM_THRESHOLD = 1000; // 1 วินาที
+            let isStunned = false;
+
         if (!user || !user.house) {
             window.location.href = 'login.html';
         } else {
@@ -207,14 +217,8 @@
             document.getElementById('house-badge').innerText = user.house;
             initBuzzerLogic();
             enforceOneDevicePerHouse();
+            startPingTracker();
         }
-
-        let gameState = {};
-        let myHouseId = user.house.toString();
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        let lastClickTime = 0;
-        const SPAM_THRESHOLD = 1000; // 1 วินาที
-        let isStunned = false;
 
         // ฟังก์ชันเสียง Beep สั้นๆ
         function playBeep(freq = 440, duration = 0.1) {
@@ -261,6 +265,37 @@
             });
         }
 
+        async function startPingTracker() {
+                // ป้องกันกรณี myHouseId เป็น null
+                if (!myHouseId) return;
+
+                const pingRef = ref(db, `jeopardy/houses/${myHouseId}`);
+
+                setInterval(async () => {
+                    const startTime = Date.now();
+                    try {
+                        // 1. ส่งสัญญาณว่ายังออนไลน์อยู่ (Update timestamp)
+                        await update(pingRef, {
+                            last_active_ts: startTime
+                        });
+
+                        // 2. วัดผลความเร็ว (Latency)
+                        const ping = Date.now() - startTime;
+
+                        // 3. บันทึกค่า Ping
+                        await update(pingRef, { ping: ping });
+
+                        // อัปเดต UI ฝั่งน้อง
+                        const pingDisplay = document.getElementById('local-ping-display');
+                        if (pingDisplay) {
+                            pingDisplay.innerText = `${ping}ms`;
+                            pingDisplay.className = ping < 150 ? 'text-emerald-500' : (ping < 350 ? 'text-amber-500' : 'text-red-500');
+                        }
+                    } catch (e) {
+                        console.error("Ping Failed:", e);
+                    }
+                }, 4000);
+            }
         function updateUI(data) {
                 const gs = data.game_state;
                 const hData = data.houses[myHouseId] || {};

@@ -243,10 +243,14 @@ function renderHouseStatus() {
     container.innerHTML = Object.keys(state.houses).map(hId => {
         const h = state.houses[hId];
         const isActive = parseInt(hId) === activeHouse; // เช็คว่าเป็นบ้านที่กำลังเลือกแผ่นป้ายไหม
-        const isOnline = !!h.active_session_id;
+        const isOnline = h.active_session_id && (Date.now() - (h.last_active_ts || 0) < 10000);
+        const ping = h.ping || 0;
         const usedAllTurns = h.turns_played >= (state.config?.max_turns_per_house || 2);
 
-        // ข้อมูลจาก Schema ใหม่
+        let pingColor = 'text-slate-500';
+        if (isOnline) {
+            pingColor = ping < 150 ? 'text-emerald-400' : (ping < 350 ? 'text-amber-400' : 'text-red-400');
+        }
         const canSteal = h.can_steal !== false; // ถ้าเป็น undefined ให้ถือว่าเป็น true
 
         return `
@@ -270,6 +274,12 @@ function renderHouseStatus() {
                                 Net: ${h.jeopardy_score} 
                                 ${isActive ? '<span class="ml-2 text-[9px] bg-blue-400 px-2 py-0.5 rounded-full text-white animate-pulse uppercase">Choosing</span>' : ''}
                             </p>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                <!-- แสดงผล Ping ตรงนี้ -->
+                                <span class="text-[9px] font-mono font-bold ${pingColor}">
+                                    ${isOnline ? `● ${ping}ms` : '○ Offline'}
+                                </span>
+                            </div>
                             <div class="flex items-center gap-2 mt-0.5">
                                 <span class="text-[9px] font-bold ${isActive ? 'text-blue-100' : 'text-slate-400'} uppercase">
                                     Turns: ${h.turns_played}/2
@@ -435,6 +445,12 @@ function renderBoardScoreboard() {
         const penalty = h.penalty_points || 0;
         const score = h.jeopardy_score || 0;
 
+        // ตรวจสอบสถานะออนไลน์และ Ping
+        const isOnline = h.active_session_id && (Date.now() - (h.last_active_ts || 0) < 10000);
+        const ping = h.ping || 0;
+        // ถ้า Ping เกิน 400ms ให้ขึ้นไอคอนเตือน
+        const lagWarning = (isOnline && ping > 400) ? '⚠️' : '';
+
         return `
         <div onclick="window.setActiveHouse('${hId}')" 
             class="house-card-compact border-2 transition-all cursor-pointer hover:shadow-md active:scale-95
@@ -455,15 +471,22 @@ function renderBoardScoreboard() {
                     </p>
                 </div>
 
+                <div class="flex flex-col items-end">
+                    <span class="text-md font-mono ${isOnline ? 'text-emerald-500' : 'text-slate-300'}">
+                        ${isOnline ? ping + 'ms' : 'OFFLINE'}
+                    </span>
+                    <span class="text-[10px]">${lagWarning}</span>
+                </div>
+
                 <!-- 3. ส่วนสถิติละเอียด (Correct / Penalty) -->
-                <div class="flex flex-col items-end text-[10px] font-bold leading-tight border-x border-slate-100 px-2 min-w-[65px]">
+                <div class="flex flex-col items-end text-lg font-bold leading-tight border-x border-slate-100 px-2 min-w-[65px]">
                     <span class="text-emerald-500">+${correct}</span>
                     <span class="text-red-400">-${penalty}</span>
                 </div>
 
                 <!-- 4. ส่วน Turns และสถานะ -->
                 <div class="text-right flex flex-col items-end gap-1 min-w-[50px]">
-                    <span class="text-[9px] font-black text-slate-300 uppercase">T: ${h.turns_played}/2</span>
+                    <span class="text-md font-black text-black uppercase">T: ${h.turns_played}/2</span>
                     <div class="flex items-center">
                         ${isActive ? '<span class="text-blue-500 text-[10px] animate-bounce">●</span>' : ''}
                         ${isBuzzerWinner ? '<span class="text-orange-500 text-sm">🔔</span>' : ''}
