@@ -36,6 +36,7 @@ function safeSetText(id, text) {
 let state = {};
 let boardTimerInterval = null;
 let countdownInterval = null;
+let isBannerManuallyClosed = false;
 
 // ---------------------------------------------------------
 // 3. Main Listener (Real-time Sync)
@@ -325,14 +326,15 @@ function renderQuestionGrid() {
         return catA.localeCompare(catB) || (a.points || 0) - (b.points || 0);
     });
 
-    container.innerHTML = qs.map(q => {
+    container.innerHTML = qs.map((q, index) => {
         const isPlayed = q.is_opened;
-        const colorMap = { easy: 'bg-emerald-50 text-emerald-600 border-emerald-200', medium: 'bg-orange-50 text-orange-600 border-orange-200', hard: 'bg-rose-50 text-rose-600 border-rose-200' };
+        const colorMap = { easy: 'bg-emerald-100 text-emerald-600 border-emerald-200', medium: 'bg-orange-50 text-orange-600 border-orange-200', hard: 'bg-rose-50 text-rose-600 border-rose-200' };
         const cClass = colorMap[q.level] || 'bg-slate-50 border-slate-200 text-slate-600';
 
         return `
         <button onclick="selectQuestion('${q.id}')" ${isPlayed ? 'disabled' : ''} 
             class="p-3 rounded-xl border-2 text-center transition-all ${isPlayed ? 'bg-slate-100 border-slate-200 text-slate-300 opacity-60 cursor-not-allowed' : `${cClass} hover:shadow-md hover:scale-105 active:scale-95`}">
+            <span class="absolute top-1 left-1.5 text-[8px] font-black opacity-40">#${index + 1}</span>
             <p class="text-[9px] font-black uppercase tracking-widest opacity-70 truncate">${q.category}</p>
             <p class="text-xl font-black mt-1">${q.points}</p>
         </button>`;
@@ -343,32 +345,33 @@ function renderQuestionsTable() {
     const tbody = document.getElementById('questions-table-body');
     if (!state.questions || !tbody) return;
 
-    // กรองข้อมูลก่อนนำมาแสดง
     const qs = Object.values(state.questions).filter(q => q && q.id);
-
-    // เรียงลำดับตาม Category (กันพัง)
-    qs.sort((a, b) => {
-        const catA = a.category || "";
-        const catB = b.category || "";
-        return catA.localeCompare(catB);
-    });
+    // เรียงตาม ID
+    qs.sort((a, b) => a.id.localeCompare(b.id));
 
     tbody.innerHTML = qs.map(q => `
-        <tr class="hover:bg-slate-50 transition-colors border-b">
-            <td class="p-3 text-[10px] font-mono text-slate-400">${q.id.substring(0, 8)}...</td>
+        <tr class="hover:bg-slate-50 border-b">
+            <td class="p-3 font-mono text-[11px] font-bold text-blue-600">${q.id}</td>
             <td class="p-3">
-                <span class="font-bold text-slate-700">${q.category || 'N/A'}</span><br>
-                <span class="text-[9px] text-slate-400 uppercase">${q.level || 'N/A'}</span>
+                <p class="font-bold text-slate-700 leading-none">${q.category}</p>
+                <p class="text-[9px] text-slate-400 uppercase">${q.level}</p>
             </td>
-            <td class="p-3 font-black text-indigo-600">${q.points || 0}</td>
-            <td class="p-3 text-xs text-slate-600 truncate max-w-[200px]">${q.question_text || '-'}</td>
+            <td class="p-3 font-black text-indigo-600">${q.points}</td>
+            <td class="p-3 text-xs text-slate-600 max-w-[250px] truncate">${q.question_text}</td>
             <td class="p-3 text-center">
-                ${q.is_opened ? '<span class="bg-red-100 text-red-600 text-[9px] px-2 py-1 rounded font-bold">เล่นแล้ว</span>' : '<span class="bg-green-100 text-green-600 text-[9px] px-2 py-1 rounded font-bold">พร้อมเล่น</span>'}
+                ${q.is_opened
+            ? '<span class="bg-red-100 text-red-600 text-[9px] px-2 py-1 rounded font-bold">เล่นแล้ว</span>'
+            : '<span class="bg-green-100 text-green-600 text-[9px] px-2 py-1 rounded font-bold">พร้อมเล่น</span>'}
             </td>
             <td class="p-3 text-right">
-                <button onclick="deleteQuestion('${q.id}')" class="text-red-400 hover:text-red-600 p-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
+                <div class="flex gap-2 justify-end">
+                    <button onclick="editQuestion('${q.id}')" class="text-blue-500 hover:bg-blue-50 p-1 rounded">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2.25 2.25 0 113.182 3.182L12 18.25H8.75V15L17.586 6.172z" /></svg>
+                    </button>
+                    <button onclick="deleteQuestion('${q.id}')" class="text-red-400 hover:bg-red-50 p-1 rounded">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                </div>
             </td>
         </tr>
     `).join('');
@@ -384,23 +387,28 @@ function renderBoard() {
     allQuestions.sort((a, b) => a.points - b.points);
 
     const difficultyStyles = {
-        easy: { border: 'border-emerald-100', bg: 'bg-emerald-50/30', text: 'text-emerald-600' },
-        medium: { border: 'border-amber-100', bg: 'bg-amber-50/30', text: 'text-amber-600' },
-        hard: { border: 'border-rose-100', bg: 'bg-rose-50/30', text: 'text-rose-600' }
+        easy: { border: 'border-emerald-100', bg: 'bg-emerald-100', text: 'text-emerald-600' },
+        medium: { border: 'border-amber-100', bg: 'bg-amber-100', text: 'text-amber-600' },
+        hard: { border: 'border-rose-100', bg: 'bg-rose-100', text: 'text-rose-600' },
+        played: { border: 'border-slate-300', bg: 'bg-slate-300', text: 'text-slate-500' }
     };
 
-    boardContainer.innerHTML = allQuestions.map(q => {
+    boardContainer.innerHTML = allQuestions.map((q, index) => {
         const style = difficultyStyles[q.level] || difficultyStyles.easy;
         const isOpened = q.is_opened;
 
         return `
-        <button onclick="confirmOpenQuestion('${q.id}')" 
-            ${isOpened ? 'disabled' : ''}
-            class="jeopardy-card border-2 rounded-2xl flex flex-col items-center justify-center shadow-sm transition-all
-            ${isOpened ? 'played' : `${style.bg} ${style.border} hover:scale-105 hover:border-blue-400`} ">
+        <button onclick="confirmOpenQuestion('${q.id}')"
+            ${isOpened ? 'disabled aria-disabled="true"' : ''}
+            class="jeopardy-card border-2 rounded-2xl flex flex-col items-center justify-center shadow-sm transition-all relative
+            ${isOpened
+            ? 'bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed opacity-80 grayscale'
+            : `${style.bg} ${style.border} hover:shadow-md active:scale-95`}">
             
-            <span class="cat-text font-black uppercase tracking-tighter">${q.category}</span>
-            <span class="points-text font-black ${style.text}">${q.points}</span>
+            <span class="card-number-badge">${index + 1}</span>
+            <span class="cat-text font-black uppercase tracking-tighter ${isOpened ? 'text-slate-400' : ''}">${q.category}</span>
+            <span class="points-text font-black ${isOpened ? 'text-slate-400' : style.text}">${q.points}</span>
+            ${isOpened ? '<span class="mt-1 text-slate-500 text-sm">🔒 Disabled</span>' : ''}
         </button>`;
     }).join('');
 
@@ -830,9 +838,10 @@ window.resetWholeGame = async function () {
 // ---------------------------------------------------------
 // 7. Question Management
 // ---------------------------------------------------------
+let editingQuestionId = null;
 
 window.saveQuestion = async function () {
-    // 1. ดึงค่าจาก Form
+    const idInput = document.getElementById('q-id-manual').value.trim(); // ID ที่กำหนดเอง เช่น IM_E01
     const category = document.getElementById('q-category').value;
     const level = document.getElementById('q-level').value;
     const points = parseInt(document.getElementById('q-points').value);
@@ -842,52 +851,86 @@ window.saveQuestion = async function () {
     const mediaUrl = document.getElementById('q-media').value.trim();
     const explainUrl = document.getElementById('q-explain-url').value.trim();
 
-    // 2. Validation เบื้องต้น
-    if (!questionText || !answerText || isNaN(points)) {
-        return Swal.fire('ข้อมูลไม่ครบ', 'กรุณากรอกโจทย์ เฉลย และคะแนนให้ถูกต้อง', 'warning');
+    if (!idInput || !questionText || !answerText || isNaN(points)) {
+        return Swal.fire('ข้อมูลไม่ครบ', 'กรุณาระบุ ID, โจทย์, เฉลย และคะแนน', 'warning');
     }
 
     Swal.fire({ title: 'กำลังบันทึก...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
 
     try {
-        // 3. สร้าง Reference และดึง Unique ID จาก Firebase ล่วงหน้า
-        const questionsRef = ref(db, 'jeopardy/questions');
-        const newQuestionRef = push(questionsRef);
-        const qId = newQuestionRef.key;
+        // ใช้ ID ที่กรอกเองเป็นคีย์หลัก
+        const qId = editingQuestionId || idInput;
 
-        // 4. เตรียม Object ข้อมูล (กำหนดค่า Default ป้องกัน undefined)
         const qData = {
             id: qId,
-            category: category || "General",
-            level: level || "easy",
-            points: points || 0,
+            category: category,
+            level: level,
+            points: points,
             question_text: questionText,
-            options: options || "", // ถ้าไม่มีให้เป็นสายอักขระว่าง
+            options: options,
             answer_text: answerText,
-            media_url: mediaUrl || "",
-            explain_url: explainUrl || "",
-            is_opened: false,
+            media_url: mediaUrl,
+            explain_url: explainUrl,
+            is_opened: false, // สถานะเริ่มต้น
             timestamp: Date.now()
         };
 
-        // 5. บันทึกลง Firebase (ใช้ set เพื่อระบุตำแหน่งที่แน่นอนด้วย ID)
-        await set(newQuestionRef, qData);
+        // 1. บันทึกลง Firebase
+        await set(ref(db, `jeopardy/questions/${qId}`), qData);
 
-        // 6. แจ้งเตือนและล้าง Form
-        Swal.fire({
-            icon: 'success',
-            title: 'เพิ่มคำถามสำเร็จ',
-            text: `หมวด ${category} (${points} Pts) ถูกเพิ่มแล้ว`,
-            timer: 1500,
-            showConfirmButton: false
+        // 2. Sync ไปยัง Google Sheets
+        await fetch(CONFIG.appscriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({
+                action: "syncJeopardyQuestions",
+                key: CONFIG.syncKey,
+                data: qData
+            })
         });
 
-        document.getElementById('form-question').reset();
+        Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', timer: 1500, showConfirmButton: false });
+        resetQuestionForm();
 
     } catch (e) {
-        console.error("Save Question Error:", e);
-        Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้: ' + e.message, 'error');
+        console.error(e);
+        Swal.fire('Error', 'ไม่สามารถบันทึกได้: ' + e.message, 'error');
     }
+};
+window.editQuestion = function (id) {
+    const q = state.questions[id];
+    if (!q) return;
+
+    editingQuestionId = id;
+    document.getElementById('q-id-manual').value = q.id;
+    document.getElementById('q-id-manual').disabled = true; // ห้ามแก้ ID หลัก
+    document.getElementById('q-category').value = q.category;
+    document.getElementById('q-level').value = q.level;
+    document.getElementById('q-points').value = q.points;
+    document.getElementById('q-text').value = q.question_text;
+    document.getElementById('q-options').value = q.options || "";
+    document.getElementById('q-answer').value = q.answer_text;
+    document.getElementById('q-media').value = q.media_url || "";
+    document.getElementById('q-explain-url').value = q.explain_url || "";
+
+    // เลื่อนหน้าจอขึ้นไปที่ฟอร์ม
+    document.getElementById('form-question').scrollIntoView({ behavior: 'smooth' });
+    showToast("เข้าสู่โหมดแก้ไข: " + id, "info");
+
+    // เปลี่ยนปุ่มบันทึก
+    const btn = document.querySelector('#form-question button[type="submit"]');
+    btn.innerText = "🆙 อัปเดตข้อมูลคำถาม";
+    btn.className = "bg-amber-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-amber-700 transition-all";
+}
+
+function resetQuestionForm() {
+    editingQuestionId = null;
+    document.getElementById('form-question').reset();
+    document.getElementById('q-id-manual').disabled = false;
+    const btn = document.querySelector('#form-question button[type="submit"]');
+    btn.innerText = "💾 บันทึกคำถาม";
+    btn.className = "bg-indigo-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-indigo-700 transition-all";
 }
 
 window.deleteQuestion = async function (id) {
@@ -926,6 +969,8 @@ window.closeStealBanner = function () {
     const stealAlert = document.getElementById('steal-alert-container');
     if (stealAlert) {
         stealAlert.classList.add('hidden');
+        isBannerManuallyClosed = true;
+        console.log(stealAlert);
     }
 };
 
@@ -946,14 +991,27 @@ window.confirmOpenQuestion = function (qId) {
 };
 
 window.revealAnswerOnBoard = function () {
+    const gs = state.game_state;
+    const q = state.questions[gs.active_question_id];
+    if (!q) return;
+
     const answerArea = document.getElementById('answer-reveal-area');
+    const displayFinalAnswer = document.getElementById('display-final-answer');
     const expLink = document.getElementById('link-explanation');
-    const q = state.questions[state.game_state.active_question_id];
 
+    // 1. แสดงข้อความเฉลย/อธิบายที่สตาฟกรอก
+    displayFinalAnswer.innerText = q.answer_text;
     answerArea.classList.remove('hidden');
-    if (q.explain_url) expLink.classList.remove('hidden');
 
-    // หยุดเวลาทันทีเมื่อดูเฉลย
+    // 2. จัดการปุ่มลิงก์ (Canva/หน้าอื่น)
+    if (q.explain_url && q.explain_url.trim() !== "") {
+        expLink.href = q.explain_url;
+        expLink.classList.remove('hidden');
+    } else {
+        expLink.classList.add('hidden');
+    }
+
+    // หยุดเวลา (ถ้ามี)
     if (state.game_state.is_timer_running) {
         window.toggleTimer();
     }
@@ -970,6 +1028,7 @@ function updateBoardGameState() {
     // --- [1] สถานะกลับสู่บอร์ดหลัก (Reset ทุกอย่าง) ---
     if (gs.status === 'BOARD') {
         overlay.classList.add('hidden');
+        isBannerManuallyClosed = false;
         document.getElementById('answer-reveal-area')?.classList.add('hidden');
         document.getElementById('link-explanation')?.classList.add('hidden');
         if (stealAlert) {
@@ -993,7 +1052,7 @@ function updateBoardGameState() {
     safeSetText('display-final-answer', q.answer_text);
 
     // --- [3] จัดการข้อมูล Started By / Steal By (Badges ด้านล่าง) ---
-    const ownerId = gs.answering_house;
+    const ownerId = gs.active_house;
     safeSetText('display-owner-house', ownerId);
     if (document.getElementById('owner-house-badge')) {
         document.getElementById('owner-house-badge').innerText = ownerId;
@@ -1015,9 +1074,9 @@ function updateBoardGameState() {
 
     // --- [4] จัดการ STEAL ALERT (แบนเนอร์กลางจอ) ---
     if (stealAlert) {
-        if (gs.status === 'STEAL_WAIT') {
+        if (gs.status === 'STEAL_WAIT' && !isBannerManuallyClosed) {
             stealAlert.classList.remove('hidden');
-            const closeBtn = `<div class="close-banner-btn" onclick="window.closeStealBanner()" title="ปิดการแจ้งเตือน">✕</div>`;
+            const closeBtn = `<button class="close-banner-btn" onclick="window.closeStealBanner()" title="ปิดการแจ้งเตือน">✕</button>`;
 
             if (!gs.is_steal_open) {
                 // จังหวะรอ Admin ปล่อยไฟ
@@ -1088,6 +1147,7 @@ function updateBoardGameState() {
                     </div>`;
             }
         } else {
+            if (gs.status !== 'STEAL_WAIT') isBannerManuallyClosed = false;
             stealAlert.classList.add('hidden');
         }
     }
@@ -1108,24 +1168,31 @@ function updateBoardGameState() {
     if (optionsContainer) {
         if (q.options && q.options.trim() !== "") {
             optionsContainer.classList.remove('hidden');
+            // แยกข้อความด้วยการขึ้นบรรทัดใหม่
             const choices = q.options.split(/\r?\n|\\n/).filter(line => line.trim() !== "");
-            const symbols = ['▲', '◆', '●', '■'];
-            const letters = ['A', 'B', 'C', 'D'];
 
-            optionsContainer.innerHTML = choices.map((choice, index) => {
+            // สัญลักษณ์ Kahoot: สามเหลี่ยม, ขนมเปียกปูน, วงกลม, สี่เหลี่ยม
+            const symbols = [
+                '<svg viewBox="0 0 32 32" style="fill:white;width:45px"><path d="M27,24.56L5,24.56L16,7L27,24.56Z"/></svg>', // Triangle
+                '<svg viewBox="0 0 32 32" style="fill:white;width:45px"><path d="M4,16L16,4L28,16L16,28L4,16Z"/></svg>',   // Diamond
+                '<svg viewBox="0 0 32 32" style="fill:white;width:45px"><circle cx="16" cy="16" r="11"/></svg>',         // Circle
+                '<svg viewBox="0 0 32 32" style="fill:white;width:45px"><rect x="6" y="6" width="20" height="20"/></svg>' // Square
+            ];
+
+            optionsContainer.innerHTML = choices.slice(0, 4).map((choice, index) => {
+                // ลบพวก "A." "B." ออกถ้าครูพิมพ์ติดมา
                 let cleanChoice = choice.trim().replace(/^[A-D][.:]\s*/i, "");
+
                 return `
-                    <div class="kahoot-option opt-${index % 4}">
-                        <span class="kahoot-symbol">${symbols[index % 4]}</span>
-                        <span class="kahoot-text">
-                            <b>${letters[index % 4]}:</b> ${cleanChoice}
-                        </span>
-                    </div>`;
+                <div class="kahoot-option opt-${index}">
+                    <span class="kahoot-symbol">${symbols[index]}</span>
+                    <span class="kahoot-text">${cleanChoice}</span>
+                </div>`;
             }).join('');
-            optionsContainer.classList.add('revealed');
+
+            optionsContainer.className = "kahoot-grid revealed"; // ใช้ grid layout
         } else {
             optionsContainer.classList.add('hidden');
-            optionsContainer.classList.remove('revealed');
         }
     }
 

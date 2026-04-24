@@ -21,38 +21,38 @@
     
         /* Kahoot-Style Options Grid */
         .kahoot-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1rem;
-        width: 100%;
-        max-width: 100%; /* ห้ามกว้างเกินแม่ */
-        box-sizing: border-box;
-    }
-    
-        .kahoot-option {
-        display: flex;
-        align-items: center;
-        padding: 1rem 1.5rem;
-        border-radius: 1.2rem;
-        color: white;
-        font-size: 1.6rem; /* ปรับขนาดให้พอดี */
-        font-weight: 700;
-        box-shadow: 0 6px 0 rgba(0,0,0,0.2);
-        transition: all 0.4s ease;
-        text-align: left;
-        /* เปลี่ยนจาก height เป็น min-height เพื่อให้กล่องขยายตามข้อความได้ */
-        min-height: 100px; 
-        height: auto; 
-        overflow: visible; /* ป้องกันการตัดข้อความ */
-    }
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+    width: 100%;
+    max-width: 1200px; /* ขยายความกว้าง */
+    margin: 0 auto;
+}
+
+.kahoot-option {
+    display: flex;
+    align-items: start;
+    padding: 1.5rem 2rem;
+    border-radius: 0.75rem; /* เหลี่ยมมนแบบ Kahoot */
+    color: white;
+    font-size: 2rem;
+    font-weight: 500;
+    box-shadow: 0 6px 0 rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+    min-height: 150px;
+    position: relative;
+    overflow: hidden;
+}
 
     .kahoot-text {
-        line-height: 1.2;
+        line-height: 1.3;
         /* จุดสำคัญ: ปล่อยให้ข้อความขึ้นบรรทัดใหม่ได้ */
         white-space: normal !important; 
         word-break: break-word; 
         display: block;
         width: 100%;
+        text-align: left;
+
     }
 
     .kahoot-text b {
@@ -95,20 +95,27 @@
         /* สีเขียว - สี่เหลี่ยม */
     
         .kahoot-symbol {
-            font-size: 2.5rem;
-            margin-right: 1.5rem;
-            filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.2));
-            min-width: 50px;
-            text-align: center;
-        }
+    font-size: 3.5rem;
+    margin-right: 2rem;
+    width: 60px;
+    display: flex;
+    justify-content: center;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
     
         /* ปรับแต่ง Question Text ให้เด่น */
         #overlay-text {
-            font-size: 4rem;
-            line-height: 1.2;
-            margin-bottom: 1rem;
-            text-shadow: 2px 2px 0px rgba(255, 255, 255, 1);
-        }
+    font-size: 3rem;
+    font-weight: 800;
+    color: #333;
+    background: white;
+    padding: 2rem;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    margin-bottom: 2rem;
+    border-radius: 1rem;
+    line-height: 1.4;
+}
     
         /* ส่วน Scoreboard ด้านข้าง (Slim เหมือนเดิม) */
         #scoreboard {
@@ -130,20 +137,31 @@
             border: 2px solid #e2e8f0;
         }
 
+        /*
         @keyframes slideDown {
         from { transform: translateY(-100%); opacity: 0; }
         to { transform: translateY(0); opacity: 1; }
     }
+        */
 
     #steal-alert-container {
         position: fixed; /* เปลี่ยนเป็น fixed เพื่อให้อยู่เหนือทุกอย่าง */
         inset: 0; /* กระจายเต็มจอ */
-        display: flex;
         justify-content: center;
         align-items: center; /* จัดกลางหน้าจอพอดี */
         z-index: 200; /* สูงกว่า overlay */
         pointer-events: none; /* ยอมให้คลิกทะลุไปข้างหลังได้ */
     }
+
+    /* เพิ่มส่วนนี้เข้าไปเพื่อให้ ID ไม่ไปทับ hidden */
+#steal-alert-container.hidden {
+    display: none !important;
+}
+
+/* เพิ่มส่วนนี้เพื่อให้เวลาไม่ hidden จะเป็น flex */
+#steal-alert-container:not(.hidden) {
+    display: flex;
+}
 
     .steal-prep-banner {
         width: 70vw; /* กำหนดความกว้างสัมพันธ์กับหน้าจอ */
@@ -188,6 +206,28 @@
         color: #ef4444;
         transform: scale(1.1);
     }
+
+    .jeopardy-card {
+    position: relative; /* เพื่อให้ตัวเลข index อิงตำแหน่งได้ */
+}
+
+.card-number-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #94a3b8; /* สีเทาจางๆ */
+    pointer-events: none;
+}
+
+/* เมื่อเปิดแผ่นป้ายแล้ว ให้ซ่อนตัวเลขหรือเปลี่ยนสี */
+.jeopardy-card.played .card-number-badge {
+    opacity: 0.3;
+}
     </style>
 </head>
 
@@ -232,85 +272,91 @@
     </div>
 
     <!-- Question Overlay -->
-    <div id="question-overlay"
-        class="hidden fixed inset-0 z-[100] bg-white/98 backdrop-blur-3xl flex items-center justify-center p-10">
-        <div class="max-w-6xl w-full h-full flex flex-col animate-pop">
+    <div id="question-overlay" class="hidden fixed inset-0 z-[100] bg-white/98 backdrop-blur-3xl p-8">
+        <!-- ปรับเป็น Flex Row -->
+        <div class="flex h-full w-full gap-8 animate-pop">
     
-            <!-- 1. Header: หมวดหมู่, คะแนน และ ตัวจับเวลา -->
-            <div class="flex justify-between items-start mb-6">
-                <div>
-                    <span id="overlay-category"
-                        class="bg-blue-600 text-white px-5 py-1.5 rounded-full font-black uppercase text-sm tracking-[0.2em] shadow-lg shadow-blue-100">CATEGORY</span>
-                    <h2 id="overlay-points" class="mt-4 text-7xl font-black text-slate-800 tracking-tighter">0 <span
-                            class="text-3xl text-slate-300 font-bold">PTS</span></h2>
+            <!-- ฝั่งซ้าย: เนื้อหาคำถาม (Main Content) -->
+            <div class="flex-[3] flex flex-col min-w-0">
+                <!-- Header: หมวดหมู่ & เวลา -->
+                <div class="flex justify-between items-start mb-6">
+                    <div>
+                        <span id="overlay-category"
+                            class="bg-blue-600 text-white px-5 py-1.5 rounded-full font-black uppercase text-sm tracking-[0.2em] shadow-lg shadow-blue-100">CATEGORY</span>
+                        <h2 id="overlay-points" class="mt-4 text-7xl font-black text-slate-800 tracking-tighter">0 <span
+                                class="text-3xl text-slate-300 font-bold">PTS</span></h2>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Time Remaining</p>
+                        <p id="overlay-timer" class="text-8xl leading-none font-black tabular-nums text-slate-800">00:00</p>
+                    </div>
                 </div>
-                <div class="text-right">
-                    <p class="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Time Remaining</p>
-                    <p id="overlay-timer"
-                        class="text-[7rem] leading-none font-black tabular-nums text-slate-800 drop-shadow-sm">00:00</p>
+    
+                <!-- โจทย์คำถาม (ตรงกลาง) -->
+                <div class="flex-1 flex flex-col justify-center items-center">
+                    <h3 id="overlay-text" class="text-center w-full">...คำถาม...</h3>
+    
+                    <!-- Grid ตัวเลือกแบบ Kahoot -->
+                    <div id="overlay-options" class="kahoot-grid w-full"></div>
+    
+                    <!-- ส่วนเฉลยที่เด้งขึ้นมา -->
+                    <div id="answer-reveal-area"
+                        class="hidden mt-6 p-8 bg-emerald-50 border-4 border-emerald-200 rounded-[3rem] text-center shadow-2xl w-full relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-2 bg-emerald-400"></div>
+                        <p class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">เฉลยและคำอธิบาย</p>
+                    
+                        <!-- ตรงนี้จะแสดง answer_text ที่ Admin พิมพ์ -->
+                        <h4 id="display-final-answer" class="text-2xl font-bold text-emerald-800 whitespace-pre-line leading-relaxed">
+                            คำตอบและรายละเอียดจะปรากฏตรงนี้
+                        </h4>
+                    
+                        <!-- ปุ่มลิงก์ไปหน้าอื่น (เช่น Canva) -->
+                        <a id="link-explanation" href="#" target="_blank"
+                            class="hidden mt-6 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl transition-all">
+                            <span>📖 เปิดสื่อประกอบ/คำอธิบายเพิ่มเติม</span>
+                        </a>
+                    </div>
                 </div>
             </div>
     
-            <!-- 2. Body: โจทย์ และ ตัวเลือก (Kahoot Style) -->
-            <div class="flex-1 flex flex-col justify-center items-center text-center px-4">
-                <h3 id="overlay-text"
-                    class="text-5xl md:text-6xl font-black leading-tight text-slate-800 mb-8 max-w-5xl">
-                    ...คำถาม...</h3>
+            <!-- ฝั่งขวา: แถบสถานะด้านข้าง (Sidebar Action) -->
+            <div class="flex-1 w-80 bg-slate-100 rounded-[3rem] border-2 border-slate-200 p-8 flex flex-col shadow-inner">
     
-                <!-- Grid ตัวเลือกแบบ Kahoot (JS จะจัดการ class revealed) -->
-                <div id="overlay-options" class="kahoot-grid w-full">
-                    <!-- Options buttons via JS -->
-                </div>
-    
-                <!-- ส่วนแสดงตัวหนังสือเฉลย (Pop-up เมื่อกดปุ่มดูเฉลย) -->
-                <div id="answer-reveal-area"
-                    class="hidden mt-6 p-10 bg-emerald-50 border-4 border-emerald-200 rounded-[3.5rem] text-center shadow-2xl animate-pop w-full max-w-4xl relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-full h-2 bg-emerald-400"></div>
-                    <p class="text-sm font-bold text-emerald-600 uppercase tracking-widest mb-4">คำตอบที่ถูกต้องคือ...</p>
-                    <h4 id="display-final-answer" class="text-4xl font-black text-emerald-800 tracking-tight">คำตอบ</h4>
-                </div>
-            </div>
-    
-            <!-- 3. Footer: สถานะบ้าน และ ปุ่มควบคุม (Reveal/Explanantion) -->
-            <div
-                class="mt-8 p-6 bg-slate-100 rounded-[3rem] border-2 border-slate-200 flex justify-between items-center shadow-inner">
-    
-                <!-- ฝั่งซ้าย: สถานะ Started By / Steal By -->
-                <div class="flex items-center gap-10">
+                <div class="space-y-8 flex-1">
                     <!-- Started By -->
-                    <div class="flex flex-col">
-                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Started By</p>
-                        <div class="flex items-center gap-3">
-                            <div id="owner-house-badge"
-                                class="w-12 h-12 bg-white border-2 border-slate-200 text-slate-800 rounded-2xl flex items-center justify-center text-2xl font-black shadow-sm">
-                                ?</div>
-                            <p class="text-3xl font-black text-slate-800">บ้าน <span id="display-owner-house">-</span></p>
-                        </div>
+                    <div class="flex flex-col items-center text-center">
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Started By</p>
+                        <div id="owner-house-badge"
+                            class="w-24 h-24 bg-white border-4 border-slate-200 text-slate-800 rounded-[2rem] flex items-center justify-center text-5xl font-black shadow-sm mb-2">
+                            ?</div>
+                        <p class="text-2xl font-black text-slate-800 uppercase">บ้าน <span id="display-owner-house">-</span>
+                        </p>
                     </div>
     
-                    <!-- Steal By (จะถูกสั่งแสดงโดย JS เมื่อมีคนกดติด) -->
-                    <div id="steal-status-area" class="hidden border-l-2 pl-10 border-slate-300">
-                        <p class="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-2 italic">Steal By</p>
-                        <div class="flex items-center gap-3">
-                            <div id="stealer-house-badge"
-                                class="w-12 h-12 bg-orange-500 text-white rounded-2xl flex items-center justify-center text-2xl font-black shadow-lg shadow-orange-200 animate-pulse">
-                                ?</div>
-                            <p class="text-3xl font-black text-orange-600">บ้าน <span id="display-stealer-house">-</span>
-                            </p>
-                        </div>
+                    <!-- Steal By (จะถูกแสดงโดย JS) -->
+                    <div id="steal-status-area"
+                        class="hidden border-t-2 border-slate-200 pt-8 flex flex-col items-center text-center">
+                        <p class="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em] mb-3 italic">Steal By
+                        </p>
+                        <div id="stealer-house-badge"
+                            class="w-24 h-24 bg-orange-500 text-white rounded-[2rem] flex items-center justify-center text-5xl font-black shadow-lg shadow-orange-200 animate-pulse mb-2">
+                            ?</div>
+                        <p class="text-2xl font-black text-orange-600 uppercase italic">บ้าน <span
+                                id="display-stealer-house">-</span></p>
                     </div>
                 </div>
     
-                <!-- ฝั่งขวา: ปุ่มดำเนินการ (Reveal Answer / Explanation) -->
-                <div class="flex gap-4">
+                <!-- ปุ่มดำเนินการด้านล่างสุดของ Sidebar -->
+                <div class="space-y-3">
                     <button id="btn-reveal-answer-board" onclick="revealAnswerOnBoard()"
-                        class="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-4 rounded-2xl font-black text-lg shadow-xl shadow-emerald-200 transition-all flex items-center gap-3">
+                        class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-emerald-200 transition-all active:scale-95 flex flex-col items-center justify-center leading-tight">
+                        <span class="text-sm opacity-80 font-bold mb-1">Check Answer</span>
                         <span>✨ ดูเฉลยคำตอบ</span>
                     </button>
     
                     <a id="link-explanation" href="#" target="_blank"
-                        class="hidden bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-2xl font-black text-lg shadow-xl shadow-blue-200 transition-all flex items-center gap-3">
-                        <span>📚 คำอธิบาย </span>
+                        class="hidden w-full bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-200 transition-all text-center block">
+                        📚 คำอธิบาย
                     </a>
                 </div>
     

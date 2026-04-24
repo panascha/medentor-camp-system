@@ -317,10 +317,10 @@
                     btn.classList.add('bg-slate-900', 'border-slate-800');
                 }
                 else if (gs.status === 'STEAL_WAIT') {
+                    const myHouseIdInt = parseInt(myHouseId);
                     const isWinner = buzzerData.winner == myHouseId;
                     const someoneElseWon = buzzerData.winner && buzzerData.winner != myHouseId;
-                    const isOwner = gs.answering_house == myHouseId;
-
+                    const isOwner = gs.active_house === myHouseIdInt;
                     if (isOwner) {
                         // ถ้าเป็นเจ้าของข้อ ให้ล็อคปุ่มถาวรในเฟสนี้
                         statusText.innerText = "WAITING FOR STEAL";
@@ -383,79 +383,87 @@
                 }
             }
 
-        window.handleBuzzIn = async function () {
-                const now = Date.now();
-                if (isStunned || now - lastClickTime < SPAM_THRESHOLD) return;
-                lastClickTime = now;
+    window.handleBuzzIn = async function () {
+            const now = Date.now();
+            const gs = gameState.game_state;
+            const buzz = gameState.buzzers;
+            const myHouseIdInt = parseInt(myHouseId);
 
-                const gs = gameState.game_state;
-                const buzz = gameState.buzzers;
+            // --- [1] เช็คสถานะ Stun และ Spam ---
+            if (isStunned || now - lastClickTime < 200) return;
+            lastClickTime = now;
 
-                if (parseInt(myHouseId) === gs.answering_house) return;
-
-                // 1. ตรวจสอบสถานะการเปิด Steal
-                if (!gs?.is_steal_open) {
-                    if (gs?.status === 'STEAL_WAIT') {
-                        isStunned = true;
-                        showEarlyAlert();
-                        setTimeout(() => { isStunned = false; updateUI(gameState); }, 500);
-                    }
-                    return;
-                }
-
-                // 2. [จุดสำคัญ] เช็คว่าปิดรับหรือยัง (หลังบ้านแรกกด 5 วินาที)
-                if (buzz?.is_locked && buzz?.timestamp) {
-                    const timeSinceWinner = now - buzz.timestamp;
-                    if (timeSinceWinner > 5000) {
-                        // เกิน 5 วินาทีแล้ว ปิดรับถาวร
-                        return;
-                    }
-                }
-
-                // 3. บันทึกเวลาที่กดลงใน Attempts เสมอ (ถ้ายังอยู่ในช่วง 5 วินาที)
-                const attemptUpdate = {};
-                attemptUpdate[`jeopardy/buzzers/attempts/${myHouseId}`] = now;
-                await update(ref(db), attemptUpdate);
-
-                // 4. ตัดสินผู้ชนะ (เฉพาะคนแรกที่เข้า Transaction ทัน)
-                if (!buzz?.is_locked) {
-                    if ("vibrate" in navigator) navigator.vibrate(100);
-                    playBeep(660, 0.1);
-
-                    const buzzerRef = ref(db, 'jeopardy/buzzers');
-                    try {
-                        await runTransaction(buzzerRef, (currentData) => {
-                            if (currentData === null || currentData.is_locked === false) {
-                                return {
-                                    ...currentData,
-                                    is_locked: true,
-                                    winner: parseInt(myHouseId),
-                                    timestamp: now
-                                };
-                            }
-                            return;
-                        });
-                    } catch (error) { console.error(error); }
-                } else {
-                    // กรณีมีผู้ชนะแล้ว แต่เรากดทันใน 5 วินาที ให้สั่นเบาๆ เป็นการบอกว่า "บันทึกเวลาแล้ว"
-                    if ("vibrate" in navigator) navigator.vibrate(40);
-                }
-            };
-            function showEarlyAlert() {
-                const container = document.getElementById('early-msg-container');
-                if (!container) return;
-
-                const el = document.createElement('div');
-                el.className = 'early-text text-center text-red-500 font-black';
-                el.innerText = '⚠️ เร็วไป! โดนล็อค 0.5s';
-                container.appendChild(el);
-
-                // สั่นยาวขึ้นนิดนึงให้รู้ว่า "พลาดแล้ว"
-                if ("vibrate" in navigator) navigator.vibrate(200);
-
-                setTimeout(() => el.remove(), 1000);
+            // --- [2] บล็อกเจ้าของข้อ (Active House) ไม่ให้ Steal ข้อตัวเอง ---
+            // กฎ: ถ้าบ้านเราคือคนที่เริ่มเลือกข้อนี้ (ตอบผิดไปแล้ว) ห้ามกด Steal
+            if (myHouseIdInt === gs.active_house) {
+                showToast("คุณเป็นเจ้าของข้อ ไม่สามารถ Steal ได้", "error");
+                return;
             }
 
+            // --- [3] บล็อกถ้ามีคนอื่นกดติดไปแล้ว (Answering House เปลี่ยนเป็นคนอื่นแล้ว) ---
+            if (myHouseIdInt === gs.answering_house) return;
+
+            // --- [4] ระบบ STUN: ถ้ากดก่อนสัญญาณไฟเหลือง ---
+            if (!gs?.is_steal_open) {
+                if (gs?.status === 'STEAL_WAIT') {
+                    isStunned = true;
+                    showEarlyAlert();
+                    setTimeout(() => {
+                        isStunned = false;
+                        updateUI(gameState);
+                    }, 1000);
+                }
+                return;
+            }
+
+            // --- [5] ระบบบันทึกเวลาภายใน 5 วินาที ---
+            if (buzz?.is_locked && buzz?.timestamp) {
+                if (now - buzz.timestamp > 5000) return;
+            }
+
+            // บันทึกเวลาลง Attempts (เพื่อให้เห็นลำดับบนบอร์ด)
+            const attemptUpdate = {};
+            attemptUpdate[`jeopardy/buzzers/attempts/${myHouseId}`] = now;
+            await update(ref(db), attemptUpdate);
+
+            // --- [6] ระบบตัดสินผู้ชนะ (First Press) ---
+            if (!buzz?.is_locked) {
+                if ("vibrate" in navigator) navigator.vibrate(100);
+                playBeep(660, 0.1);
+
+                const buzzerRef = ref(db, 'jeopardy/buzzers');
+                try {
+                    const result = await runTransaction(buzzerRef, (currentData) => {
+                        if (currentData === null || currentData.is_locked === false) {
+                            return { ...currentData, is_locked: true, winner: myHouseIdInt, timestamp: now };
+                        }
+                        return;
+                    });
+
+                    if (result.committed) {
+                        // เปลี่ยนผู้ตอบเป็นบ้านเราในกิ่ง game_state
+                        await update(ref(db, 'jeopardy/game_state'), { answering_house: myHouseIdInt });
+                    }
+                } catch (error) { console.error(error); }
+            } else {
+                if ("vibrate" in navigator) navigator.vibrate(40);
+            }
+        };
+    // ฟังก์ชันแสดง Alert เวลาคนกดก่อนไฟเหลือง
+    function showEarlyAlert() {
+        const container = document.getElementById('early-msg-container');
+        if (!container) return;
+
+        // เปลี่ยนข้อความให้ชัดเจน
+        container.innerHTML = `<div class="early-text text-center text-red-500 font-black animate-bounce">
+        ⚠️ เร็วไป! ปุ่มล็อค 1.0s
+    </div>`;
+
+        if ("vibrate" in navigator) navigator.vibrate(300);
+
+        // ลบข้อความหลัง 1 วิ
+        setTimeout(() => { container.innerHTML = ""; }, 1000);
+    }
         document.addEventListener('touchstart', function (event) {
                 if (event.touches.length > 1) {
                     event.preventDefault(); // ป้องกันการใช้ 2 นิ้วขยาย
