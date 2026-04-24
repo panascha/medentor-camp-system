@@ -228,6 +228,12 @@
 .jeopardy-card.played .card-number-badge {
     opacity: 0.3;
 }
+
+@keyframes pop {
+        0% { transform: scale(0.9); opacity: 0; }
+        100% { transform: scale(1); opacity: 1; }
+    }
+    .animate-pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
     </style>
 </head>
 
@@ -298,74 +304,136 @@
     
                     <!-- Grid ตัวเลือกแบบ Kahoot -->
                     <div id="overlay-options" class="kahoot-grid w-full"></div>
-    
-                    <!-- ส่วนเฉลยที่เด้งขึ้นมา -->
-                    <div id="answer-reveal-area"
-                        class="hidden mt-6 p-8 bg-emerald-50 border-4 border-emerald-200 rounded-[3rem] text-center shadow-2xl w-full relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-full h-2 bg-emerald-400"></div>
-                        <p class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">เฉลยและคำอธิบาย</p>
-                    
-                        <!-- ตรงนี้จะแสดง answer_text ที่ Admin พิมพ์ -->
-                        <h4 id="display-final-answer" class="text-2xl font-bold text-emerald-800 whitespace-pre-line leading-relaxed">
-                            คำตอบและรายละเอียดจะปรากฏตรงนี้
-                        </h4>
-                    
-                        <!-- ปุ่มลิงก์ไปหน้าอื่น (เช่น Canva) -->
-                        <a id="link-explanation" href="#" target="_blank"
-                            class="hidden mt-6 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl transition-all">
-                            <span>📖 เปิดสื่อประกอบ/คำอธิบายเพิ่มเติม</span>
-                        </a>
-                    </div>
+
                 </div>
             </div>
     
             <!-- ฝั่งขวา: แถบสถานะด้านข้าง (Sidebar Action) -->
             <div class="flex-1 w-80 bg-slate-100 rounded-[3rem] border-2 border-slate-200 p-8 flex flex-col shadow-inner">
-    
-                <div class="space-y-8 flex-1">
-                    <!-- Started By -->
+            
+                <!-- ส่วนเนื้อหาด้านบน (เพิ่ม overflow-y-auto เพื่อให้คำอธิบายยาวๆ เลื่อนดูได้) -->
+                <div class="space-y-8 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+            
+                    <!-- House Badges (Started By / Steal By) - ของเดิม -->
                     <div class="flex flex-col items-center text-center">
                         <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Started By</p>
                         <div id="owner-house-badge"
                             class="w-24 h-24 bg-white border-4 border-slate-200 text-slate-800 rounded-[2rem] flex items-center justify-center text-5xl font-black shadow-sm mb-2">
                             ?</div>
-                        <p class="text-2xl font-black text-slate-800 uppercase">บ้าน <span id="display-owner-house">-</span>
-                        </p>
+                        <p class="text-2xl font-black text-slate-800 uppercase">บ้าน <span id="display-owner-house">-</span></p>
                     </div>
-    
-                    <!-- Steal By (จะถูกแสดงโดย JS) -->
+            
                     <div id="steal-status-area"
                         class="hidden border-t-2 border-slate-200 pt-8 flex flex-col items-center text-center">
-                        <p class="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em] mb-3 italic">Steal By
-                        </p>
+                        <p class="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em] mb-3 italic">Steal By</p>
                         <div id="stealer-house-badge"
                             class="w-24 h-24 bg-orange-500 text-white rounded-[2rem] flex items-center justify-center text-5xl font-black shadow-lg shadow-orange-200 animate-pulse mb-2">
                             ?</div>
                         <p class="text-2xl font-black text-orange-600 uppercase italic">บ้าน <span
                                 id="display-stealer-house">-</span></p>
                     </div>
+            
+                    <!-- ========================================== -->
+                    <!-- ส่วนที่เพิ่มใหม่: Answer Area ใน Sidebar -->
+                    <!-- ========================================== -->
+                    <div id="answer-reveal-area" class="hidden border-t-2 border-slate-200 pt-6 animate-fade-in">
+                        <p class="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-2 text-center">Final Answer
+                        </p>
+            
+                        <!-- คำตอบหลัก -->
+                        <div class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 text-center mb-4">
+                            <h4 id="display-final-answer"
+                                class="text-xl font-black text-emerald-800 whitespace-pre-line leading-tight">
+                                -
+                            </h4>
+                        </div>
+            
+                        <!-- คำอธิบาย Plain Text -->
+                        <div id="explanation-container" class="hidden bg-white/50 rounded-2xl p-4 border border-slate-200">
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Note / Explanation</p>
+                            <p id="display-explanation-text" class="text-sm text-slate-600 font-medium leading-relaxed">
+                                -
+                            </p>
+                        </div>
+            
+                        <!-- ปุ่มลิงก์สื่อประกอบ -->
+                        <a id="link-explanation" href="#" target="_blank"
+                            class="hidden mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-black text-xs shadow-lg transition-all text-center block">
+                            📖 เปิดสื่อประกอบ (CANVA)
+                        </a>
+                    </div>
                 </div>
-    
-                <!-- ปุ่มดำเนินการด้านล่างสุดของ Sidebar -->
-                <div class="space-y-3">
+            
+                <!-- ปุ่มกดเฉลยด้านล่าง (ของเดิม) -->
+                <div class="pt-6 border-t-2 border-slate-200 mt-auto">
                     <button id="btn-reveal-answer-board" onclick="revealAnswerOnBoard()"
                         class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-emerald-200 transition-all active:scale-95 flex flex-col items-center justify-center leading-tight">
                         <span class="text-sm opacity-80 font-bold mb-1">Check Answer</span>
                         <span>✨ ดูเฉลยคำตอบ</span>
                     </button>
-    
-                    <a id="link-explanation" href="#" target="_blank"
-                        class="hidden w-full bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-200 transition-all text-center block">
-                        📚 คำอธิบาย
-                    </a>
                 </div>
-    
             </div>
         </div>
     </div>
 
     <div id="steal-alert-container" class="hidden">
         <!-- เนื้อหาจะถูกเติมโดย JavaScript -->
+    </div>
+
+    <!-- Answer Banner Overlay -->
+    <div id="answer-banner-overlay"
+        class="hidden fixed inset-0 z-[300] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4">
+        <div
+            class="bg-white rounded-[3rem] shadow-2xl max-w-2xl w-full relative overflow-hidden transform transition-all animate-pop">
+    
+            <!-- ส่วนหัวและปุ่มปิด -->
+            <div class="absolute top-6 right-6">
+                <button onclick="closeAnswerBanner()"
+                    class="w-10 h-10 bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-full flex items-center justify-center transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+    
+            <div class="p-10 pt-12 text-center">
+                <!-- ป้ายสถานะ -->
+                <span
+                    class="bg-emerald-100 text-emerald-600 px-4 py-1.5 rounded-full font-black text-xs uppercase tracking-[0.2em]">Correct
+                    Answer</span>
+    
+                <!-- คำตอบหลัก -->
+                <h2 id="banner-answer-text"
+                    class="text-4xl md:text-5xl font-black text-slate-800 mt-6 leading-tight whitespace-pre-line">
+                    คำตอบ
+                </h2>
+    
+                <!-- ส่วนคำอธิบาย (Explanation Text) -->
+                <div id="banner-explanation-area" class="hidden mt-8 pt-8 border-t border-slate-100 text-left">
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">ข้อมูลเพิ่มเติม /
+                        คำอธิบาย</p>
+                    <div class="max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                        <p id="banner-explanation-text" class="text-lg text-slate-600 leading-relaxed">
+                            เนื้อหาคำอธิบายจะแสดงตรงนี้
+                        </p>
+                    </div>
+                </div>
+    
+                <!-- ปุ่ม Link (Explanation Link) -->
+                <div id="banner-link-area" class="hidden mt-8">
+                    <a id="banner-explanation-link" href="#" target="_blank"
+                        class="inline-flex items-center gap-3 bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-blue-200 transition-all active:scale-95">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        เปิดสื่อประกอบการอธิบาย
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Scripts -->

@@ -164,11 +164,10 @@
                                 <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200">
                                     <div class="flex justify-between items-center mb-2">
                                         <p class="text-[10px] font-black text-slate-500 uppercase">ตัวเลือก (ถ้ามี)</p>
-                                        <button onclick="revealOptions()" id="btn-reveal-options"
-                                            class="bg-slate-800 text-white text-[9px] px-2 py-1 rounded font-bold hover:bg-slate-700">เปิดโชว์ตัวเลือกขึ้นจอ</button>
                                     </div>
-                                    <p id="aq-options" class="text-sm font-medium text-slate-700 whitespace-pre-line">
-                                        ...</p>
+                                    <p id="aq-options" class="text-sm font-medium text-slate-700 whitespace-pre-line leading-relaxed">
+                                        ...
+                                    </p>
                                 </div>
                                 <div class="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
                                     <p class="text-[10px] font-black text-emerald-600 uppercase mb-1">เฉลย (Staff Only)
@@ -363,6 +362,14 @@
 
                     <!-- Row 4 -->
                     <div class="md:col-span-6">
+                        <label class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">คำอธิบายเนื้อหา (Plain
+                            Text)</label>
+                        <textarea id="q-explanation" rows="2" placeholder="ใส่เนื้อหาอธิบายที่มาของคำตอบ..."
+                            class="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm"></textarea>
+                    </div>
+
+
+                    <div class="md:col-span-6 hidden">
                         <label class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">URL
                             สื่อประกอบโจทย์ (รูป/วิดีโอ) *ถ้ามี</label>
                         <input type="url" id="q-media" placeholder="https://..."
@@ -370,7 +377,7 @@
                     </div>
                     <div class="md:col-span-6">
                         <label class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">URL
-                            สื่อประกอบคำอธิบาย (Canva) *ถ้ามี</label>
+                            สื่อประกอบคำอธิบาย *ถ้ามี</label>
                         <input type="url" id="q-explain-url" placeholder="https://..."
                             class="w-full mt-1 p-3 bg-slate-50 border rounded-xl outline-none focus:border-indigo-500 text-xs">
                     </div>

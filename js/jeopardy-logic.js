@@ -161,12 +161,16 @@ function renderActiveQuestion(gs) {
     const q = state.questions?.[gs.active_question_id];
     if (!q) return;
 
+    const optionsText = q.options
+        ? q.options.replace(/\\n/g, '\n') // เปลี่ยนตัวอักษร \n เป็นการขึ้นบรรทัดใหม่
+        : "ไม่มีตัวเลือก (ข้อเขียน)";
+
     // 1. อัปเดตข้อมูลโจทย์และเฉลยบนหน้าจอ Admin
     safeSetText('aq-category', q.category);
     safeSetText('aq-level', q.level);
     safeSetText('aq-points', q.points);
     safeSetText('aq-text', q.question_text);
-    safeSetText('aq-options', q.options || "ไม่มีตัวเลือก (ข้อเขียน)");
+    safeSetText('aq-options', optionsText);
     safeSetText('aq-answer', q.answer_text);
 
     // 2. อ้างอิง Panel ต่างๆ
@@ -850,6 +854,7 @@ window.saveQuestion = async function () {
     const answerText = document.getElementById('q-answer').value.trim();
     const mediaUrl = document.getElementById('q-media').value.trim();
     const explainUrl = document.getElementById('q-explain-url').value.trim();
+    const explanationText = document.getElementById('q-explanation').value.trim();
 
     if (!idInput || !questionText || !answerText || isNaN(points)) {
         return Swal.fire('ข้อมูลไม่ครบ', 'กรุณาระบุ ID, โจทย์, เฉลย และคะแนน', 'warning');
@@ -871,6 +876,7 @@ window.saveQuestion = async function () {
             answer_text: answerText,
             media_url: mediaUrl,
             explain_url: explainUrl,
+            explanation_text: explanationText,
             is_opened: false, // สถานะเริ่มต้น
             timestamp: Date.now()
         };
@@ -913,7 +919,7 @@ window.editQuestion = function (id) {
     document.getElementById('q-answer').value = q.answer_text;
     document.getElementById('q-media').value = q.media_url || "";
     document.getElementById('q-explain-url').value = q.explain_url || "";
-
+    document.getElementById('q-explanation').value = q.explanation_text || "";
     // เลื่อนหน้าจอขึ้นไปที่ฟอร์ม
     document.getElementById('form-question').scrollIntoView({ behavior: 'smooth' });
     showToast("เข้าสู่โหมดแก้ไข: " + id, "info");
@@ -928,6 +934,7 @@ function resetQuestionForm() {
     editingQuestionId = null;
     document.getElementById('form-question').reset();
     document.getElementById('q-id-manual').disabled = false;
+    document.getElementById('q-explanation').value = "";
     const btn = document.querySelector('#form-question button[type="submit"]');
     btn.innerText = "💾 บันทึกคำถาม";
     btn.className = "bg-indigo-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-indigo-700 transition-all";
@@ -990,30 +997,53 @@ window.confirmOpenQuestion = function (qId) {
     });
 };
 
+// --- ฟังก์ชันแสดงเฉลยแบบ Banner กลางจอ ---
 window.revealAnswerOnBoard = function () {
     const gs = state.game_state;
     const q = state.questions[gs.active_question_id];
     if (!q) return;
 
-    const answerArea = document.getElementById('answer-reveal-area');
-    const displayFinalAnswer = document.getElementById('display-final-answer');
-    const expLink = document.getElementById('link-explanation');
+    // อ้างอิง Elements ใน Banner
+    const overlay = document.getElementById('answer-banner-overlay');
+    const displayAnswer = document.getElementById('banner-answer-text');
+    const displayExp = document.getElementById('banner-explanation-text');
+    const expArea = document.getElementById('banner-explanation-area');
+    const linkArea = document.getElementById('banner-link-area');
+    const expLink = document.getElementById('banner-explanation-link');
 
-    // 1. แสดงข้อความเฉลย/อธิบายที่สตาฟกรอก
-    displayFinalAnswer.innerText = q.answer_text;
-    answerArea.classList.remove('hidden');
+    // 1. ใส่คำตอบหลัก
+    displayAnswer.innerText = q.answer_text;
 
-    // 2. จัดการปุ่มลิงก์ (Canva/หน้าอื่น)
-    if (q.explain_url && q.explain_url.trim() !== "") {
-        expLink.href = q.explain_url;
-        expLink.classList.remove('hidden');
+    // 2. จัดการคำอธิบาย (Plain Text)
+    if (q.explanation_text && q.explanation_text.trim() !== "") {
+        displayExp.innerText = q.explanation_text;
+        expArea.classList.remove('hidden');
     } else {
-        expLink.classList.add('hidden');
+        expArea.classList.add('hidden');
     }
 
-    // หยุดเวลา (ถ้ามี)
+    // 3. จัดการปุ่มลิงก์ (Media/Canva)
+    if (q.explain_url && q.explain_url.trim() !== "") {
+        expLink.href = q.explain_url;
+        linkArea.classList.remove('hidden');
+    } else {
+        linkArea.classList.add('hidden');
+    }
+
+    // 4. แสดง Banner
+    overlay.classList.remove('hidden');
+
+    // 5. หยุดเวลา
     if (state.game_state.is_timer_running) {
         window.toggleTimer();
+    }
+};
+
+// --- ฟังก์ชันปิด Banner ---
+window.closeAnswerBanner = function () {
+    const overlay = document.getElementById('answer-banner-overlay');
+    if (overlay) {
+        overlay.classList.add('hidden');
     }
 };
 
@@ -1085,7 +1115,7 @@ function updateBoardGameState() {
                         ${closeBtn}
                         <p class="text-2xl font-black text-amber-600 uppercase tracking-widest mb-2">❌ เจ้าของข้อตอบผิด / หมดเวลา!</p>
                         <h2 class="text-6xl font-black text-slate-800 mb-4">เตรียมตัว STEAL...</h2>
-                        <p class="text-xl font-bold text-amber-700 animate-pulse">⚠️ รอสัญญาณไฟเหลืองจากพี่สตาฟฟ์</p>
+                        <p class="text-xl font-bold text-amber-700 animate-pulse">⚠️ รอสัญญาณไฟเหลืองจากพี่สตาฟ</p>
                     </div>`;
                 if (countdownInterval) clearInterval(countdownInterval);
             } else {
