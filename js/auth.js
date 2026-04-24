@@ -80,9 +80,9 @@ window.validateCurrentSession = async function () {
 
     if (!session) return false;
 
-    const EIGHT_HOURS = 8 * 60 * 60 * 1000;
-    if (Date.now() - session.loginTime > EIGHT_HOURS) {
-        console.warn("Session expired (8 hours limit)");
+    const TWENTY_HOURS = 20 * 60 * 60 * 1000;
+    if (Date.now() - session.loginTime > TWENTY_HOURS) {
+        console.warn("Session expired (20 hours limit)");
         return false;
     }
 
