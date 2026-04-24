@@ -20,6 +20,9 @@
             overflow: hidden;
             touch-action: manipulation;
             transition: background-color 0.3s ease;
+            height: 100dvh; /* ใช้ dvh เพื่อรองรับ Toolbar ของ Browser มือถือ */
+    display: flex;
+    flex-direction: column;
         }
 
         /* เอฟเฟกต์ปุ่มพร้อมกด (Steal Open) */
@@ -73,6 +76,12 @@
     user-select: none;            /* ป้องกันการคลุมดำข้อความ */
     -webkit-user-select: none;
     -webkit-touch-callout: none;  /* ปิดเมนูคลิกขวา/แช่ค้างบน iOS */
+    width: 65vmin !important; 
+    height: 65vmin !important;
+    max-width: 320px !important;
+    max-height: 320px !important;
+    min-width: 220px !important;
+    min-height: 220px !important;
         }
 
         .state-steal-open {
@@ -102,6 +111,24 @@
                 transform: translateY(-50px);
             }
         }
+
+        /* iPad แนวนอน: ลดช่องว่างเพื่อให้เห็นปุ่มชัดขึ้น */
+@media (min-width: 1024px) and (orientation: landscape) {
+    #status-card {
+        padding: 0.75rem !important;
+        margin-bottom: 0px !important;
+    }
+    #early-msg-container {
+        margin-top: 0px !important;
+    }
+}
+
+
+@media (max-height: 667px) {
+    #status-card h2 { font-size: 1rem !important; }
+    #buzzer-icon { font-size: 3rem !important; }
+    #buzzer-text { font-size: 1rem !important; }
+}
     </style>
 </head>
 
@@ -134,44 +161,41 @@
     </nav>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col items-center justify-center p-4 gap-4 overflow-hidden max-h-screen">
+    <main class="flex-1 flex flex-col items-center justify-evenly p-2 overflow-hidden relative">
     
-        <!-- Game Info Status -->
+        <!-- Status Card: ปรับ margin ให้เล็กลง -->
         <div id="status-card"
-            class="w-full max-w-sm bg-slate-800/50 p-5 rounded-[2rem] border border-slate-700 text-center shadow-2xl">
-            <!-- เพิ่ม id="game-status-dot" -->
+            class="w-full max-w-sm bg-slate-800/50 p-4 rounded-[2rem] border border-slate-700 text-center shadow-2xl z-10">
             <div id="game-status-dot" class="inline-block w-2 h-2 rounded-full bg-slate-500 mb-1 mr-1"></div>
             <p id="game-status-text"
-                class="inline-block text-blue-400 font-black uppercase tracking-widest text-xs mb-1 italic">
+                class="inline-block text-blue-400 font-black uppercase tracking-widest text-[10px] mb-0.5 italic">
                 รอเริ่มเกม...</p>
-            <h2 id="question-info" class="text-xl font-bold text-white">เตรียมตัวให้พร้อม</h2>
-            <div id="timer-display" class="hidden mt-2 text-3xl font-black text-amber-400 tabular-nums">0.0</div>
+            <h2 id="question-info" class="text-lg md:text-xl font-bold text-white leading-tight">เตรียมตัวให้พร้อม</h2>
+            <div id="timer-display" class="hidden mt-1 text-2xl font-black text-amber-400 tabular-nums">0.0</div>
         </div>
     
-        <!-- Buzzer Button -->
+        <!-- Buzzer Area: นำ Container มารวมกันเพื่อคุมขนาด -->
         <div class="relative flex items-center justify-center">
             <div id="buzzer-ring"
-                class="absolute inset-0 bg-slate-700 rounded-full blur-2xl opacity-20 scale-125 transition-all"></div>
+                class="absolute inset-0 bg-slate-700 rounded-full blur-3xl opacity-20 scale-125 transition-all"></div>
     
+            <!-- ขนาดปุ่มถูกคุมด้วย CSS .buzzer-btn ด้านบนแล้ว -->
             <button id="main-buzzer" disabled onclick="handleBuzzIn()"
-                class="buzzer-btn relative w-[75vw] h-[75vw] max-w-[280px] max-h-[280px] rounded-full bg-slate-800 border-[10px] border-slate-700 flex flex-col items-center justify-center shadow-2xl transition-all active:scale-95 disabled:opacity-50">
-    
-                <span id="buzzer-icon" class="text-5xl md:text-6xl mb-1">🔒</span>
+                class="buzzer-btn relative rounded-full bg-slate-800 border-[8px] border-slate-700 flex flex-col items-center justify-center shadow-2xl active:scale-95 disabled:opacity-50">
+                <span id="buzzer-icon" class="text-4xl md:text-6xl mb-1">🔒</span>
                 <span id="buzzer-text"
-                    class="text-lg md:text-xl font-black uppercase tracking-tighter text-slate-500">Wait...</span>
-    
-                <!-- เพิ่ม id="inner-glow" -->
+                    class="text-sm md:text-lg font-black uppercase tracking-tighter text-slate-500">Wait...</span>
                 <div id="inner-glow"
                     class="absolute inset-0 rounded-full opacity-0 transition-opacity duration-300 pointer-events-none"
                     style="box-shadow: inset 0 0 40px rgba(255,255,255,0.5);"></div>
             </button>
         </div>
     
-        <!-- เพิ่ม id="early-msg-container" -->
-        <div id="early-msg-container" class="h-8 text-red-500 font-bold overflow-hidden mt-2"></div>
-    
-        <!-- Notification / Result -->
-        <div id="result-msg" class="hidden w-full max-w-sm p-3 rounded-2xl text-center font-bold animate-bounce text-sm">
+        <!-- Alert Message & Result: จัดให้อยู่ในพื้นที่ที่เหลือ -->
+        <div class="flex flex-col items-center gap-1">
+            <div id="early-msg-container" class="h-6 text-red-500 font-bold text-sm overflow-hidden"></div>
+            <div id="result-msg" class="hidden w-full max-w-xs p-2 rounded-xl text-center font-bold animate-bounce text-xs">
+            </div>
         </div>
     
     </main>
