@@ -112,6 +112,21 @@
             }
         }
 
+
+        @keyframes green-glow {
+    0% { box-shadow: 0 0 10px #10b981; }
+    50% { box-shadow: 0 0 40px #10b981; }
+    100% { box-shadow: 0 0 10px #10b981; }
+}
+
+.bg-emerald-500 {
+    animation: green-glow 0.5s infinite;
+}
+
+.bg-red-600 {
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.5);
+}
+
         /* iPad แนวนอน: ลดช่องว่างเพื่อให้เห็นปุ่มชัดขึ้น */
 @media (min-width: 1024px) and (orientation: landscape) {
     #status-card {
@@ -427,22 +442,28 @@
                             btn.classList.add('bg-red-950', 'border-red-900');
                         }
                     }
-                    else if (gs.is_steal_open) {
-                        // กรณีระบบเปิดให้แย่งกด (สถานะสำคัญ)
-                        if (statusText) {
-                            statusText.innerText = "STEAL NOW!";
-                            statusText.classList.add('text-yellow-400');
-                        }
-                        if (body) body.classList.add('state-steal-open');
-                        if (questionInfo) questionInfo.innerText = "กดเลยยยยย!!!";
-                        if (icon) icon.innerText = "🚨";
-                        if (text) text.innerText = "PRESS!";
+                    else if (gs.countdown_active) {
+                        // ช่วงไฟกำลังวิ่ง 1-2-3-4-5
+                        statusText.innerText = "COUNTDOWN...";
+                        questionInfo.innerHTML = renderBuzzerLights(gs);
+                        icon.innerText = "🛑";
+                        text.innerText = "WAIT...";
+                        btn.disabled = false; // ให้กดได้เพื่อ trigger STUN (กรณีแอบกดก่อน)
+                        btn.className = "buzzer-btn relative rounded-full bg-slate-900 border-[8px] border-red-900 flex flex-col items-center justify-center opacity-100";
 
+                        // สั่งอัปเดตหน้าจอเพื่อดึงเฟรมถัดไป
+                        setTimeout(() => updateUI(gameState), 100);
+                    }
+                    else if (gs.is_steal_open) {
+                        // ไฟเขียวแล้ว (Released)
+                        statusText.innerText = "STEAL NOW!";
+                        statusText.classList.add('text-emerald-400');
+                        questionInfo.innerHTML = `<p class="text-emerald-500 font-black text-2xl animate-bounce">GO GO GO!</p>`;
+                        icon.innerText = "⚡";
+                        text.innerText = "PRESS!";
                         btn.disabled = false;
-                        btn.classList.add('buzzer-active', 'border-white');
-                        if (ring) ring.classList.add('bg-yellow-500', 'opacity-40');
-                        if (innerGlow) innerGlow.style.opacity = "1";
-                        if (statusDot) statusDot.classList.add('bg-yellow-400', 'animate-ping');
+                        btn.classList.add('buzzer-active', 'border-emerald-400'); // buzzer-active ใช้ animation ที่เตรียมไว้
+                        body.classList.add('state-steal-open');
                     } else {
                         // กรณีรอสัญญาณ Steal
                         if (statusText) statusText.innerText = "READY TO STEAL";
@@ -541,6 +562,25 @@
         // ลบข้อความหลัง 5 วิ
         setTimeout(() => { container.innerHTML = ""; }, 5000);
     }
+
+    function renderBuzzerLights(gs) {
+            if (!gs.steal_start_ts) return '';
+            const elapsed = Date.now() - gs.steal_start_ts;
+            const activeCount = Math.floor(elapsed / 800);
+            const isGreen = activeCount >= 5; // ดวงที่ 5 ติดแล้วเตรียมเขียว
+
+            const lights = [1, 2, 3, 4, 5];
+            return `
+        <div class="flex gap-2 justify-center mb-6">
+            ${lights.map(i => `
+                <div class="w-8 h-8 rounded-full border-2 border-slate-700 
+                    ${activeCount >= i ? (activeCount >= 6 ? 'bg-emerald-500' : 'bg-red-600') : 'bg-slate-900'}">
+                </div>
+            `).join('')}
+        </div>
+    `;
+        }
+
         document.addEventListener('touchstart', function (event) {
                 if (event.touches.length > 1) {
                     event.preventDefault(); // ป้องกันการใช้ 2 นิ้วขยาย

@@ -705,17 +705,41 @@ window.judgeOwner = async function (isCorrect) {
 };
 
 window.openStealBuzzer = async function () {
-    // ล้างข้อมูล Buzzer เก่า (ล้าง attempts และ winner)
+    const startTime = Date.now() + 500; // หน่วงนิดหน่อยให้ทุกคนเริ่มพร้อมกัน
     await update(ref(db), {
-        'jeopardy/buzzers': {
-            is_locked: false,
-            winner: null,
-            attempts: {} // ล้างประวัติข้อเก่า
-        },
-        'jeopardy/game_state/is_steal_open': true,
-        'jeopardy/game_state/steal_start_ts': Date.now() // บันทึกเวลาเริ่ม
+        'jeopardy/buzzers': { is_locked: false, winner: null, attempts: {} },
+        'jeopardy/game_state/is_steal_open': false,
+        'jeopardy/game_state/steal_start_ts': startTime, // เวลาที่ไฟเขียวจะติด (startTime + 4000ms)
+        'jeopardy/game_state/countdown_active': true,
+        'jeopardy/game_state/status': 'STEAL_WAIT'
     });
-    showToast("เปิดระบบปุ่มกด Steal แล้ว!", "warning");
+
+    // ตั้งเวลาให้ระบบเปิดรับคำตอบอัตโนมัติเมื่อถึงเวลาไฟเขียว (4 วินาทีหลังจากเริ่มไฟดวงแรก)
+    setTimeout(async () => {
+        await update(ref(db, 'jeopardy/game_state'), {
+            is_steal_open: true,
+            countdown_active: false
+        });
+    }, 4500);
+};
+
+function renderF1Lights(elapsed) {
+    const lights = [1, 2, 3, 4, 5];
+    const activeCount = Math.floor(elapsed / 800); // แสดงไฟทุกๆ 0.8 วินาที
+
+    return `
+        <div class="flex gap-4 justify-center my-8">
+            ${lights.map(i => {
+        const isActive = activeCount >= i;
+        const isGreen = activeCount >= 6;
+        return `
+                    <div class="w-16 h-16 rounded-full border-4 border-slate-800 shadow-inner transition-all duration-200 
+                        ${isGreen ? 'bg-emerald-500 shadow-[0_0_30px_#10b981]' : (isActive ? 'bg-red-600 shadow-[0_0_20px_#dc2626]' : 'bg-slate-700')}">
+                    </div>
+                `;
+    }).join('')}
+        </div>
+    `;
 }
 
 window.judgeSteal = async function (isCorrect) {
@@ -1261,82 +1285,122 @@ function updateBoardGameState() {
         }
     }
 
-    // --- [4] จัดการ STEAL ALERT (แบนเนอร์กลางจอ) ---
+    // --- [4] จัดการ STEAL ALERT (ระบบ F1 Countdown & Steal Active) ---
     if (stealAlert) {
         if (gs.status === 'STEAL_WAIT' && !isBannerManuallyClosed) {
             stealAlert.classList.remove('hidden');
             const closeBtn = `<button class="close-banner-btn" onclick="window.closeStealBanner()" title="ปิดการแจ้งเตือน">✕</button>`;
 
-            if (!gs.is_steal_open) {
-                // จังหวะรอ Admin ปล่อยไฟ
+            // -- [A] ช่วงนับไฟ F1 (Countdown Active) --
+            if (gs.countdown_active) {
+                const elapsed = Date.now() - (gs.steal_start_ts || Date.now());
+                const activeCount = Math.floor(elapsed / 800); // ติดหนึ่งดวงทุกๆ 0.8 วินาที
+
+                // สร้าง HTML ไฟ 5 ดวง
+                let lightsHTML = '<div class="flex gap-6 justify-center my-10">';
+                for (let i = 1; i <= 5; i++) {
+                    const isOn = activeCount >= i;
+                    lightsHTML += `
+                        <div class="w-24 h-24 rounded-full border-8 border-slate-900 transition-all duration-150 
+                            ${isOn ? 'bg-red-600 shadow-[0_0_50px_rgba(220,38,38,0.8)]' : 'bg-slate-800 shadow-inner'}">
+                        </div>`;
+                }
+                lightsHTML += '</div>';
+
                 stealAlert.innerHTML = `
-                    <div class="steal-prep-banner relative">
+                    <div class="steal-prep-banner relative border-slate-900 bg-slate-950 shadow-[0_0_100px_rgba(0,0,0,0.5)]">
                         ${closeBtn}
-                        <p class="text-2xl font-black text-amber-600 uppercase tracking-widest mb-2">❌ เจ้าของข้อตอบผิด / หมดเวลา!</p>
-                        <h2 class="text-6xl font-black text-slate-800 mb-4">เตรียมตัว STEAL...</h2>
-                        <p class="text-xl font-bold text-amber-700 animate-pulse">⚠️ รอสัญญาณไฟเหลืองจากพี่สตาฟ</p>
+                        <p class="text-2xl font-black text-slate-500 uppercase tracking-[0.4em] mb-2">Prepare to Steal</p>
+                        ${lightsHTML}
+                        <p class="text-3xl font-black text-white italic animate-pulse">WAIT FOR GREEN...</p>
                     </div>`;
-                if (countdownInterval) clearInterval(countdownInterval);
-            } else {
-                // จังหวะปล่อยไฟแล้ว / มีผู้ชนะแล้ว
-                const attempts = buzz?.attempts || {};
-                const winnerId = buzz?.winner;
-                const startTime = gs.steal_start_ts || Date.now();
-                const sortedAttempts = Object.entries(attempts).sort((a, b) => a[1] - b[1]);
 
-                // --- ส่วนคำนวณการนับถอยหลัง 5 วินาทีหลังจากบ้านแรกกด ---
-                let countdownHTML = '';
-                if (winnerId && buzz.timestamp) {
-                    const elapsed = Date.now() - buzz.timestamp;
-                    const remaining = Math.max(0, (5000 - elapsed) / 1000);
+                // สั่งให้หน้าจอ Refresh ตัวเองเพื่อขยับไฟ
+                if (!window.countdownInterval) {
+                    window.countdownInterval = setInterval(() => { updateBoardGameState(); }, 50);
+                }
+            }
 
-                    if (remaining > 0) {
-                        countdownHTML = `<p class="text-orange-500 font-black animate-pulse">🔒 ระบบจะปิดรับใน: ${remaining.toFixed(1)} วินาที</p>`;
-                        // สั่งให้หน้าจอรีเฟรชตัวเองเพื่อลดตัวเลขวินาที
-                        if (!countdownInterval) {
-                            countdownInterval = setInterval(() => { updateBoardGameState(); }, 100);
-                        }
-                    } else {
-                        countdownHTML = `<p class="text-red-600 font-black">🚫 ปิดรับการกดแล้ว (หมดเวลา 5s)</p>`;
-                        if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
-                    }
-                } else {
-                    countdownHTML = `<p class="text-xl font-black text-orange-500 uppercase tracking-widest animate-pulse">--- ระบบเปิดแล้ว ---</p>`;
+            // -- [B] ช่วงไฟเขียว / มีคนกดแล้ว (Steal Open) --
+            else if (gs.is_steal_open) {
+                // ล้าง Interval การนับถอยหลัง (ถ้ามี)
+                if (window.countdownInterval) {
+                    clearInterval(window.countdownInterval);
+                    window.countdownInterval = null;
                 }
 
-                // สร้างรายการบ้านที่กดทัน
+                const attempts = buzz?.attempts || {};
+                const winnerId = buzz?.winner;
+                const startTime = gs.steal_start_ts + 4000; // จุดที่ไฟเขียวติด (800ms * 5)
+                const sortedAttempts = Object.entries(attempts).sort((a, b) => a[1] - b[1]);
+
+                // คำนวณเวลานับถอยหลัง 5 วิหลังคนแรกกด
+                let countdownHTML = '';
+                if (winnerId && buzz.timestamp) {
+                    const remaining = Math.max(0, (5000 - (Date.now() - buzz.timestamp)) / 1000);
+                    if (remaining > 0) {
+                        countdownHTML = `<p class="text-emerald-500 font-black animate-pulse">🔒 SYSTEM LOCKING IN: ${remaining.toFixed(1)}s</p>`;
+                        if (!window.countdownInterval) window.countdownInterval = setInterval(() => updateBoardGameState(), 100);
+                    } else {
+                        countdownHTML = `<p class="text-red-600 font-black uppercase">🚫 CLOSED (TIME OUT)</p>`;
+                        if (window.countdownInterval) { clearInterval(window.countdownInterval); window.countdownInterval = null; }
+                    }
+                } else {
+                    countdownHTML = `<p class="text-2xl font-black text-emerald-500 uppercase tracking-[0.5em] animate-bounce">● RELEASED ●</p>`;
+                }
+
                 const attemptsHTML = sortedAttempts.map(([hId, ts]) => {
                     const diff = (ts - startTime) / 1000;
                     const isWinner = winnerId == hId;
                     return `
-                        <div class="flex items-center gap-2 px-4 py-1.5 rounded-full ${isWinner ? 'bg-orange-600 text-white shadow-md scale-110' : 'bg-white/80 border border-orange-200'} transition-all">
-                            <span class="font-black ${isWinner ? 'text-white' : 'text-orange-600'} text-sm">H${hId}:</span>
-                            <span class="font-mono text-xs font-bold ${isWinner ? 'text-orange-100' : 'text-slate-600'}">+${diff.toFixed(3)}s</span>
+                        <div class="flex items-center gap-2 px-4 py-1.5 rounded-full ${isWinner ? 'bg-emerald-600 text-white shadow-md scale-110' : 'bg-white/80 border border-emerald-200'} transition-all">
+                            <span class="font-black ${isWinner ? 'text-white' : 'text-emerald-600'} text-sm">H${hId}:</span>
+                            <span class="font-mono text-xs font-bold ${isWinner ? 'text-emerald-100' : 'text-slate-600'}">+${diff.toFixed(3)}s</span>
                         </div>`;
                 }).join('');
 
                 const headerContent = winnerId
-                    ? `<p class="text-2xl font-black text-emerald-600 uppercase tracking-widest mb-2 animate-bounce">🎉 SUCCESS!</p>
+                    ? `<p class="text-2xl font-black text-emerald-600 uppercase tracking-widest mb-2">🎉 SUCCESS!</p>
                        <h2 class="text-7xl font-black text-slate-900 mb-2 italic">บ้าน ${winnerId} กดติด!</h2>`
-                    : `<p class="text-2xl font-black text-orange-600 uppercase tracking-[0.5em] mb-2 animate-pulse">⚡ RELEASED</p>
-                       <h2 class="text-7xl font-black text-slate-900 mb-2 italic">กดปุ่มเลย!!!</h2>`;
+                    : `<div class="w-full flex justify-center gap-4 mb-6">
+                        ${[1, 2, 3, 4, 5].map(() => `<div class="w-12 h-12 rounded-full bg-emerald-500 shadow-[0_0_30px_#10b981]"></div>`).join('')}
+                       </div>
+                       <h2 class="text-8xl font-black text-slate-900 mb-4 italic animate-pulse">กดปุ่มเลย!!!</h2>`;
 
                 stealAlert.innerHTML = `
-                    <div class="steal-prep-banner steal-active-banner relative" style="border-color: ${winnerId ? '#10b981' : '#ea580c'}; background: ${winnerId ? '#f0fdf4' : '#fff7ed'}; max-width: 900px;">
+                    <div class="steal-prep-banner steal-active-banner relative" style="border-color: #10b981; background: #f0fdf4; max-width: 900px;">
                         ${closeBtn}
                         ${headerContent}
                         <div class="mb-6">${countdownHTML}</div>
                         
-                        <div class="border-t ${winnerId ? 'border-emerald-200' : 'border-orange-200'} pt-5 mt-2">
-                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Press History (Reaction Time)</p>
+                        <div class="border-t border-emerald-200 pt-5 mt-2">
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Reaction Time (from green light)</p>
                             <div class="flex flex-wrap justify-center gap-3">
                                 ${attemptsHTML || '<p class="text-slate-300 italic text-sm">Waiting for first press...</p>'}
                             </div>
                         </div>
                     </div>`;
             }
+
+            // -- [C] กรณีรอ Admin สั่งเริ่ม --
+            else {
+                stealAlert.innerHTML = `
+                    <div class="steal-prep-banner relative bg-amber-50 border-amber-500">
+                        ${closeBtn}
+                        <p class="text-2xl font-black text-amber-600 uppercase mb-2">❌ เจ้าของข้อตอบไม่ถูก</p>
+                        <h2 class="text-6xl font-black text-slate-800 mb-4">เตรียมตัว STEAL...</h2>
+                        <p class="text-xl font-bold text-amber-700 animate-pulse">⚠️ รอสัญญาณไฟจากพี่สตาฟ</p>
+                    </div>`;
+            }
         } else {
-            if (gs.status !== 'STEAL_WAIT') isBannerManuallyClosed = false;
+            // ซ่อน Overlay และล้างค่า
+            if (gs.status !== 'STEAL_WAIT') {
+                isBannerManuallyClosed = false;
+                if (window.countdownInterval) {
+                    clearInterval(window.countdownInterval);
+                    window.countdownInterval = null;
+                }
+            }
             stealAlert.classList.add('hidden');
         }
     }
