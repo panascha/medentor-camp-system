@@ -51,7 +51,7 @@ function startSessionListener() {
     const loginTime = currentLocal.loginTime;
 
     // ตั้งค่าเวลา (ปรับเป็น TEN_SECONDS ได้หากต้องการทดสอบ)
-    const SESSION_LIMIT = 8 * 60 * 60 * 1000;
+    const SESSION_LIMIT = 20 * 60 * 60 * 1000;
 
     // 2. ฟังก์ชันช่วยสำหรับการเตะออก (Force Logout)
     const forceLogout = (title, reason) => {
@@ -89,7 +89,7 @@ function startSessionListener() {
     } else {
         // สั่งให้ทำงานอัตโนมัติเมื่อครบเวลาที่เหลือพอดี
         setTimeout(() => {
-            forceLogout('เซสชั่นหมดอายุ', 'หมดระยะเวลาใช้งาน 8 ชั่วโมงแล้ว กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+            forceLogout('เซสชั่นหมดอายุ', 'หมดระยะเวลาใช้งาน 20 ชั่วโมงแล้ว กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
         }, timeRemaining);
 
         console.log(`[Session] ระบบจะเตะออกอัตโนมัติในอีก ${Math.round(timeRemaining / 1000)} วินาที`);
