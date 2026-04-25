@@ -231,7 +231,7 @@
             let myHouseId = user.house ? user.house.toString() : null;
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             let lastClickTime = 0;
-            const SPAM_THRESHOLD = 1000; // 1 วินาที
+            const SPAM_THRESHOLD = 5000; // 5 วินาที
             let isStunned = false;
 
         if (!user || !user.house) {
@@ -463,7 +463,7 @@
                     const buzz = gameState.buzzers;
                     const myHouseIdInt = parseInt(myHouseId);
 
-                    if (isStunned || now - lastClickTime < 200) return;
+                    if (isStunned || now - lastClickTime < 5000) return;
                     lastClickTime = now;
 
                     // เช็คว่าเคยกดไปแล้วหรือยัง (ป้องกันการส่งซ้ำในข้อเดิม)
@@ -485,7 +485,7 @@
                             setTimeout(() => {
                                 isStunned = false;
                                 updateUI(gameState);
-                            }, 1000);
+                            }, 5000);
                         }
                         return;
                     }
@@ -533,13 +533,13 @@
 
         // เปลี่ยนข้อความให้ชัดเจน
         container.innerHTML = `<div class="early-text text-center text-red-500 font-black animate-bounce">
-        ⚠️ เร็วไป! ปุ่มล็อค 1.0s
+        ⚠️ เร็วไป! ปุ่มล็อค 5.0s
     </div>`;
 
         if ("vibrate" in navigator) navigator.vibrate(300);
 
-        // ลบข้อความหลัง 1 วิ
-        setTimeout(() => { container.innerHTML = ""; }, 1000);
+        // ลบข้อความหลัง 5 วิ
+        setTimeout(() => { container.innerHTML = ""; }, 5000);
     }
         document.addEventListener('touchstart', function (event) {
                 if (event.touches.length > 1) {
