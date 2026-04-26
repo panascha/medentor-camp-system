@@ -54,14 +54,15 @@
             </div>
 
             <!-- Quota Tracker -->
-            <div class="w-full md:w-80 space-y-1">
+            <div class="w-full md:w-80 space-y-1 bg-slate-50 p-2 rounded-xl border border-slate-200">
                 <div class="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                    <span class="text-slate-400">Classroom Quota</span>
-                    <span id="quota-text" class="text-slate-800">0 / 100 PTS</span>
+                    <span class="text-slate-400" id="quota-subject-label">Subject Quota</span>
+                    <span id="quota-text" class="text-blue-600">0 / 0 PTS</span>
                 </div>
                 <div class="quota-container">
                     <div id="quota-bar" class="quota-bar quota-safe" style="width: 0%"></div>
                 </div>
+                <p id="quota-remaining" class="text-[9px] text-right font-bold text-slate-400">เหลือโควต้า: 0 Pts</p>
             </div>
 
             <button onclick="finishSession()" id="btn-finish"
@@ -106,6 +107,11 @@
                     <button onclick="startSession()"
                         class="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold hover:bg-black transition-all shadow-xl shadow-slate-100">
                         เปิดห้องเรียนตอนนี้
+                    </button>
+                    <!-- เพิ่มปุ่มนี้ -->
+                    <button onclick="openHistoryEditor()"
+                        class="w-full bg-white text-blue-600 border-2 border-blue-100 py-3 rounded-2xl font-bold hover:bg-blue-50 transition-all mt-2">
+                        📝 แก้ไขคะแนนที่เคยแจก (ย้อนหลัง)
                     </button>
                 </div>
             </div>

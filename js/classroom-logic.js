@@ -19,6 +19,7 @@ let onlineStudents = {};     // เด็กที่ต่อเน็ตอย
 let responsesHistory = {};   // เก็บแบบ { studentID: [ {activity: "...", answer: "...", time: "..."}, ... ] }
 let scoresToSync = { studentScores: {}, houseScores: {} };
 let activityLog = {}; // เก็บ { activity_id: { title: "...", status: "..." } }
+let subjectQuotas = {}; // 
 let selectedActivityFilter = 'current'; // 'current' หรือ activity_id เจาะจง
 
 // ---------------------------------------------------------
@@ -198,10 +199,16 @@ function initTutorListeners() {
         renderSummaryTable(); // วาดตารางสรุป (นับจำนวนครั้งที่ตอบทั้งหมด)
     });
 
-    // 4. Listen Quota: ติดตามการใช้คะแนนในคาบ (ห้ามเกิน 100)
+    // 4. Listen Global Subject Quotas (มาจาก Admin กำหนด)
+    onValue(ref(db, 'subject_quotas'), (snapshot) => {
+        subjectQuotas = snapshot.val() || {};
+        updateQuotaUI();
+    });
+
+    // 4.1 Listen การใช้ Quota ภายในคาบเรียนปัจจุบัน (คาบนี้แจกไปเท่าไหร่แล้ว)
     onValue(ref(db, `classroom_scores/${currentRoom}/quotaUsed`), (snapshot) => {
         quotaUsed = snapshot.val() || 0;
-        updateQuotaUI(); // อัปเดตแถบสี Progress Bar ด้านบน
+        updateQuotaUI();
     });
 
     // 5. Listen SOS Count: มีน้องกดปุ่มตามไม่ทันกี่คน (ถ้า >0 ให้แสดงไอคอนเตือน)
@@ -271,11 +278,28 @@ function showUI(isStarted) {
 function updateQuotaUI() {
     const bar = document.getElementById('quota-bar');
     const text = document.getElementById('quota-text');
-    if (!bar || !text) return;
+    const remText = document.getElementById('quota-remaining');
+    const label = document.getElementById('quota-subject-label');
+    if (!bar || !text || !currentSubject) return;
 
-    text.innerText = `${quotaUsed} / 100 PTS`;
-    bar.style.width = `${quotaUsed}%`;
-    bar.className = "quota-bar " + (quotaUsed > 80 ? 'quota-danger' : (quotaUsed > 50 ? 'quota-warning' : 'quota-safe'));
+    label.innerText = `โควต้าวิชา ${currentSubject.toUpperCase()}`;
+
+    // ดึงค่าโควต้ารวมของวิชานี้
+    const maxQuota = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].max : 0;
+    const globalUsed = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].used : 0;
+
+    // รวมที่ใช้ไปก่อนหน้า + ที่แจกในคาบปัจจุบัน (ยังไม่กด Sync)
+    const totalUsedNow = globalUsed + quotaUsed;
+    const remaining = maxQuota - totalUsedNow;
+
+    text.innerText = `ใช้ไป ${totalUsedNow} / ${maxQuota} PTS`;
+    remText.innerText = remaining >= 0 ? `เหลือแจกได้อีก: ${remaining} Pts` : `แจกเกินโควต้า: ${remaining} Pts!`;
+
+    let percent = maxQuota > 0 ? (totalUsedNow / maxQuota) * 100 : 0;
+    if (percent > 100) percent = 100;
+
+    bar.style.width = `${percent}%`;
+    bar.className = "quota-bar " + (percent > 90 ? 'quota-danger' : (percent > 70 ? 'quota-warning' : 'quota-safe'));
 }
 // renderActivityFilter เป็นฟังก์ชันที่วาด Dropdown ขึ้นมาในส่วนหัวของ Live Feed เพื่อให้ครูสามารถเลือกดูคำตอบย้อนหลังได้ตามกิจกรรมที่เคยตั้งไว้ โดยจะดึงข้อมูลจาก activityLog ที่เก็บประวัติคำถามทั้งหมดมาแสดงเป็นตัวเลือกใน Dropdown และเมื่อครูเลือกคำถามไหน ตัวแปร selectedActivityFilter จะถูกอัปเดต และ Live Feed จะกรองคำตอบมาแสดงเฉพาะคำถามนั้นๆ ทันที
 function renderActivityFilter() {
@@ -944,16 +968,42 @@ window.finishSession = async function (isAuto = false) {
         const roomToClear = currentRoom;
         if (!roomToClear) throw new Error("No active room found");
 
-        // 3. เตรียมข้อมูลสำหรับ Sync (ดึงข้อมูลล่าสุดจาก State)
-        // หมายเหตุ: ตรวจสอบว่าตัวแปร window.classScores และ window.houseScores มีข้อมูลปัจจุบัน
+        // 3. เตรียมข้อมูลสำหรับ Sync (บันทึกทุกคนที่มีส่วนร่วม)
+        const studentScoresCleaned = {};
+
+        allStudentsInClass.forEach(s => {
+            const id = s.id;
+            const scoreData = scoresToSync.studentScores[id] || { score: 0, speakCount: 0 };
+            const respCount = responsesHistory[id] ? responsesHistory[id].length : 0;
+
+            // เงื่อนไข: บันทึกถ้า (คะแนน > 0) OR (พูด > 0) OR (ส่งคำตอบ > 0)
+            if (scoreData.score > 0 || scoreData.speakCount > 0 || respCount > 0) {
+                studentScoresCleaned[id] = {
+                    name: s.nickname, // หรือ s.fullName ตามชอบ
+                    house: s.house,   // บันทึกบ้านไปด้วย
+                    score: scoreData.score,
+                    speakCount: scoreData.speakCount,
+                    responseCount: respCount
+                };
+            }
+        });
+
+        // 3.1 เตรียมข้อมูล House (ส่งเฉพาะบ้านที่ได้คะแนนจริง)
+        const houseScoresCleaned = {};
+        for (let hID in scoresToSync.houseScores) {
+            if (scoresToSync.houseScores[hID] > 0) {
+                houseScoresCleaned[hID] = scoresToSync.houseScores[hID];
+            }
+        }
+
         const syncPayload = {
             action: "syncClassroomScore",
             key: CONFIG.syncKey,
             room: roomToClear,
             subject: currentSubject,
             tutor: checkAuth()?.nickname || "Tutor",
-            studentScores: scoresToSync.studentScores || {},
-            houseScores: scoresToSync.houseScores || {}
+            studentScores: studentScoresCleaned,
+            houseScores: houseScoresCleaned || {}
         };
 
         // 4. ส่งข้อมูลไป Google Sheets (Background Sync)
@@ -1316,11 +1366,17 @@ window.customScore = async function (id, name, type) {
     }
 }
 window.giveScore = async function (id, name, pts) {
-    if (quotaUsed + pts > 100) return Swal.fire("โควต้าเต็ม", "ใช้คะแนนเกิน 100 แล้ว", "warning");
+    // คำนวณลิมิตใหม่
+    const maxQuota = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].max : 0;
+    const globalUsed = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].used : 0;
+
+    // เช็คว่าถ้าบวกไปแล้วเกินแม็กซ์โควต้าไหม (กรณีให้คะแนนบวก ไม่ใช่การลดคะแนน)
+    if (pts > 0 && (globalUsed + quotaUsed + pts) > maxQuota) {
+        return Swal.fire("โควต้าเต็ม", `วิชา ${currentSubject} เหลือโควต้าให้แจกได้แค่ ${maxQuota - (globalUsed + quotaUsed)} คะแนน`, "warning");
+    }
 
     if (!scoresToSync.studentScores[id]) scoresToSync.studentScores[id] = { name: name, score: 0, speakCount: 0 };
 
-    // คำนวณคะแนนใหม่และเช็คไม่ให้ต่ำกว่า 0
     let newScore = scoresToSync.studentScores[id].score + pts;
     if (newScore < 0) newScore = 0;
 
@@ -1333,7 +1389,12 @@ window.giveScore = async function (id, name, pts) {
 };
 
 window.giveHouseScore = async function (house, pts) {
-    if (quotaUsed + pts > 100) return Swal.fire("โควต้าเต็ม", "ใช้คะแนนเกิน 100 แล้ว", "warning");
+    const maxQuota = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].max : 0;
+    const globalUsed = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].used : 0;
+
+    if (pts > 0 && (globalUsed + quotaUsed + pts) > maxQuota) {
+        return Swal.fire("โควต้าเต็ม", `วิชา ${currentSubject} เหลือโควต้าให้แจกได้แค่ ${maxQuota - (globalUsed + quotaUsed)} คะแนน`, "warning");
+    }
 
     if (!scoresToSync.houseScores[house]) scoresToSync.houseScores[house] = 0;
 
@@ -1346,4 +1407,177 @@ window.giveHouseScore = async function (house, pts) {
     await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + actualDiff });
     showToast(`บ้าน ${house}: ${newScore} คะแนน`);
     renderSummaryTable();
+};
+
+window.openHistoryEditor = async function () {
+    const user = checkAuth();
+    const subject = document.getElementById('select-subject').value;
+
+    // แสดง Loading ระหว่างดึงข้อมูล
+    Swal.fire({ title: 'กำลังดึงประวัติ...', didOpen: () => Swal.showLoading() });
+
+    try {
+        const resp = await fetch(CONFIG.appscriptUrl, {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'getPastSessionScores',
+                key: CONFIG.syncKey,
+                subject: subject,
+                tutor: user.nickname || user.fullName,
+                role: user.role
+            })
+        });
+        const resData = await resp.json();
+        const sessions = resData.data;
+
+        if (!sessions || Object.keys(sessions).length === 0) {
+            return Swal.fire('ไม่พบประวัติ', `ไม่มีประวัติการแจกคะแนนวิชา ${subject}`, 'info');
+        }
+
+        let html = `<div class="max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar space-y-8" id="history-container">`;
+
+        Object.values(sessions).reverse().forEach(session => {
+            const info = session.info;
+            session.data.sort((a, b) => a.house - b.house || (a.type !== b.type ? (a.type === 'House' ? -1 : 1) : a.targetName.localeCompare(b.targetName)));
+
+            html += `
+                <div class="bg-white rounded-[2rem] border-2 border-slate-100 overflow-hidden shadow-sm">
+                    <div class="bg-slate-800 p-4 text-white flex justify-between items-center">
+                        <div>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Session Summary</p>
+                            <h4 class="font-black text-sm">${new Date(info.timestamp).toLocaleString('th-TH')}</h4>
+                        </div>
+                        <div class="text-right">
+                            <span class="bg-blue-600 px-3 py-1 rounded-full text-[10px] font-black uppercase">${info.room.replace('_', ' ')}</span>
+                        </div>
+                    </div>
+                    <table class="w-full text-left text-[11px]">
+                        <thead class="bg-slate-50 border-b text-slate-500 font-bold uppercase">
+                            <tr>
+                                <th class="p-3 w-16 text-center">House</th>
+                                <th class="p-3">Target / Student Info</th>
+                                <th class="p-3 text-center">💬 Resp.</th>
+                                <th class="p-3 text-center">🙋‍♂️ Speak</th>
+                                <th class="p-3 text-center">Score</th>
+                                <th class="p-3 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50">
+                            ${session.data.map(row => {
+                const isHouseType = row.type === 'House';
+                return `
+                                <tr class="${isHouseType ? 'bg-amber-50/50' : 'hover:bg-blue-50/30'} transition-colors" id="row-${row.rowNumber}">
+                                    <td class="p-3 text-center">
+                                        <span class="font-black ${isHouseType ? 'text-amber-600 border-amber-200 bg-amber-100' : 'text-blue-600 border-blue-100 bg-blue-50'} px-2 py-1 rounded-lg border">
+                                            บ.${row.house}
+                                        </span>
+                                    </td>
+                                    <td class="p-3">
+                                        ${isHouseType
+                        ? `<span class="font-black text-amber-700">🏠 House Bonus</span>`
+                        : `<div><p class="font-bold text-slate-700">${row.targetName}</p><p class="text-[9px] font-mono text-slate-400">${row.targetId}</p></div>`}
+                                    </td>
+                                    <td class="p-3 text-center font-bold text-slate-400">${isHouseType ? '-' : (row.responseCount || 0)}</td>
+                                    <td class="p-3 text-center font-bold text-slate-400">${isHouseType ? '-' : (row.speakCount || 0)}</td>
+                                    <td class="p-3 text-center" id="score-cell-${row.rowNumber}">
+                                        <span class="font-black ${isHouseType ? 'text-amber-600' : 'text-blue-700'} text-sm">${row.score}</span>
+                                    </td>
+                                    <td class="p-3 text-right" id="action-cell-${row.rowNumber}">
+                                        <button onclick="startInlineEdit(${row.rowNumber}, '${row.targetName}', ${row.score}, '${subject}')" 
+                                            class="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg transition-all">✎</button>
+                                    </td>
+                                </tr>`;
+            }).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+        });
+        html += `</div>`;
+
+        // แสดงหน้าต่างประวัติแบบห้ามปิดเองโดยไม่ได้ตั้งใจ (AllowOutsideClick: true ปกติ)
+        Swal.fire({
+            title: `ประวัติการแจกคะแนน: ${subject.toUpperCase()}`,
+            html: html,
+            width: '850px',
+            showConfirmButton: false,
+            showCloseButton: true,
+            focusConfirm: false
+        });
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'ไม่สามารถโหลดข้อมูลได้', 'error');
+    }
+}
+
+// ฟังก์ชันเปลี่ยนช่องคะแนนเป็น Input
+window.startInlineEdit = function (rowNumber, targetName, currentScore, subject) {
+    const scoreCell = document.getElementById(`score-cell-${rowNumber}`);
+    const actionCell = document.getElementById(`action-cell-${rowNumber}`);
+
+    // เปลี่ยนช่องคะแนนเป็น Input
+    scoreCell.innerHTML = `
+        <input type="number" id="input-edit-${rowNumber}" 
+            class="w-16 p-1 text-center border-2 border-blue-500 rounded font-black text-sm" 
+            value="${currentScore}" onkeydown="if(event.key==='Enter') saveInlineEdit(${rowNumber}, '${subject}')">
+    `;
+
+    // เปลี่ยนปุ่ม ✎ เป็นปุ่ม Save/Cancel
+    actionCell.innerHTML = `
+        <div class="flex gap-1 justify-end">
+            <button onclick="saveInlineEdit(${rowNumber}, '${subject}')" class="bg-emerald-500 text-white p-1.5 rounded-lg shadow-sm">✅</button>
+            <button onclick="cancelInlineEdit(${rowNumber}, ${currentScore}, '${targetName}', '${subject}')" class="bg-slate-200 text-slate-600 p-1.5 rounded-lg">✕</button>
+        </div>
+    `;
+
+    document.getElementById(`input-edit-${rowNumber}`).focus();
+    document.getElementById(`input-edit-${rowNumber}`).select();
+};
+
+// ฟังก์ชันยกเลิกการแก้ไข
+window.cancelInlineEdit = function (rowNumber, originalScore, targetName, subject) {
+    const scoreCell = document.getElementById(`score-cell-${rowNumber}`);
+    const actionCell = document.getElementById(`action-cell-${rowNumber}`);
+
+    scoreCell.innerHTML = `<span class="font-black text-blue-700 text-sm">${originalScore}</span>`;
+    actionCell.innerHTML = `<button onclick="startInlineEdit(${rowNumber}, '${targetName}', ${originalScore}, '${subject}')" class="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg transition-all">✎</button>`;
+};
+
+// ฟังก์ชันบันทึกข้อมูล (Background Sync)
+window.saveInlineEdit = async function (rowNumber, subject) {
+    const newVal = document.getElementById(`input-edit-${rowNumber}`).value;
+    if (newVal === "") return;
+
+    const scoreCell = document.getElementById(`score-cell-${rowNumber}`);
+    const actionCell = document.getElementById(`action-cell-${rowNumber}`);
+
+    // 1. Update UI ทันที (Optimistic)
+    scoreCell.innerHTML = `<span class="font-black text-orange-500 animate-pulse text-sm">${newVal}</span>`;
+    showToast("กำลังบันทึกคะแนน...", "info");
+
+    try {
+        // 2. ส่งข้อมูลไป Google Sheets (Background)
+        fetch(CONFIG.appscriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({
+                action: 'editPastSessionScore',
+                key: CONFIG.syncKey,
+                rowNumber: rowNumber,
+                newScore: parseFloat(newVal),
+                subject: subject
+            })
+        });
+
+        // 3. เปลี่ยน UI กลับเป็นสถานะปกติ (แต่เป็นคะแนนใหม่)
+        setTimeout(() => {
+            scoreCell.innerHTML = `<span class="font-black text-blue-700 text-sm">${newVal}</span>`;
+            actionCell.innerHTML = `<button onclick="startInlineEdit(${rowNumber}, 'นักเรียน', ${newVal}, '${subject}')" class="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg transition-all">✎</button>`;
+            showToast("บันทึกสำเร็จ", "success");
+        }, 500);
+
+    } catch (e) {
+        showToast("เกิดข้อผิดพลาด", "error");
+        openHistoryEditor(); // กรณีพลาดจริงๆ ให้โหลดใหม่
+    }
 };
