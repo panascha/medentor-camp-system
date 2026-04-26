@@ -616,6 +616,7 @@ window.selectQuestion = async function (qId) {
     await update(ref(db, 'jeopardy/game_state'), {
         status: 'QUESTION',
         active_question_id: qId,
+        selected_answer: null,
         answering_house: state.game_state.active_house,
         is_timer_running: true,
         timer_duration: durationMs,
@@ -634,6 +635,72 @@ window.selectQuestion = async function (qId) {
         ...housesUpdate,
         'jeopardy/buzzers': { is_locked: false, winner: null, attempts: {} }
     });
+};
+
+window.selectJeopardyAnswer = async function (answerIndex) {
+    try {
+        // 1. ตรวจสอบ Database (ต้องมี db ถึงจะทำงานต่อได้)
+        if (typeof db === 'undefined' || !db) {
+            console.error("DB System is not ready.");
+            return;
+        }
+
+        // 2. ดึงข้อมูล State (รองรับทั้งชื่อ 'state' และ 'gameState' เพื่อความยืดหยุ่น)
+        const currentState = (typeof state !== 'undefined') ? state :
+            (typeof gameState !== 'undefined') ? gameState : null;
+
+        if (!currentState || !currentState.game_state) {
+            console.warn("State data is missing.");
+            return;
+        }
+
+        const gs = currentState.game_state;
+
+        // 3. ตรวจสอบสถานะเกม (ห้ามกดถ้าอยู่หน้าเลือกแผ่นป้ายปกติ)
+        if (gs.status === 'BOARD') return;
+
+        // 4. ตรวจสอบสถานะ Stun (เฉพาะหน้า Buzzer ของน้อง)
+        // ถ้าหน้าไหนไม่มีตัวแปร isStunned ให้ถือว่าเป็น false (ไม่มีการล็อคปุ่ม)
+        const currentStunStatus = (typeof isStunned !== 'undefined') ? isStunned : false;
+        if (currentStunStatus) return;
+
+        // 5. ตรวจสอบสิทธิ์การกด (Permission Check)
+        const user = (typeof checkAuth === 'function') ? checkAuth() : null;
+
+        // ตรวจสอบว่าเราอยู่หน้า Buzzer ของน้องหรือไม่
+        const isBuzzerPage = window.location.pathname.includes('jeopardy-buzzer.html');
+
+        if (isBuzzerPage) {
+            // ถ้าเป็นหน้าน้อง: ต้องเช็คว่าเป็นคิวบ้านเราจริงไหม
+            if (!user || !user.house) return;
+
+            const buzzerData = currentState.buzzers || {};
+            const currentAnsweringHouse = (gs.status === 'STEAL_WAIT' && buzzerData.winner)
+                ? buzzerData.winner.toString()
+                : gs.active_house.toString();
+
+            const myHouse = user.house.toString();
+            if (currentAnsweringHouse !== myHouse) {
+                console.log("Not your turn!");
+                return;
+            }
+        }
+        // ถ้าไม่ใช่หน้า Buzzer (เป็นหน้า Admin/Board): Admin กดได้ตลอดเพื่อช่วยเลือกให้น้อง
+
+        // 6. ส่งข้อมูลขึ้น Firebase
+        // นำเข้าฟังก์ชัน ref และ update จาก Firebase (เพื่อกัน Bug กรณีลืม Import)
+        const { ref, update } = await import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js");
+
+        await update(ref(db, 'jeopardy/game_state'), {
+            selected_answer: answerIndex
+        });
+
+        // 7. เสียงตอบรับ (ถ้ามี)
+        if (typeof playBeep === 'function') playBeep(550, 0.05);
+
+    } catch (error) {
+        console.error("Critical Error in selectJeopardyAnswer:", error);
+    }
 };
 
 window.revealOptions = async function () {
@@ -1429,29 +1496,24 @@ function updateBoardGameState() {
     if (optionsContainer) {
         if (q.options && q.options.trim() !== "") {
             optionsContainer.classList.remove('hidden');
-            // แยกข้อความด้วยการขึ้นบรรทัดใหม่
             const choices = q.options.split(/\r?\n|\\n/).filter(line => line.trim() !== "");
-
-            // สัญลักษณ์ Kahoot: สามเหลี่ยม, ขนมเปียกปูน, วงกลม, สี่เหลี่ยม
-            const symbols = [
-                '<svg viewBox="0 0 32 32" style="fill:white;width:45px"><path d="M27,24.56L5,24.56L16,7L27,24.56Z"/></svg>', // Triangle
-                '<svg viewBox="0 0 32 32" style="fill:white;width:45px"><path d="M4,16L16,4L28,16L16,28L4,16Z"/></svg>',   // Diamond
-                '<svg viewBox="0 0 32 32" style="fill:white;width:45px"><circle cx="16" cy="16" r="11"/></svg>',         // Circle
-                '<svg viewBox="0 0 32 32" style="fill:white;width:45px"><rect x="6" y="6" width="20" height="20"/></svg>' // Square
-            ];
+            const labels = ['A', 'B', 'C', 'D'];
 
             optionsContainer.innerHTML = choices.slice(0, 4).map((choice, index) => {
-                // ลบพวก "A." "B." ออกถ้าครูพิมพ์ติดมา
                 let cleanChoice = choice.trim().replace(/^[A-D][.:]\s*/i, "");
+                const isSelected = gs.selected_answer === index;
 
                 return `
-                <div class="kahoot-option opt-${index}">
-                    <span class="kahoot-symbol">${symbols[index]}</span>
-                    <span class="kahoot-text">${cleanChoice}</span>
-                </div>`;
+            <div onclick="window.selectJeopardyAnswer(${index})" 
+                class="kahoot-option opt-${index} ${isSelected ? 'is-selected' : ''} cursor-pointer transition-all hover:scale-[1.02]">
+                <span class="kahoot-letter">${labels[index]}</span>
+                <span class="kahoot-text">
+                    ${cleanChoice}
+                </span>
+            </div>`;
             }).join('');
 
-            optionsContainer.className = "kahoot-grid revealed"; // ใช้ grid layout
+            optionsContainer.className = "kahoot-grid revealed";
         } else {
             optionsContainer.classList.add('hidden');
         }

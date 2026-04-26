@@ -127,6 +127,56 @@
     box-shadow: inset 0 0 15px rgba(0,0,0,0.5);
 }
 
+/* สไตล์ตัวเลือกในมือถือน้อง */
+.buzzer-opt {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px !important;
+    border-radius: 12px;
+    color: white;
+    font-weight: 800;
+    border: 4px solid transparent;
+    transition: all 0.2s;
+    min-height: 60px; /* เพิ่มความสูงขั้นต่ำ */
+}
+.buzzer-opt span {
+    font-size: 13px; /* ปรับขนาดตัวอักษรข้อความ */
+    line-height: 1.2;
+    text-align: left;
+    word-break: break-word; /* ตัดคำเมื่อยาวเกิน */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.buzzer-opt b {
+    font-size: 24px; /* A B C D ตัวใหญ่ */
+    background: rgba(255,255,255,0.2);
+    width: 35px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+}
+/* แอนิเมชันสำหรับมือถือเมื่อกดเลือก */
+.buzzer-opt.is-selected {
+    border-color: white;
+    box-shadow: 0 0 20px rgba(255,255,255,0.5);
+    animation: selected-glow 1s infinite ease-in-out;
+}
+.b-opt-0 { background-color: #e21b3c; }
+.b-opt-1 { background-color: #1368ce; }
+.b-opt-2 { background-color: #d89e00; }
+.b-opt-3 { background-color: #26890c; }
+
+.kahoot-mini-symbol {
+    width: 14px;
+    height: 14px;
+    fill: white;
+    flex-shrink: 0;
+}
+
         /* iPad แนวนอน: ลดช่องว่างเพื่อให้เห็นปุ่มชัดขึ้น */
 @media (min-width: 1024px) and (orientation: landscape) {
     #status-card {
@@ -176,17 +226,35 @@
     </nav>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col items-center justify-evenly p-2 overflow-hidden relative">
+    <main class="flex-1 flex flex-col items-center justify-evenly p-2 overflow-auto space-y-6">
     
-        <!-- Status Card: ปรับ margin ให้เล็กลง -->
+        <!-- Status & Question Card -->
         <div id="status-card"
-            class="w-full max-w-sm bg-slate-800/50 p-4 rounded-[2rem] border border-slate-700 text-center shadow-2xl z-10">
-            <div id="game-status-dot" class="inline-block w-2 h-2 rounded-full bg-slate-500 mb-1 mr-1"></div>
-            <p id="game-status-text"
-                class="inline-block text-blue-400 font-black uppercase tracking-widest text-[10px] mb-0.5 italic">
-                รอเริ่มเกม...</p>
-            <h2 id="question-info" class="text-lg md:text-xl font-bold text-white leading-tight">เตรียมตัวให้พร้อม</h2>
-            <div id="timer-display" class="hidden mt-1 text-2xl font-black text-amber-400 tabular-nums">0.0</div>
+            class="w-full max-w-lg bg-slate-900/50 border border-slate-700 rounded-xl p-6 text-center shadow-lg transition-all">
+            <!-- Header Status -->
+            <div class="p-3 border-b border-slate-700 bg-slate-900/50 flex items-center justify-center gap-2">
+                <div id="game-status-dot" class="w-2 h-2 rounded-full bg-slate-500"></div>
+                <p id="game-status-text" class="text-blue-400 font-black uppercase tracking-widest text-[9px] italic">
+                    รอเริ่มเกม...</p>
+            </div>
+        
+            <!-- Question Area (จะถูกเปิด-ปิดโดย JS) -->
+            <div id="question-content-area" class="hidden p-4 space-y-3">
+                <div class="bg-blue-600/20 rounded-xl p-3 border border-blue-500/30">
+                    <p id="buzzer-q-text" class="text-white text-xl leading-relaxed text-center">...โจทย์คำถาม...</p>
+                </div>
+        
+                <!-- Options Grid (Kahoot Style) -->
+                <div id="buzzer-options-grid" class="grid grid-cols-2 gap-2">
+                    <!-- ตัวเลือกจะถูกสร้างที่นี่ -->
+                </div>
+            </div>
+        
+            <!-- Default Info (ตอนไม่มีคำถาม) -->
+            <div id="default-info" class="p-4 text-center">
+                <h2 id="question-info" class="text-lg font-bold text-white leading-tight">เตรียมตัวให้พร้อม</h2>
+                <div id="timer-display" class="hidden mt-1 text-2xl font-black text-amber-400 tabular-nums">0.0</div>
+            </div>
         </div>
     
         <!-- Buzzer Area: นำ Container มารวมกันเพื่อคุมขนาด -->
@@ -340,6 +408,55 @@
                 const hData = data.houses[myHouseId] || {};
                 const buzzerData = data.buzzers || {};
 
+                // อัปเดตส่วนคำถามและตัวเลือก
+                const qArea = document.getElementById('question-content-area');
+            const defaultInfo = document.getElementById('default-info');
+            const qTextEl = document.getElementById('buzzer-q-text');
+            const optionsGrid = document.getElementById('buzzer-options-grid');
+
+            const activeQId = gs.active_question_id;
+            const qData = (data.questions && activeQId) ? data.questions[activeQId] : null;
+
+            if (qData && (gs.status === 'QUESTION' || gs.status === 'STEAL_WAIT')) {
+                qArea.classList.remove('hidden');
+                defaultInfo.classList.add('hidden');
+
+                // ใส่โจทย์
+                qTextEl.innerText = qData.question_text;
+
+                // ใส่ตัวเลือก (ถ้ามี)
+                if (qData.options && qData.options.trim() !== "") {
+                    optionsGrid.classList.remove('hidden');
+                    const choices = qData.options.split(/\r?\n|\\n/).filter(line => line.trim() !== "");
+                    const labels = ['A', 'B', 'C', 'D'];
+
+                    const currentAnswering = (gs.status === 'STEAL_WAIT' && buzzerData.winner)
+                        ? buzzerData.winner
+                        : gs.active_house;
+
+                    // เช็คสิทธิ์: บ้านเราเป็นคนตอบหรือไม่
+                    const isMyTurn = currentAnswering == myHouseId;
+
+                    optionsGrid.innerHTML = choices.slice(0, 4).map((choice, idx) => {
+                        let cleanChoice = choice.trim().replace(/^[A-D][.:]\s*/i, "");
+                        const isSelected = gs.selected_answer === idx;
+
+                        return `
+            <div onclick="${isMyTurn ? `window.selectJeopardyAnswer(${idx})` : ''}" 
+                 class="buzzer-opt b-opt-${idx} ${isSelected ? 'is-selected' : ''} 
+                 ${!isMyTurn ? 'opacity-40 grayscale-[0.5]' : 'active:scale-95 cursor-pointer shadow-md'}">
+                <b class="text-xl">${labels[idx]}</b>
+                <span>${cleanChoice}</span>
+            </div>`;
+                    }).join('');
+                } else {
+                    optionsGrid.classList.add('hidden');
+                }
+            } else {
+                qArea.classList.add('hidden');
+                defaultInfo.classList.remove('hidden');
+            }
+
                 // 1. อัปเดตสถิติตัวเลข (คะแนนและเทิร์น)
                 const scoreEl = document.getElementById('my-score');
                 const turnsEl = document.getElementById('my-turns');
@@ -477,6 +594,38 @@
                     }
                 }
             }
+
+            window.selectJeopardyAnswer = async function (answerIndex) {
+                    // 1. ตรวจสอบสถานะเบื้องต้น
+                    if (isStunned) return; // ถ้าโดนล็อคปุ่มอยู่ห้ามกด
+
+                    const gs = gameState.game_state;
+                    if (!gs || gs.status === 'BOARD') return;
+
+                    // 2. เช็คสิทธิ์: ต้องเป็นบ้านที่เป็นคนตอบปัจจุบันเท่านั้น
+                    const buzzerData = gameState.buzzers || {};
+                    const currentAnswering = (gs.status === 'STEAL_WAIT' && buzzerData.winner)
+                        ? buzzerData.winner
+                        : gs.active_house;
+
+                    if (currentAnswering != myHouseId) {
+                        // ถ้าไม่ใช่คิวเราตอบ (อาจจะกดเล่นๆ) ไม่ต้องส่งค่าไป
+                        return;
+                    }
+
+                    try {
+                        // 3. อัปเดตคำตอบที่เลือกลง Firebase
+                        // ใช้คำสั่ง update จาก firebase/database (มี import อยู่แล้วด้านบน)
+                        await update(ref(db, 'jeopardy/game_state'), {
+                            selected_answer: answerIndex
+                        });
+
+                        // เล่นเสียงเบาๆ ให้รู้ว่ากดติด
+                        if (typeof playBeep === 'function') playBeep(550, 0.05);
+                    } catch (e) {
+                        console.error("Select Answer Error:", e);
+                    }
+                };
 
             window.handleBuzzIn = async function () {
                     const now = Date.now();
