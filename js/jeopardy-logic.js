@@ -42,40 +42,58 @@ let isBannerManuallyClosed = false;
 // 3. Main Listener (Real-time Sync)
 // ---------------------------------------------------------
 onValue(ref(db, 'jeopardy'), (snapshot) => {
-    const data = snapshot.val() || {};
+    const data = snapshot.val();
+
+    // 1. ถ้าไม่มีข้อมูลเลย (Firebase ว่างเปล่า) ให้สร้างโครงสร้างใหม่แล้วจบการทำงานรอบนี้
+    if (!data || !data.config) {
+        initializeGameStructure();
+        return;
+    }
+
+    // 2. ดักฟังคำสั่งขึ้น Banner (เฉพาะหน้า Board)
+    // ตรวจสอบข้อมูลแบบลึก (Deep Check) ป้องกัน Error ตั้งแต่บรรทัดแรก
+    if (window.isBoardPage && data.game_state) {
+        const oldTs = state?.game_state?.manual_result_ts || 0;
+        const newTs = data.game_state.manual_result_ts || 0;
+        const hasActiveQ = data.game_state.active_question_id;
+        const isNotBoard = data.game_state.status !== 'BOARD';
+
+        // ถ้ามีการกดตัดสินใหม่ และมีคำถามเปิดอยู่จริง ถึงจะโชว์ Banner
+        if (isNotBoard && hasActiveQ && newTs > oldTs) {
+            window.showResultBanner(data.game_state.manual_result);
+        }
+    }
+
+    // 3. [สำคัญ] อัปเดตข้อมูลลงตัวแปร state หลัก ก่อนจะเริ่ม Render ส่วนอื่นๆ
     state = data;
 
-    // 1. จัดการปุ่ม Toggle (เฉพาะหน้า Admin)
-    const btn = document.getElementById('btn-toggle-game');
-    if (btn && state.config) {
+    // 4. จัดการปุ่ม Toggle (เฉพาะหน้า Admin)
+    const btnToggle = document.getElementById('btn-toggle-game');
+    if (btnToggle && state.config) {
         const isActive = state.config.is_active;
-        btn.innerText = isActive ? "ปิดเกมซ่อนทางเข้า (ON)" : "เปิดเกมให้น้องเข้า (OFF)";
-        btn.className = isActive
+        btnToggle.innerText = isActive ? "ปิดเกมซ่อนทางเข้า (ON)" : "เปิดเกมให้น้องเข้า (OFF)";
+        btnToggle.className = isActive
             ? "flex-1 md:flex-none bg-red-600 text-white px-6 py-2.5 rounded-xl font-black text-xs hover:bg-red-700 transition-all shadow-md"
             : "flex-1 md:flex-none bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-black text-xs hover:bg-emerald-700 transition-all shadow-md";
     }
 
-    if (!state.config) {
-        initializeGameStructure();
-    } else {
-        // 2. อัปเดตข้อมูลพื้นฐาน (ใช้ safeSetText เพื่อป้องกัน Error)
-        safeSetText('display-round', state.config.current_round);
-        safeSetText('display-turn-house', state.game_state.active_house || 'END');
-        safeSetText('display-active-house', state.game_state.active_house || '-');
+    // 5. อัปเดตข้อมูลพื้นฐาน (ใช้ Optional Chaining ?. เพื่อกันพัง)
+    safeSetText('display-round', state.config?.current_round || 1);
+    safeSetText('display-turn-house', state.game_state?.active_house || 'END');
+    safeSetText('display-active-house', state.game_state?.active_house || '-');
 
-        // 3. หน้า Admin Tools
-        if (document.getElementById('houses-list')) renderHouseStatus();
-        if (document.getElementById('jeopardy-grid')) renderQuestionGrid();
-        if (document.getElementById('questions-table-body')) renderQuestionsTable();
+    // 6. หน้า Admin Tools: ตรวจสอบ Elements ก่อนสั่ง Render
+    if (document.getElementById('houses-list')) renderHouseStatus();
+    if (document.getElementById('jeopardy-grid')) renderQuestionGrid();
+    if (document.getElementById('questions-table-body')) renderQuestionsTable();
 
-        // 4. หน้า Admin Dashboard (Panel)
-        const panelIdle = document.getElementById('panel-idle');
-        if (panelIdle) renderDashboard();
+    // 7. หน้า Admin Dashboard (Panel)
+    const panelIdle = document.getElementById('panel-idle');
+    if (panelIdle) renderDashboard();
 
-        // 5. หน้า Board (Projector)
-        if (window.isBoardPage) {
-            renderBoard();
-        }
+    // 8. หน้า Board (Projector)
+    if (window.isBoardPage) {
+        renderBoard(); // ฟังก์ชันนี้จะไปเรียก updateBoardGameState อีกที
     }
 });
 
@@ -161,6 +179,10 @@ function renderActiveQuestion(gs) {
     const q = state.questions?.[gs.active_question_id];
     if (!q) return;
 
+    const selectedIdx = gs.selected_answer;
+    const labels = ['A', 'B', 'C', 'D'];
+    const choices = q.options ? q.options.split(/\r?\n|\\n/).filter(line => line.trim() !== "") : [];
+    const hasOptions = q.options && q.options.trim() !== "";
     const optionsText = q.options
         ? q.options.replace(/\\n/g, '\n') // เปลี่ยนตัวอักษร \n เป็นการขึ้นบรรทัดใหม่
         : "ไม่มีตัวเลือก (ข้อเขียน)";
@@ -181,6 +203,25 @@ function renderActiveQuestion(gs) {
     const timerIcon = document.getElementById('timer-icon');
     const timerText = document.getElementById('timer-text');
 
+    let choicePreviewHTML = "";
+    if (selectedIdx !== null && selectedIdx !== undefined) {
+        const selectedText = choices[selectedIdx] ? choices[selectedIdx].trim().replace(/^[A-D][.:]\s*/i, "") : "ไม่พบข้อความ";
+        choicePreviewHTML = `
+            <div class="mb-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-2xl animate-fade-in">
+                <p class="text-[10px] font-black text-blue-500 uppercase mb-2">Student's Selection (น้องเลือกข้อนี้):</p>
+                <div class="flex items-center gap-3">
+                    <span class="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-black text-xl shadow-md">${labels[selectedIdx]}</span>
+                    <p class="font-bold text-slate-700 text-sm">${selectedText}</p>
+                </div>
+                <button onclick="window.checkCurrentOption()" 
+                    class="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl font-black text-xs shadow-lg transition-all active:scale-95">
+                    🔍 ตรวจคำตอบนี้ (โชว์ Banner บนบอร์ด)
+                </button>
+            </div>
+        `;
+    }
+
+
     if (timerBtn) {
         if (gs.is_timer_running) {
             timerBtn.className = "bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md hover:bg-amber-600 transition-all flex items-center gap-2";
@@ -194,6 +235,35 @@ function renderActiveQuestion(gs) {
     }
 
     if (!ctrlOwner || !ctrlStealOpen || !ctrlStealJudge) return;
+
+    // ปรับปรุงปุ่มใน ctrl-owner (เจ้าของข้อ)
+    if (ctrlOwner) {
+        ctrlOwner.innerHTML = choicePreviewHTML + `
+            <p class="text-xs font-black text-slate-600 mb-3 text-center">ตัดสิน: บ้านเจ้าของข้อ (บ้าน <span class="text-blue-600">${gs.active_house}</span>)</p>
+            <div class="flex gap-2">
+                <button onclick="window.triggerManualResult(true); judgeOwner(true);" 
+                    class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md transition-all">✅ ถูก</button>
+                <button onclick="window.triggerManualResult(false); judgeOwner(false);" 
+                    class="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-xl font-bold border border-red-200 transition-all">❌ ผิด</button>
+            </div>
+        `;
+    }
+
+    // ปรับปรุงปุ่มใน ctrl-steal-judge (คนขโมยตอบ)
+    if (ctrlStealJudge) {
+        ctrlStealJudge.innerHTML = `
+            <div class="flex items-center justify-between mb-3">
+                <p class="text-xs font-black text-purple-700">ตัดสิน: บ้านที่กด Steal ได้</p>
+                <span class="bg-purple-600 text-white px-3 py-1 rounded-full text-sm font-black shadow-md">บ้าน ${state.buzzers.winner}</span>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="judgeSteal(true); ${!hasOptions ? 'window.triggerManualResult(true)' : ''}" 
+                    class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md">✅ ถูก (+เต็ม)</button>
+                <button onclick="judgeSteal(false); ${!hasOptions ? 'window.triggerManualResult(false)' : ''}" 
+                    class="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold shadow-md">❌ ผิด (หักครึ่ง)</button>
+            </div>
+        `;
+    }
 
     // ซ่อนแผงควบคุมทั้งหมดก่อนเพื่อล้างสถานะเก่า
     ctrlOwner.classList.add('hidden');
@@ -617,6 +687,7 @@ window.selectQuestion = async function (qId) {
         status: 'QUESTION',
         active_question_id: qId,
         selected_answer: null,
+        wrong_answers: [],
         answering_house: state.game_state.active_house,
         is_timer_running: true,
         timer_duration: durationMs,
@@ -1252,12 +1323,35 @@ window.confirmOpenQuestion = function (qId) {
 };
 
 // --- ฟังก์ชันแสดงเฉลยแบบ Banner กลางจอ ---
-window.revealAnswerOnBoard = function () {
+window.revealAnswerOnBoard = function (alreadyShownBanner = false) {
     const gs = state.game_state;
     const q = state.questions[gs.active_question_id];
     if (!q) return;
 
-    // อ้างอิง Elements ใน Banner
+    const hasOptions = q.options && q.options.trim() !== "";
+
+    // ถ้ามีตัวเลือก และยังไม่ได้โชว์ Banner (เช่น กดปุ่ม Check บนบอร์ดครั้งแรก)
+    if (hasOptions && !alreadyShownBanner) {
+        const selectedIdx = gs.selected_answer;
+        const labels = ['A', 'B', 'C', 'D'];
+        const choices = q.options.split(/\r?\n|\\n/).filter(line => line.trim() !== "");
+        const correctText = q.answer_text.trim().toLowerCase();
+        
+        let isCorrect = false;
+        if (selectedIdx !== null && selectedIdx !== undefined) {
+            const selectedLabel = labels[selectedIdx].toLowerCase();
+            const selectedFullText = choices[selectedIdx].trim().toLowerCase();
+            
+            // Logic: ถ้าเฉลยขึ้นต้นด้วย "A." หรือในเฉลยมีข้อความตรงกับข้อที่เลือก
+            if (correctText.startsWith(selectedLabel) || correctText.includes(selectedFullText)) {
+                isCorrect = true;
+            }
+        }
+        window.showResultBanner(isCorrect); // ไปโชว์ Banner ก่อนแล้วค่อยกลับมาโชว์เฉลยละเอียด
+        return;
+    }
+
+    // --- ส่วนแสดงเฉลยละเอียด (Detailed Overlay) ---
     const overlay = document.getElementById('answer-banner-overlay');
     const displayAnswer = document.getElementById('banner-answer-text');
     const displayExp = document.getElementById('banner-explanation-text');
@@ -1265,32 +1359,129 @@ window.revealAnswerOnBoard = function () {
     const linkArea = document.getElementById('banner-link-area');
     const expLink = document.getElementById('banner-explanation-link');
 
-    // 1. ใส่คำตอบหลัก
     displayAnswer.innerText = q.answer_text;
 
-    // 2. จัดการคำอธิบาย (Plain Text)
-    if (q.explanation_text && q.explanation_text.trim() !== "") {
+    if (q.explanation_text) {
         displayExp.innerText = q.explanation_text;
         expArea.classList.remove('hidden');
     } else {
         expArea.classList.add('hidden');
     }
 
-    // 3. จัดการปุ่มลิงก์ (Media/Canva)
-    if (q.explain_url && q.explain_url.trim() !== "") {
+    if (q.explain_url) {
         expLink.href = q.explain_url;
         linkArea.classList.remove('hidden');
     } else {
         linkArea.classList.add('hidden');
     }
 
-    // 4. แสดง Banner
+    overlay.classList.remove('hidden');
+    if (gs.is_timer_running) window.toggleTimer();
+};
+
+// --- ฟังก์ชันสำหรับ Admin สั่งให้หน้า Board ขึ้น Banner ถูก/ผิด (ใช้กับข้อเขียน) ---
+window.triggerManualResult = async function (isCorrect) {
+    try {
+        await update(ref(db, 'jeopardy/game_state'), {
+            manual_result: isCorrect,
+            manual_result_ts: Date.now() // ใส่ timestamp เพื่อให้ Board รู้ว่ามีการกดใหม่
+        });
+    } catch (e) {
+        console.error("Trigger Manual Result Error:", e);
+    }
+};
+
+// --- ฟังก์ชันตรวจสอบคำตอบที่ Admin เลือก และสั่งให้ขึ้น Banner (ใช้กับข้อมีตัวเลือก) ---
+window.checkCurrentOption = function () {
+    const gs = state?.game_state;
+    const q = state?.questions?.[gs?.active_question_id];
+
+    // 1. ตรวจสอบเบื้องต้นว่ามีข้อมูลครบไหม
+    if (!gs || !q) {
+        console.warn("Check failed: Missing game state or question data.");
+        return;
+    }
+
+    // 2. ถ้ายังไม่มีใครเลือกข้อไหนเลย
+    if (gs.selected_answer === null || gs.selected_answer === undefined) {
+        if (typeof showToast === 'function') showToast("น้องยังไม่ได้เลือกคำตอบ", "warning");
+        return;
+    }
+
+    const labels = ['A', 'B', 'C', 'D'];
+
+    // 3. จัดการตัวเลือก (ตรวจสอบว่ามีตัวเลือกจริงไหม)
+    const optionsRaw = q.options || "";
+    const choices = optionsRaw.split(/\r?\n|\\n/).filter(line => line.trim() !== "");
+
+    // 4. ตรวจสอบว่า Index ที่เลือก มีข้อมูลใน Array จริงๆ หรือไม่ (ป้องกัน Error toLowerCase)
+    const rawSelectedChoice = choices[gs.selected_answer];
+    if (!rawSelectedChoice) {
+        console.error("Selected choice is undefined at index:", gs.selected_answer);
+        return;
+    }
+
+    // 5. ทำความสะอาดข้อมูลก่อนเปรียบเทียบ
+    const correctText = (q.answer_text || "").trim().toLowerCase();
+    const selectedLabel = labels[gs.selected_answer].toLowerCase();
+    const selectedFullText = rawSelectedChoice.trim().toLowerCase().replace(/^[A-D][.:]\s*/i, "");
+
+    // 6. Logic ตรวจสอบ: ถูกถ้าเฉลยขึ้นต้นด้วย Label (เช่น 'a') หรือในเฉลยมีข้อความคำตอบนั้นอยู่
+    const isCorrect = correctText.startsWith(selectedLabel) || correctText.includes(selectedFullText);
+
+    if (!isCorrect) {
+        let wrongList = gs.wrong_answers || [];
+        if (!wrongList.includes(gs.selected_answer)) {
+            wrongList.push(gs.selected_answer);
+            // อัปเดตรายการข้อที่ผิดลง Firebase
+            update(ref(db, 'jeopardy/game_state'), {
+                wrong_answers: wrongList
+            });
+        }
+    }
+
+    // สั่งขึ้น Banner
+    window.triggerManualResult(isCorrect);
+};
+
+// --- ฟังก์ชันแสดง Banner (ย้ายมาเป็นฟังก์ชันกลางเพื่อให้เรียกใช้ซ้ำได้) ---
+window.showResultBanner = function (isCorrect) {
+
+    if (!state || !state.game_state || !state.game_state.active_question_id) {
+        console.warn("Banner trigger ignored: Game state or active_question_id is missing.");
+        return;
+    }
+    
+    const q = state.questions[state.game_state.active_question_id];
+    if (!q) return;
+
+    const overlay = document.getElementById('result-check-overlay');
+    const card = document.getElementById('result-card');
+    const icon = document.getElementById('result-icon');
+    const title = document.getElementById('result-title');
+    const subtitle = document.getElementById('result-subtitle');
+
+    if (!overlay) return;
+
     overlay.classList.remove('hidden');
 
-    // 5. หยุดเวลา
-    if (state.game_state.is_timer_running) {
-        window.toggleTimer();
+    if (isCorrect) {
+        card.className = "w-[80vw] max-w-4xl p-16 rounded-[4rem] text-center shadow-2xl bg-emerald-500 border-8 border-white animate-pop";
+        icon.innerText = "✅";
+        title.innerText = "CORRECT";
+        subtitle.innerText = "คำตอบถูกต้อง!";
+        if (typeof confetti === 'function') confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#10b981', '#ffffff'] });
+    } else {
+        card.className = "w-[80vw] max-w-4xl p-16 rounded-[4rem] text-center shadow-2xl bg-red-600 border-8 border-white animate-pop";
+        icon.innerText = "❌";
+        title.innerText = "WRONG";
+        subtitle.innerText = "ยังไม่ถูกนะ...";
     }
+
+    // ปิด Banner และโชว์เฉลยละเอียด
+    setTimeout(() => {
+        overlay.classList.add('hidden');
+    }, 2500);
 };
 
 // --- ฟังก์ชันปิด Banner ---
@@ -1498,19 +1689,19 @@ function updateBoardGameState() {
             optionsContainer.classList.remove('hidden');
             const choices = q.options.split(/\r?\n|\\n/).filter(line => line.trim() !== "");
             const labels = ['A', 'B', 'C', 'D'];
+            const wrongAnswers = gs.wrong_answers || []; 
 
             optionsContainer.innerHTML = choices.slice(0, 4).map((choice, index) => {
                 let cleanChoice = choice.trim().replace(/^[A-D][.:]\s*/i, "");
                 const isSelected = gs.selected_answer === index;
-
+                const isWrong = wrongAnswers.includes(index);
+                
                 return `
-            <div onclick="window.selectJeopardyAnswer(${index})" 
-                class="kahoot-option opt-${index} ${isSelected ? 'is-selected' : ''} cursor-pointer transition-all hover:scale-[1.02]">
-                <span class="kahoot-letter">${labels[index]}</span>
-                <span class="kahoot-text">
-                    ${cleanChoice}
-                </span>
-            </div>`;
+            <div onclick="${isWrong ? '' : `window.selectJeopardyAnswer(${index})`}" 
+        class="kahoot-option opt-${index} ${isSelected ? 'is-selected' : ''} ${isWrong ? 'is-disabled' : 'cursor-pointer'}">
+        <span class="kahoot-letter">${labels[index]}</span>
+        <span class="kahoot-text">${cleanChoice} ${isWrong ? ' (✖)' : ''}</span>
+    </div>`;
             }).join('');
 
             optionsContainer.className = "kahoot-grid revealed";
