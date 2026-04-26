@@ -483,6 +483,8 @@
                     const gs = gameState.game_state;
                     const buzz = gameState.buzzers;
                     const myHouseIdInt = parseInt(myHouseId);
+                    const randomDelay = gs.steal_random_delay || 1000;
+                const greenStartTime = gs.steal_start_ts + 4000 + randomDelay; // คำนวณหาเวลาที่ไฟเขียวควรติดจริง
 
                     if (isStunned || now - lastClickTime < 5000) return;
                     lastClickTime = now;
@@ -496,7 +498,7 @@
                     }
 
                     // --- [ระบบ STUN: กดก่อนเวลา] ---
-                    if (!gs?.is_steal_open) {
+                    if (!gs?.is_steal_open || now < greenStartTime) {
                         if (gs?.status === 'STEAL_WAIT') {
                             isStunned = true;
                             const btn = document.getElementById('main-buzzer');
@@ -566,21 +568,23 @@
     function renderBuzzerLights(gs) {
             if (!gs.steal_start_ts) return '';
             const elapsed = Date.now() - gs.steal_start_ts;
+            const randomDelay = gs.steal_random_delay || 1000;
             const activeCount = Math.floor(elapsed / 800);
-            const isGreen = activeCount >= 5; // ดวงที่ 5 ติดแล้วเตรียมเขียว
 
             const lights = [1, 2, 3, 4, 5];
+            const isHoldPhase = activeCount >= 5;
+
             return `
         <div class="flex gap-2 justify-center mb-6">
             ${lights.map(i => `
                 <div class="w-8 h-8 rounded-full border-2 border-slate-700 
-                    ${activeCount >= i ? (activeCount >= 6 ? 'bg-emerald-500' : 'bg-red-600') : 'bg-slate-900'}">
+                    ${activeCount >= i ? 'bg-red-600' : 'bg-slate-900'}">
                 </div>
             `).join('')}
         </div>
+        <p class="text-[10px] font-bold text-red-500 animate-pulse">${isHoldPhase ? 'HOLD IT!!!' : 'WAIT...'}</p>
     `;
         }
-
         document.addEventListener('touchstart', function (event) {
                 if (event.touches.length > 1) {
                     event.preventDefault(); // ป้องกันการใช้ 2 นิ้วขยาย
