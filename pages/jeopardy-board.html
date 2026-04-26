@@ -18,6 +18,18 @@
             background-color: #f8fafc;
             color: #1e293b;
         }
+
+        /* แอนิเมชันเมื่อคะแนนมีการเปลี่ยนแปลง */
+@keyframes score-pop {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.5); color: #22c55e; } /* ขยายและเปลี่ยนเป็นสีเขียวชั่วคราว */
+    100% { transform: scale(1); }
+}
+
+.score-animate {
+    display: inline-block; /* จำเป็นเพื่อให้ transform ทำงานได้ */
+    animation: score-pop 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
     
         /* Kahoot-Style Options Grid */
         .kahoot-grid {

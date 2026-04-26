@@ -179,40 +179,36 @@ function renderActiveQuestion(gs) {
     const q = state.questions?.[gs.active_question_id];
     if (!q) return;
 
+    // 1. ดึงสถานะต่างๆ และตัวแปรพื้นฐาน
+    const optionsText = q.options ? q.options.replace(/\\n/g, '\n') : "ไม่มีตัวเลือก (ข้อเขียน)";
     const selectedIdx = gs.selected_answer;
     const labels = ['A', 'B', 'C', 'D'];
     const choices = q.options ? q.options.split(/\r?\n|\\n/).filter(line => line.trim() !== "") : [];
-    const hasOptions = q.options && q.options.trim() !== "";
-    const optionsText = q.options
-        ? q.options.replace(/\\n/g, '\n') // เปลี่ยนตัวอักษร \n เป็นการขึ้นบรรทัดใหม่
-        : "ไม่มีตัวเลือก (ข้อเขียน)";
+    const isJudged = gs.is_judged || false; // ดึงสถานะว่าตัดสินไปหรือยัง
 
-    // 1. อัปเดตข้อมูลโจทย์และเฉลยบนหน้าจอ Admin
-    safeSetText('aq-category', q.category);
-    safeSetText('aq-level', q.level);
-    safeSetText('aq-points', q.points);
-    safeSetText('aq-text', q.question_text);
-    safeSetText('aq-options', optionsText);
-    safeSetText('aq-answer', q.answer_text);
+    // 2. เตรียม HTML สำหรับปุ่ม "จบคำถาม"
+    const finalizeBtnHTML = `
+        <div class="mt-4 pt-4 border-t-2 border-slate-200 animate-fade-in">
+            <button onclick="window.finalizeQuestion()" 
+                class="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-2xl font-black shadow-2xl transition-all flex flex-col items-center justify-center gap-1 active:scale-95 border-2 border-slate-700">
+                <span class="text-[10px] text-slate-400 uppercase tracking-widest">Done / Next Player</span>
+                <span class="text-base flex items-center gap-2">🏁 จบคำถามนี้ และเปลี่ยนคิว</span>
+            </button>
+        </div>
+    `;
 
-    // 2. อ้างอิง Panel ต่างๆ
-    const ctrlOwner = document.getElementById('ctrl-owner');
-    const ctrlStealOpen = document.getElementById('ctrl-steal-open');
-    const ctrlStealJudge = document.getElementById('ctrl-steal-judge');
-    const timerBtn = document.getElementById('btn-toggle-timer');
-    const timerIcon = document.getElementById('timer-icon');
-    const timerText = document.getElementById('timer-text');
-
+    // 3. เตรียม HTML สำหรับแสดงสิ่งที่น้องเลือก (MCQ Preview)
     let choicePreviewHTML = "";
     if (selectedIdx !== null && selectedIdx !== undefined) {
         const selectedText = choices[selectedIdx] ? choices[selectedIdx].trim().replace(/^[A-D][.:]\s*/i, "") : "ไม่พบข้อความ";
         choicePreviewHTML = `
             <div class="mb-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-2xl animate-fade-in">
-                <p class="text-[10px] font-black text-blue-500 uppercase mb-2">Student's Selection (น้องเลือกข้อนี้):</p>
+                <p class="text-[10px] font-black text-blue-500 uppercase mb-2">Student's Selection:</p>
                 <div class="flex items-center gap-3">
                     <span class="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-black text-xl shadow-md">${labels[selectedIdx]}</span>
                     <p class="font-bold text-slate-700 text-sm">${selectedText}</p>
                 </div>
+                <!-- ปุ่มตรวจคำตอบ MCQ -->
                 <button onclick="window.checkCurrentOption()" 
                     class="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl font-black text-xs shadow-lg transition-all active:scale-95">
                     🔍 ตรวจคำตอบนี้ (โชว์ Banner บนบอร์ด)
@@ -221,83 +217,95 @@ function renderActiveQuestion(gs) {
         `;
     }
 
+    // 4. อัปเดตข้อมูล Text พื้นฐานบนจอ Admin
+    safeSetText('aq-category', q.category);
+    safeSetText('aq-level', q.level);
+    safeSetText('aq-points', q.points);
+    safeSetText('aq-text', q.question_text);
+    safeSetText('aq-options', optionsText);
+    safeSetText('aq-answer', q.answer_text);
 
-    if (timerBtn) {
-        if (gs.is_timer_running) {
-            timerBtn.className = "bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md hover:bg-amber-600 transition-all flex items-center gap-2";
-            timerIcon.innerText = "⏸️";
-            timerText.innerText = "หยุดเวลา";
-        } else {
-            timerBtn.className = "bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md hover:bg-emerald-600 transition-all flex items-center gap-2 animate-pulse";
-            timerIcon.innerText = "▶️";
-            timerText.innerText = "เดินเวลาต่อ";
-        }
-    }
+    // 5. จัดการแผงควบคุม (Owner / Steal)
+    const ctrlOwner = document.getElementById('ctrl-owner');
+    const ctrlStealOpen = document.getElementById('ctrl-steal-open');
+    const ctrlStealJudge = document.getElementById('ctrl-steal-judge');
 
     if (!ctrlOwner || !ctrlStealOpen || !ctrlStealJudge) return;
 
-    // ปรับปรุงปุ่มใน ctrl-owner (เจ้าของข้อ)
-    if (ctrlOwner) {
-        ctrlOwner.innerHTML = choicePreviewHTML + `
-            <p class="text-xs font-black text-slate-600 mb-3 text-center">ตัดสิน: บ้านเจ้าของข้อ (บ้าน <span class="text-blue-600">${gs.active_house}</span>)</p>
-            <div class="flex gap-2">
-                <button onclick="window.triggerManualResult(true); judgeOwner(true);" 
-                    class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md transition-all">✅ ถูก</button>
-                <button onclick="window.triggerManualResult(false); judgeOwner(false);" 
-                    class="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-xl font-bold border border-red-200 transition-all">❌ ผิด</button>
-            </div>
-        `;
-    }
-
-    // ปรับปรุงปุ่มใน ctrl-steal-judge (คนขโมยตอบ)
-    if (ctrlStealJudge) {
-        ctrlStealJudge.innerHTML = `
-            <div class="flex items-center justify-between mb-3">
-                <p class="text-xs font-black text-purple-700">ตัดสิน: บ้านที่กด Steal ได้</p>
-                <span class="bg-purple-600 text-white px-3 py-1 rounded-full text-sm font-black shadow-md">บ้าน ${state.buzzers.winner}</span>
-            </div>
-            <div class="flex gap-2">
-                <button onclick="judgeSteal(true); ${!hasOptions ? 'window.triggerManualResult(true)' : ''}" 
-                    class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md">✅ ถูก (+เต็ม)</button>
-                <button onclick="judgeSteal(false); ${!hasOptions ? 'window.triggerManualResult(false)' : ''}" 
-                    class="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold shadow-md">❌ ผิด (หักครึ่ง)</button>
-            </div>
-        `;
-    }
-
-    // ซ่อนแผงควบคุมทั้งหมดก่อนเพื่อล้างสถานะเก่า
+    // ซ่อนทุดอย่างก่อนเพื่อเตรียมแสดงตามสถานะ
     ctrlOwner.classList.add('hidden');
     ctrlStealOpen.classList.add('hidden');
     ctrlStealJudge.classList.add('hidden');
 
-    // 3. แสดงแผงควบคุมตามสถานะปัจจุบัน (gs.status)
-    if (gs.status === 'QUESTION') {
-        // --- ช่วงที่ 1: เจ้าของข้อกำลังตอบ ---
-        ctrlOwner.classList.remove('hidden');
-        safeSetText('ctrl-owner-house', gs.active_house);
-    }
-    else if (gs.status === 'STEAL_WAIT') {
-        // --- ช่วงที่ 2: รอการ Steal ---
+    const hasOptions = q.options && q.options.trim() !== "";
 
-        if (state.buzzers?.winner) {
-            // จังหวะที่ A: มีบ้านกดติดแล้ว -> แสดงปุ่มตัดสินคะแนน
-            ctrlStealJudge.classList.remove('hidden');
-            safeSetText('steal-winner-badge', `บ้าน ${state.buzzers.winner}`);
+    // -- CASE A: คิวเจ้าของข้อ (Owner Phase) --
+    if (gs.status === 'QUESTION') {
+        ctrlOwner.classList.remove('hidden');
+
+        if (isJudged) {
+            // ตัดสินแล้ว: โชว์สถานะสำเร็จ และปุ่มจบคำถาม
+            ctrlOwner.innerHTML = `
+                <div class="p-4 bg-emerald-50 border-2 border-emerald-200 rounded-2xl text-center">
+                    <p class="text-emerald-600 font-black text-sm mb-1">✅ ตัดสินคะแนนเรียบร้อย</p>
+                    <p class="text-slate-400 text-[10px] uppercase">คุณสามารถอธิบายเพิ่มก่อนจบข้อนี้ได้</p>
+                </div>
+                ${finalizeBtnHTML}
+            `;
         } else {
-            // จังหวะที่ B: ยังไม่มีคนกดติด -> แสดงปุ่มให้ Admin สั่งเปิดระบบ
+            // ยังไม่ตัดสิน: โชว์ปุ่มให้คะแนนปกติ
+            ctrlOwner.innerHTML = choicePreviewHTML + `
+                <p class="text-xs font-black text-slate-600 mb-3 text-center uppercase tracking-widest">Judge Owner: House ${gs.active_house}</p>
+                <div class="flex gap-2">
+                    <button onclick="window.triggerManualResult(true); judgeOwner(true);" 
+                        class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md transition-all active:scale-95">✅ ถูก</button>
+                    <button onclick="window.triggerManualResult(false); judgeOwner(false);" 
+                        class="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-xl font-bold border border-red-200 transition-all active:scale-95">❌ ผิด</button>
+                </div>
+            `;
+        }
+    }
+    // -- CASE B: คิวขโมย (Steal Phase) --
+    else if (gs.status === 'STEAL_WAIT') {
+        if (state.buzzers?.winner) {
+            ctrlStealJudge.classList.remove('hidden');
+
+            if (isJudged) {
+                // ตัดสิน Steal แล้ว: โชว์ปุ่มจบคำถาม
+                ctrlStealJudge.innerHTML = `
+                    <div class="p-4 bg-purple-50 border-2 border-purple-200 rounded-2xl text-center">
+                        <p class="text-purple-600 font-black text-sm mb-1">🎯 ตัดสิน Steal เรียบร้อย</p>
+                        <p class="text-slate-400 text-[10px] uppercase tracking-tighter">ข้ามไปข้อถัดไปเมื่อพร้อม</p>
+                    </div>
+                    ${finalizeBtnHTML}
+                `;
+            } else {
+                // รอ Admin ตัดสินคนขโมย
+                ctrlStealJudge.innerHTML = choicePreviewHTML + `
+                    <div class="flex items-center justify-between mb-3">
+                        <p class="text-xs font-black text-purple-700 uppercase">Judge Stealer</p>
+                        <span class="bg-purple-600 text-white px-3 py-1 rounded-full text-sm font-black shadow-md italic">House ${state.buzzers.winner}</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="window.triggerManualResult(true); judgeSteal(true);" 
+                            class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md transition-all active:scale-95">✅ ถูก</button>
+                        <button onclick="window.triggerManualResult(false); judgeSteal(false);" 
+                            class="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold shadow-md transition-all active:scale-95">❌ ผิด</button>
+                    </div>
+                `;
+            }
+        } else {
+            // รอเปิด Steal
             ctrlStealOpen.classList.remove('hidden');
             const btnSteal = ctrlStealOpen.querySelector('button');
-
             if (gs.is_steal_open) {
-                // ระบบเปิดอยู่แต่ยังไม่มีคนกด
                 btnSteal.innerText = "⏳ ระบบเปิดแล้ว... รอน้องกดปุ่ม";
                 btnSteal.disabled = true;
                 btnSteal.className = "w-full bg-slate-200 text-slate-500 py-4 rounded-xl font-black cursor-not-allowed";
             } else {
-                // ระบบยังปิดอยู่ (รอ Admin สั่ง 3-2-1)
-                btnSteal.innerText = "⚡ ปล่อยไฟเหลือง (เริ่ม STEAL)";
+                btnSteal.innerText = "⚡ ปล่อยสัญญาณ STEAL (ไฟเหลือง)";
                 btnSteal.disabled = false;
-                btnSteal.className = "w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black shadow-lg shadow-orange-200 animate-pulse transition-all";
+                btnSteal.className = "w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black shadow-lg shadow-orange-200 animate-pulse transition-all active:scale-95";
             }
         }
     }
@@ -524,6 +532,7 @@ function renderBoard() {
 }
 
 
+let lastScores = {};
 function renderBoardScoreboard() {
     const container = document.getElementById('scoreboard');
     if (!container || !state.houses) return;
@@ -537,6 +546,8 @@ function renderBoardScoreboard() {
         const correct = h.correct_points || 0;
         const penalty = h.penalty_points || 0;
         const score = h.jeopardy_score || 0;
+        const isChanged = lastScores[hId] !== undefined && lastScores[hId] !== score;
+        lastScores[hId] = score;
 
         // ตรวจสอบสถานะออนไลน์และ Ping
         const isOnline = h.active_session_id && (Date.now() - (h.last_active_ts || 0) < 10000);
@@ -557,29 +568,29 @@ function renderBoardScoreboard() {
                     ${hId}
                 </div>
                 
-                <!-- 2. ส่วนคะแนนหลัก -->
+                <!-- 2. ส่วนคะแนนหลัก (ที่มี Animation) -->
                 <div class="flex-1">
-                    <p class="text-2xl font-black ${isActive ? 'text-blue-700' : 'text-slate-800'} leading-none">
+                    <p class="text-2xl font-black ${isActive ? 'text-blue-700' : 'text-slate-800'} leading-none ${isChanged ? 'score-animate' : ''}">
                         ${score}
                     </p>
                 </div>
 
+                <!-- 3. ส่วนสถานะ Ping -->
                 <div class="flex flex-col items-end">
-                    <span class="text-md font-mono ${isOnline ? 'text-emerald-500' : 'text-slate-300'}">
+                    <span class="text-[10px] font-mono ${isOnline ? 'text-emerald-500' : 'text-slate-300'}">
                         ${isOnline ? ping + 'ms' : 'OFFLINE'}
                     </span>
-                    <span class="text-[10px]">${lagWarning}</span>
                 </div>
 
-                <!-- 3. ส่วนสถิติละเอียด (Correct / Penalty) -->
-                <div class="flex flex-col items-end text-lg font-bold leading-tight border-x border-slate-100 px-2 min-w-[65px]">
+                <!-- 4. ส่วนสถิติละเอียด (Correct / Penalty) -->
+                <div class="flex flex-col items-end text-sm font-bold leading-tight border-x border-slate-100 px-2 min-w-[55px]">
                     <span class="text-emerald-500">+${correct}</span>
                     <span class="text-red-400">-${penalty}</span>
                 </div>
 
-                <!-- 4. ส่วน Turns และสถานะ -->
-                <div class="text-right flex flex-col items-end gap-1 min-w-[50px]">
-                    <span class="text-md font-black text-black uppercase">T: ${h.turns_played}/2</span>
+                <!-- 5. ส่วน Turns และสถานะพิเศษ -->
+                <div class="text-right flex flex-col items-end gap-1 min-w-[45px]">
+                    <span class="text-[11px] font-black text-black uppercase">T: ${h.turns_played || 0}/2</span>
                     <div class="flex items-center">
                         ${isActive ? '<span class="text-blue-500 text-[10px] animate-bounce">●</span>' : ''}
                         ${isBuzzerWinner ? '<span class="text-orange-500 text-sm">🔔</span>' : ''}
@@ -826,17 +837,27 @@ async function processNextTurn(winnerHouseId = null, points = 0, isPenalty = fal
 window.judgeOwner = async function (isCorrect) {
     await saveUndoState();
     const gs = state.game_state;
-    const turnHouse = state.config.picking_house_order[gs.current_turn_index];
     const q = state.questions[gs.active_question_id];
+    const houseId = gs.active_house;
 
     if (isCorrect) {
-        await processNextTurn(turnHouse, q.points, false);
-        showToast(`บ้าน ${turnHouse} ตอบถูก! ได้ ${q.points} คะแนน`);
+        const house = state.houses[houseId];
+        const newCorrect = (house.correct_points || 0) + q.points;
+        const newScore = newCorrect - (house.penalty_points || 0);
+
+        await update(ref(db), {
+            [`jeopardy/houses/${houseId}/correct_points`]: newCorrect,
+            [`jeopardy/houses/${houseId}/jeopardy_score`]: newScore,
+            [`jeopardy/questions/${gs.active_question_id}/winner_house`]: houseId,
+            [`jeopardy/game_state/is_judged`]: true // บันทึกว่าตัดสินแล้ว
+        });
+        showToast(`บวกคะแนนให้บ้าน ${houseId} เรียบร้อย`, "success");
     } else {
         await update(ref(db, 'jeopardy/game_state'), {
             status: 'STEAL_WAIT',
             is_steal_open: false,
-            is_timer_running: false
+            is_timer_running: false,
+            is_judged: false // ยังไม่จบ เพราะต้องรอ Steal
         });
         showToast("เจ้าของข้อตอบผิด! เตรียมตัว STEAL", "warning");
     }
@@ -886,19 +907,33 @@ function renderF1Lights(elapsed) {
 
 window.judgeSteal = async function (isCorrect) {
     await saveUndoState();
+    const gs = state.game_state;
+    const q = state.questions[gs.active_question_id];
     const winnerHouse = state.buzzers.winner;
-    const q = state.questions[state.game_state.active_question_id];
-    if (countdownInterval) clearInterval(countdownInterval); // หยุดการนับเวลาถอยหลัง
-    countdownInterval = null;
+
+    if (!winnerHouse) return;
+    const house = state.houses[winnerHouse];
 
     if (isCorrect) {
-        await processNextTurn(winnerHouse, q.points, false);
-        showToast(`บ้าน ${winnerHouse} STEAL สำเร็จ! +${q.points}`, "success");
+        const newCorrect = (house.correct_points || 0) + q.points;
+        const newScore = newCorrect - (house.penalty_points || 0);
+        await update(ref(db), {
+            [`jeopardy/houses/${winnerHouse}/correct_points`]: newCorrect,
+            [`jeopardy/houses/${winnerHouse}/jeopardy_score`]: newScore,
+            [`jeopardy/questions/${gs.active_question_id}/winner_house`]: winnerHouse,
+            [`jeopardy/game_state/is_judged`]: true
+        });
+        showToast(`บ้าน ${winnerHouse} Steal สำเร็จ!`, "success");
     } else {
         const penalty = Math.ceil(q.points / 2);
-        // ตอบผิดโดนหักคะแนน (Penalty)
-        await processNextTurn(winnerHouse, penalty, true);
-        showToast(`บ้าน ${winnerHouse} ตอบผิด! หัก -${penalty}`, "error");
+        const newPenalty = (house.penalty_points || 0) + penalty;
+        const newScore = (house.correct_points || 0) - newPenalty;
+        await update(ref(db), {
+            [`jeopardy/houses/${winnerHouse}/penalty_points`]: newPenalty,
+            [`jeopardy/houses/${winnerHouse}/jeopardy_score`]: newScore,
+            [`jeopardy/game_state/is_judged`]: true // ตัดสินแล้ว (แม้จะผิด)
+        });
+        showToast(`บ้าน ${winnerHouse} ตอบผิด หักคะแนนเรียบร้อย`, "error");
     }
 };
 
@@ -910,6 +945,38 @@ window.skipHouseTurn = async function () {
         showToast("ข้ามคิวบ้านนี้แล้ว", "info");
     }
 }
+
+window.finalizeQuestion = async function () {
+    const gs = state.game_state;
+    if (!gs.active_question_id) return;
+
+    // 1. เพิ่ม Turns Played ให้บ้านที่เป็นเจ้าของคิวเลือก (ไม่ว่าใครจะตอบถูก/ผิด)
+    const turnHouseId = gs.active_house;
+    const currentTurns = state.houses[turnHouseId].turns_played || 0;
+
+    // 2. คำนวณคิวถัดไป
+    let nextIndex = gs.current_turn_index + 1;
+    let nextRound = state.config.current_round;
+    if (nextIndex >= state.config.picking_house_order.length) {
+        nextIndex = 0;
+        nextRound++;
+    }
+
+    const updates = {};
+    updates[`jeopardy/houses/${turnHouseId}/turns_played`] = currentTurns + 1;
+    updates[`jeopardy/config/current_round`] = nextRound;
+    updates[`jeopardy/game_state/current_turn_index`] = nextIndex;
+    updates[`jeopardy/game_state/active_house`] = state.config.picking_house_order[nextIndex];
+    updates[`jeopardy/game_state/status`] = 'BOARD'; // กลับไปหน้าบอร์ด
+    updates[`jeopardy/game_state/active_question_id`] = null;
+    updates[`jeopardy/game_state/is_timer_running`] = false;
+    updates[`jeopardy/game_state/is_judged`] = false; // Reset สถานะการตัดสิน
+    updates[`jeopardy/game_state/selected_answer`] = null;
+    updates[`jeopardy/game_state/wrong_answers`] = [];
+
+    await update(ref(db), updates);
+    showToast("จบคำถามและเปลี่ยนเทิร์นแล้ว");
+};
 
 window.resetCurrentQuestion = async function () {
     const res = await Swal.fire({ title: 'ล้างสถานะข้อนี้?', text: 'จะกลับสู่หน้า Board โดยไม่คิดคะแนนและไม่นับ Turn', icon: 'error', showCancelButton: true });
