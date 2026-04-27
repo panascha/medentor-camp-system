@@ -241,6 +241,15 @@ document.getElementById('input-id').oninput = (e) => {
 };
 
 // ค้นหาด้วยชื่อ (Fuzzy)
+function setupFuzzySearch(students) {
+    const options = {
+        keys: ['fullName', 'nickname', 'id'], // กำหนดฟิลด์ที่ต้องการใช้ค้นหา
+        threshold: 0.4, // ค่าความแม่นยำในการค้นหาคำใกล้เคียง (0.0 = เป๊ะมาก, 1.0 = มั่วได้เยอะ)
+    };
+    // คืนค่าออบเจกต์ Fuse กลับไปตามที่ไลบรารี Fuse.js กำหนด
+    return new Fuse(students, options);
+}
+
 document.getElementById('input-name').oninput = (e) => {
     const query = e.target.value;
     const box = document.getElementById('suggest-box');
