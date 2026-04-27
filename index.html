@@ -417,13 +417,33 @@
                         <button onclick="revealRoom()"
                             class="text-blue-600 font-black uppercase tracking-tighter hover:underline">คลิกเพื่อลุ้นห้องเรียน</button>
                     </div>
+                    <!-- [Card: Room Reveal - ส่วนที่แก้ไขใหม่] -->
                     <div id="room-reveal-state"
                         class="hidden flex flex-col items-center justify-center py-6 animate-[wiggle_0.5s_ease-in-out]">
-                        <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">ยินดีด้วย! คุณได้อยู่</p>
-                        <div class="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-blue-600 to-indigo-800 mb-2"
+                        <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">ยินดีด้วย! กลุ่มของคุณคือ</p>
+                        <div class="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-blue-600 to-indigo-800 mb-4"
                             id="display-class-id">?</div>
-                        <p class="text-slate-700 font-bold" id="display-class-name">ห้องเรียน -</p>
+                    
+                        <!-- ส่วนแสดงเลขห้องแยกอาคาร -->
+                        <div class="grid grid-cols-2 gap-3 w-full max-w-[280px]">
+                            <div class="bg-blue-50 p-3 rounded-2xl border border-blue-100 text-center shadow-sm">
+                                <p class="text-[9px] font-black text-blue-500 uppercase tracking-tighter mb-1">อาคารเรียน (MD)</p>
+                                <p class="text-2xl font-black text-blue-800" id="display-room-md">-</p>
+                            </div>
+                            <div class="bg-emerald-50 p-3 rounded-2xl border border-emerald-100 text-center shadow-sm">
+                                <p class="text-[9px] font-black text-emerald-600 uppercase tracking-tighter mb-1">คณะทันตะ (DT)</p>
+                                <p class="text-2xl font-black text-emerald-800" id="display-room-dt">-</p>
+                            </div>
+                        </div>
+                    
+                        <!-- หมายเหตุพิเศษ -->
+                        <div class="mt-4 px-4 py-2 bg-slate-50 rounded-xl border border-slate-200">
+                            <p class="text-[10px] text-slate-500 font-bold text-center italic">
+                                📍 เฉพาะวันที่ <span class="text-emerald-600">29/04</span> เข้าเรียนที่คณะทันตะ (DT)
+                            </p>
+                        </div>
                     </div>
+
                 </div>
         
                 <!-- Card: Post-test Results -->
@@ -638,51 +658,67 @@
                 } catch (e) { console.error(e); }
             }
         // --- ส่วนจัดการหน้าจอ Dashboard นักเรียน ---
-        function renderStudentDashboard(data) {
-            // [1] จัดการเรื่องประกาศห้องเรียน
-            const hiddenState = document.getElementById('room-hidden-state');
-            const revealState = document.getElementById('room-reveal-state');
+        // --- ส่วนจัดการหน้าจอ Dashboard นักเรียน ---
+            function renderStudentDashboard(data) {
+                // [1] จัดการเรื่องประกาศห้องเรียน
+                const hiddenState = document.getElementById('room-hidden-state');
+                const revealState = document.getElementById('room-reveal-state');
 
-            if (data.classID) {
-                document.getElementById('display-class-id').innerText = data.classID;
-                document.getElementById('display-class-name').innerText = `ห้องเรียน ${data.classID}`;
+                // ตารางข้อมูลห้องเรียนตามกลุ่ม
+                const ROOM_DATA = {
+                    'A': { md: '3501', dt: 'DT1' },
+                    'B': { md: '3502', dt: 'DT2' },
+                    'C': { md: '3504', dt: 'DT3' },
+                    'D': { md: '3505', dt: 'DT4' }
+                };
 
-                // ตรวจสอบว่า "เคยเปิดดูหรือยัง" โดยอ้างอิงจาก ID ของตัวเอง
-                const hasRevealed = localStorage.getItem(`roomRevealed_${data.id}`);
+                if (data.classID) {
+                    const groupKey = data.classID.toUpperCase(); // เช่น 'A'
 
-                if (hasRevealed === 'true') {
-                    // ถ้าเคยเปิดแล้ว ให้โชว์เลย ไม่ต้องมีปุ่มกดและพลุ
-                    hiddenState.classList.add('hidden');
-                    revealState.classList.remove('hidden');
+                    // แสดงชื่อกลุ่ม
+                    document.getElementById('display-class-id').innerText = groupKey;
+
+                    // ดึงเลขห้องจากตาราง ROOM_DATA มาแสดง (อาคาร MD และ DT)
+                    if (ROOM_DATA[groupKey]) {
+                        document.getElementById('display-room-md').innerText = ROOM_DATA[groupKey].md;
+                        document.getElementById('display-room-dt').innerText = ROOM_DATA[groupKey].dt;
+                    }
+
+                    // ตรวจสอบว่า "เคยเปิดดูหรือยัง" โดยอ้างอิงจาก ID ของตัวเอง
+                    const hasRevealed = localStorage.getItem(`roomRevealed_${data.id}`);
+
+                    if (hasRevealed === 'true') {
+                        // ถ้าเคยเปิดแล้ว ให้โชว์เลย ไม่ต้องมีปุ่มกดและพลุ
+                        hiddenState.classList.add('hidden');
+                        revealState.classList.remove('hidden');
+                    }
+                } else {
+                    // กรณี Admin ยังไม่จัดห้อง
+                    hiddenState.innerHTML = `<p class="text-slate-400 text-sm italic py-10">รอประกาศรายชื่อห้องเรียนเร็วๆ นี้...</p>`;
                 }
-                // ถ้ายังไม่เคยเปิด ระบบจะค้างไว้ที่ State 🎁 ตาม HTML ปกติ
-            } else {
-                // กรณี Admin ยังไม่จัดห้อง
-                hiddenState.innerHTML = `<p class="text-slate-400 text-sm italic py-10">รอประกาศรายชื่อห้องเรียนเร็วๆ นี้...</p>`;
-            }
 
-            // [2] จัดการเรื่องคะแนน Post-test
-            const scoreLoading = document.getElementById('score-loading');
-            const scoreDisplay = document.getElementById('score-display');
-            const scorePending = document.getElementById('score-pending');
+                // [2] จัดการเรื่องคะแนน Post-test (ส่วนเดิมของคุณ)
+                const scoreLoading = document.getElementById('score-loading');
+                const scoreDisplay = document.getElementById('score-display');
+                const scorePending = document.getElementById('score-pending');
 
-            if (data.posttest && data.posttest.recordedBy) {
-                scoreLoading.classList.add('hidden');
-                scoreDisplay.classList.remove('hidden');
+                if (data.posttest && data.posttest.recordedBy) {
+                    scoreLoading.classList.add('hidden');
+                    scoreDisplay.classList.remove('hidden');
 
-                const p = data.posttest;
-                document.getElementById('total-post-score').innerHTML = `${p.total} <span class="text-lg text-white/50">/ 60</span>`;
+                    const p = data.posttest;
+                    document.getElementById('total-post-score').innerHTML = `${p.total} <span class="text-lg text-white/50">/ 60</span>`;
 
-                const subjects = [
-                    { label: 'Physic', val: p.physic, max: 15 },
-                    { label: 'Chemistry', val: p.chemistry, max: 15 },
-                    { label: 'Biology', val: p.biology, max: 6 },
-                    { label: 'IntroDent', val: p.introdent, max: 12 },
-                    { label: 'IntroMed', val: p.intromed, max: 12 }
-                ];
+                    const subjects = [
+                        { label: 'Physic', val: p.physic, max: 15 },
+                        { label: 'Chemistry', val: p.chemistry, max: 15 },
+                        { label: 'Biology', val: p.biology, max: 6 },
+                        { label: 'IntroDent', val: p.introdent, max: 12 },
+                        { label: 'IntroMed', val: p.intromed, max: 12 }
+                    ];
 
-                const barContainer = document.getElementById('subject-bars');
-                barContainer.innerHTML = subjects.map(s => `
+                    const barContainer = document.getElementById('subject-bars');
+                    barContainer.innerHTML = subjects.map(s => `
                     <div>
                         <div class="flex justify-between text-[10px] mb-1">
                             <span class="text-slate-400 font-bold uppercase">${s.label}</span>
@@ -693,12 +729,11 @@
                         </div>
                     </div>
                 `).join('');
-            } else {
-                scoreLoading.classList.add('hidden');
-                scorePending.classList.remove('hidden');
+                } else {
+                    scoreLoading.classList.add('hidden');
+                    scorePending.classList.remove('hidden');
+                }
             }
-        }
-
         // --- ฟังก์ชันกดสุ่มเปิดห้อง (ทำได้ครั้งเดียว) ---
         function revealRoom() {
             const user = checkAuth();
