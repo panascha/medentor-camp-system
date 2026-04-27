@@ -256,6 +256,13 @@
                 <div id="timer-display" class="hidden mt-1 text-2xl font-black text-amber-400 tabular-nums">0.0</div>
             </div>
         </div>
+
+        <div id="f1-lights-outer" class="hidden w-full flex flex-col items-center animate-fade-in">
+            <div id="f1-lights-container" class="flex gap-3 mb-2">
+                <!-- ไฟ 5 ดวงจะถูกสร้างที่นี่ -->
+            </div>
+            <p id="f1-status-text" class="text-xs font-black text-red-500 uppercase tracking-[0.3em] animate-pulse">HOLD IT!</p>
+        </div>
     
         <!-- Buzzer Area: นำ Container มารวมกันเพื่อคุมขนาด -->
         <div class="relative flex items-center justify-center">
@@ -512,6 +519,8 @@
                     const isWinner = buzzerData.winner == myHouseId;
                     const someoneElseWon = buzzerData.winner && buzzerData.winner != myHouseId;
                     const isOwner = gs.active_house === myHouseIdInt;
+                    const f1Outer = document.getElementById('f1-lights-outer');
+
                     if (isOwner) {
                         // ถ้าเป็นเจ้าของข้อ ให้ล็อคปุ่มถาวรในเฟสนี้
                         statusText.innerText = "WAITING FOR STEAL";
@@ -559,20 +568,22 @@
                             btn.classList.add('bg-red-950', 'border-red-900');
                         }
                     }
-                    else if (gs.countdown_active) {
-                        // ช่วงไฟกำลังวิ่ง 1-2-3-4-5
+                    if (gs.countdown_active) {
+                        // --- ช่วงไฟแดงวิ่ง ---
+                        renderBuzzerLights(gs); // เรียกฟังก์ชันวาดไฟ
+
                         statusText.innerText = "COUNTDOWN...";
-                        questionInfo.innerHTML = renderBuzzerLights(gs);
                         icon.innerText = "🛑";
                         text.innerText = "WAIT...";
-                        btn.disabled = false; // ให้กดได้เพื่อ trigger STUN (กรณีแอบกดก่อน)
+                        btn.disabled = false;
                         btn.className = "buzzer-btn relative rounded-full bg-slate-900 border-[8px] border-red-900 flex flex-col items-center justify-center opacity-100";
 
-                        // สั่งอัปเดตหน้าจอเพื่อดึงเฟรมถัดไป
-                        setTimeout(() => updateUI(gameState), 100);
-                    }
+                        // หน่วงเวลา loop เพื่อความลื่นไหลของไฟ
+                        setTimeout(() => updateUI(gameState), 50);
+                    } 
                     else if (gs.is_steal_open) {
                         // ไฟเขียวแล้ว (Released)
+                        f1Outer.classList.add('hidden');
                         statusText.innerText = "STEAL NOW!";
                         statusText.classList.add('text-emerald-400');
                         questionInfo.innerHTML = `<p class="text-emerald-500 font-black text-2xl animate-bounce">GO GO GO!</p>`;
@@ -588,6 +599,7 @@
                         if (icon) icon.innerText = "✋";
                         if (text) text.innerText = "GET READY";
 
+                        f1Outer.classList.add('hidden');
                         btn.disabled = false; // ให้กดได้เพื่อ trigger showEarlyAlert
                         btn.classList.add('bg-indigo-950', 'border-indigo-800');
                         if (statusDot) statusDot.classList.add('bg-indigo-400');
@@ -715,24 +727,33 @@
     }
 
     function renderBuzzerLights(gs) {
-            if (!gs.steal_start_ts) return '';
+            const container = document.getElementById('f1-lights-container');
+            const outer = document.getElementById('f1-lights-outer');
+            if (!container || !gs.steal_start_ts) return;
+
             const elapsed = Date.now() - gs.steal_start_ts;
-            const randomDelay = gs.steal_random_delay || 1000;
             const activeCount = Math.floor(elapsed / 800);
-
             const lights = [1, 2, 3, 4, 5];
-            const isHoldPhase = activeCount >= 5;
 
-            return `
-        <div class="flex gap-2 justify-center mb-6">
-            ${lights.map(i => `
-                <div class="w-8 h-8 rounded-full border-2 border-slate-700 
-                    ${activeCount >= i ? 'bg-red-600' : 'bg-slate-900'}">
-                </div>
-            `).join('')}
-        </div>
-        <p class="text-[10px] font-bold text-red-500 animate-pulse">${isHoldPhase ? 'HOLD IT!!!' : 'WAIT...'}</p>
-    `;
+            outer.classList.remove('hidden'); // แสดงแผงไฟ
+
+            container.innerHTML = lights.map(i => {
+                const isOn = activeCount >= i;
+                return `
+            <div class="w-10 h-10 rounded-full border-4 border-slate-800 shadow-inner transition-all duration-150
+                ${isOn ? 'bg-red-600 shadow-[0_0_20px_#dc2626]' : 'bg-slate-900'}">
+            </div>
+        `;
+            }).join('');
+
+            const statusTxt = document.getElementById('f1-status-text');
+            if (activeCount >= 5) {
+                statusTxt.innerText = "HOLD IT!!!";
+                statusTxt.className = "text-sm font-black text-red-500 tracking-[0.3em] animate-bounce";
+            } else {
+                statusTxt.innerText = "WAIT FOR LIGHTS...";
+                statusTxt.className = "text-xs font-bold text-slate-500 tracking-widest";
+            }
         }
         document.addEventListener('touchstart', function (event) {
                 if (event.touches.length > 1) {
