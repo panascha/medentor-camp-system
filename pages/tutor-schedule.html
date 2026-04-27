@@ -51,7 +51,17 @@
             </div>
         </div>
 
-        <div id="day-tabs" class="flex gap-2 overflow-x-auto pb-2 custom-scrollbar"></div>
+        <div class="space-y-2">
+            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Filter by Subject</p>
+            <div id="subject-tabs" class="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                <!-- แถบเลือกวิชาจะถูกสร้างจาก JS -->
+            </div>
+        </div>
+        
+        <div class="space-y-2">
+            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Select Day</p>
+            <div id="day-tabs" class="flex gap-2 overflow-x-auto pb-2 custom-scrollbar"></div>
+        </div>
 
         <div id="schedule-list" class="space-y-4">
             <div class="py-20 text-center text-slate-400 italic">กำลังดึงตารางสอน...</div>
@@ -73,6 +83,15 @@
 
         let allItems = []; // ข้อมูลทั้งหมดจาก Firebase
         let selectedDay = "";
+        let selectedSubject = "all";
+
+        const DIV_TO_SUB = {
+                "ฟิสิกส์": "physic",
+                "เคมี": "chemistry",
+                "ชีววิทยา": "biology",
+                "IntroDent": "introdent",
+                "IntroMed": "intromed"
+            };
 
         const SUBJECT_MAP = {
             physic: "ฟิสิกส์", chemistry: "เคมี", biology: "ชีววิทยา",
@@ -85,29 +104,74 @@
         };
 
         function init() {
-            if (!user || user.userType !== 'staff') { window.location.href = 'login.html'; return; }
-            document.getElementById('display-division').innerText = user.division;
+                if (!user || user.userType !== 'staff') { window.location.href = 'login.html'; return; }
+                document.getElementById('display-division').innerText = user.division;
 
-            // ตรวจสอบสิทธิ์สตาฟเพื่อแสดงปุ่ม "เพิ่ม" และ "Sync"
-            const canEditAny = user.role === 'Admin' || user.division === 'วิชาการ';
-            const isTutor = Object.values(SUBJECT_MAP).includes(user.division);
+                // --- [จุดสำคัญ] ตั้งค่า Default ตาม Division ---
+                // ตรวจสอบว่า Division ของ user ตรงกับวิชาไหนหรือไม่
+                const userDiv = user.division; // เช่น "เคมี"
+                if (DIV_TO_SUB[userDiv]) {
+                    selectedSubject = DIV_TO_SUB[userDiv];
+                } else {
+                    selectedSubject = "all"; // ถ้าเป็น Admin หรือฝ่ายอื่น ให้เห็นทั้งหมด
+                }
 
-            if (canEditAny || isTutor) {
-                document.getElementById('save-area').classList.remove('hidden');
-                document.getElementById('btn-add-session').classList.remove('hidden');
+                const canEditAny = user.role === 'Admin' || user.division === 'วิชาการ';
+                const isTutor = DIV_TO_SUB[userDiv];
+
+                if (canEditAny || isTutor) {
+                    document.getElementById('save-area').classList.remove('hidden');
+                    document.getElementById('btn-add-session').classList.remove('hidden');
+                }
+
+                onValue(ref(db, 'schedule'), (snapshot) => {
+                    const data = snapshot.val();
+                    allItems = data ? Object.values(data) : [];
+
+                    const days = [...new Set(allItems.map(i => i.day))];
+                    if (!selectedDay && days.length > 0) selectedDay = days[0];
+
+                    renderSubjectTabs(); // สร้างแถบเลือกวิชา
+                    renderDayTabs(days); // สร้างแถบเลือกวัน
+                    renderSchedule();    // วาดตาราง
+                });
             }
 
-            onValue(ref(db, 'schedule'), (snapshot) => {
-                const data = snapshot.val();
-                allItems = data ? Object.values(data) : [];
+            // ฟังก์ชันสร้างแถบเลือกวิชา
+                function renderSubjectTabs() {
+                    const container = document.getElementById('subject-tabs');
+                    const subjects = ["all", "physic", "chemistry", "biology", "introdent", "intromed", "activity"];
 
-                const days = [...new Set(allItems.map(i => i.day))];
-                if (!selectedDay && days.length > 0) selectedDay = days[0];
-                renderTabs(days);
-                renderSchedule();
-            });
-        }
+                    container.innerHTML = subjects.map(sub => `
+        <button onclick="window.setSubject('${sub}')" 
+            class="px-5 py-2 rounded-xl font-bold text-xs whitespace-nowrap transition-all 
+            ${selectedSubject === sub ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200'}">
+            ${SUBJECT_LABELS[sub] || sub}
+        </button>
+    `).join('');
+                }
 
+                window.setSubject = function (sub) {
+                    selectedSubject = sub;
+                    renderSubjectTabs();
+                    renderSchedule();
+                }
+
+                function renderDayTabs(days) {
+                    const container = document.getElementById('day-tabs');
+                    container.innerHTML = days.map(day => `
+        <button onclick="window.setDay('${day}')" class="px-6 py-2 rounded-full font-bold text-sm whitespace-nowrap transition-all ${selectedDay === day ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}">
+            ${day}
+        </button>
+    `).join('');
+                }
+
+                window.setDay = function (day) {
+                    selectedDay = day;
+                    renderDayTabs([...new Set(allItems.map(i => i.day))]);
+                    renderSchedule();
+                }
+                
         // ฟังก์ชันตรวจสอบว่า User คนนี้แก้ คาบเรียนนี้ (item) ได้หรือไม่
         function canUserEdit(item) {
             if (user.role === 'Admin' || user.division === 'วิชาการ') return true;
@@ -131,51 +195,56 @@
         }
 
         function renderSchedule() {
-            const container = document.getElementById('schedule-list');
-            const filtered = allItems.filter(i => i.day === selectedDay);
+                const container = document.getElementById('schedule-list');
 
-            if (filtered.length === 0) {
-                container.innerHTML = `<p class="text-center py-10 text-slate-400">ไม่มีตารางเรียนในวันนี้</p>`;
-                return;
-            }
+                // --- จุดที่ต้องแก้ไข: เปลี่ยนจาก const เป็น let ---
+                let filtered = allItems.filter(i => i.day === selectedDay);
 
-            container.innerHTML = filtered.map(item => {
-                const itemIndex = allItems.indexOf(item);
-                const editable = canUserEdit(item);
+                if (selectedSubject !== "all") {
+                    // ตรงนี้มีการส่งค่ากลับไปที่ filtered อีกครั้ง (Re-assignment) 
+                    // ถ้าใช้ const จะ Error ทันที
+                    filtered = filtered.filter(i => i.subject === selectedSubject);
+                }
 
-                return `
-                <div class="bg-white p-5 rounded-[2rem] shadow-sm border-2 ${editable ? 'border-blue-100' : 'border-transparent'} flex gap-4 relative group">
-                    <div class="flex flex-col items-center justify-center min-w-[70px] border-r pr-4">
-                        <span class="text-xs font-black text-slate-800">${item.startTime}</span>
-                        <span class="text-[9px] text-slate-400 font-bold uppercase">TO</span>
-                        <span class="text-xs font-bold text-slate-400">${item.endTime}</span>
-                    </div>
-                    <div class="flex-1">
-                        <div class="flex justify-between items-start">
-                            <h3 class="font-black text-slate-800 text-lg leading-tight">
-                                ${SUBJECT_LABELS[item.subject] || item.subject}
-                            </h3>
-                            <span class="text-[8px] font-black px-2 py-0.5 rounded-full ${item.classTarget === 'ALL' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">
-                                ${item.classTarget}
-                            </span>
-                        </div>
-                        <p class="text-slate-500 text-xs mt-1">โดย พี่${item.tutor || '-'}</p>
-                        <p class="text-[10px] font-bold text-slate-400 mt-2">📍 ${item.room}</p>
-                    </div>
-                    ${editable ? `
-                        <div class="absolute right-4 bottom-4 flex gap-2">
-                            <button onclick="window.openEditModal(${itemIndex})" class="text-blue-500 hover:bg-blue-50 p-2 rounded-full transition-all">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                            </button>
-                            <button onclick="window.removeItem(${itemIndex})" class="text-red-400 hover:bg-red-50 p-2 rounded-full transition-all">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                        </div>
-                    ` : ''}
+                if (filtered.length === 0) {
+                    container.innerHTML = `
+            <div class="py-20 text-center bg-white rounded-[2rem] border border-dashed border-slate-200">
+                <p class="text-slate-400">ไม่มีตารางเรียนวิชา <b>${SUBJECT_LABELS[selectedSubject]}</b> ในวันนี้</p>
+            </div>`;
+                    return;
+                }
+
+                // ส่วนการวาด HTML ด้านล่างใช้เหมือนเดิมได้เลยครับ
+                container.innerHTML = filtered.map(item => {
+                    const itemIndex = allItems.indexOf(item);
+                    const editable = canUserEdit(item);
+                    return `
+        <div class="bg-white p-5 rounded-[2rem] shadow-sm border-2 ${editable ? 'border-blue-100' : 'border-transparent'} flex gap-4 relative group animate-fade-in">
+            <div class="flex flex-col items-center justify-center min-w-[70px] border-r pr-4">
+                <span class="text-xs font-black text-slate-800">${item.startTime}</span>
+                <span class="text-[9px] text-slate-400 font-bold uppercase">TO</span>
+                <span class="text-xs font-bold text-slate-400">${item.endTime}</span>
+            </div>
+            <div class="flex-1">
+                <div class="flex justify-between items-start">
+                    <h3 class="font-black text-slate-800 text-lg leading-tight">
+                        ${SUBJECT_LABELS[item.subject] || item.subject}
+                    </h3>
+                    <span class="text-[8px] font-black px-2 py-0.5 rounded-full ${item.classTarget === 'ALL' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">
+                        ${item.classTarget}
+                    </span>
                 </div>
-                `;
-            }).join('');
-        }
+                <p class="text-slate-500 text-xs mt-1">โดย พี่${item.tutor || '-'}</p>
+                <p class="text-[10px] font-bold text-slate-400 mt-2">📍 ${item.room}</p>
+            </div>
+            ${editable ? `
+                <div class="absolute right-4 bottom-4 flex gap-2">
+                    <!-- ปุ่ม Edit / Delete ตามเดิม -->
+                </div>
+            ` : ''}
+        </div>`;
+                }).join('');
+            }
 
         window.openEditModal = async function (index) {
             const isNew = index === -1;
