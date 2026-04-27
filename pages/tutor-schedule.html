@@ -28,11 +28,6 @@
                 กลับ
             </a>
             <h1 class="text-lg font-black text-slate-800 italic uppercase">Teaching Plan</h1>
-            <div id="save-area" class="hidden">
-                <button onclick="saveAllToSheets()"
-                    class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-lg shadow-emerald-100">Sync
-                    All</button>
-            </div>
         </div>
     </nav>
 
@@ -108,7 +103,6 @@
                 document.getElementById('display-division').innerText = user.division;
 
                 // --- ปรับส่วนนี้: ให้สตาฟทุกคนเห็นปุ่มจัดการตาราง ---
-                document.getElementById('save-area').classList.remove('hidden');
                 document.getElementById('btn-add-session').classList.remove('hidden');
 
                 // ส่วนที่เหลือคงเดิม...
@@ -316,9 +310,8 @@
                 else allItems[index] = formValues;
 
                 // จัดเรียงตามเวลาใหม่ (Sort)
-                allItems.sort((a, b) => a.day.localeCompare(b.day) || a.startTime.localeCompare(b.startTime));
                 renderSchedule();
-                showToast("อัปเดตรายการแล้ว อย่าลืมกด Sync เพื่อบันทึก", "info");
+                await autoSync(); // ซิงค์ข้อมูลทันทีหลังแก้ไข
             }
         };
 
@@ -334,6 +327,7 @@
             if (res.isConfirmed) {
                 allItems.splice(index, 1);
                 renderSchedule();
+                await autoSync(); // ซิงค์ข้อมูลทันทีหลังแก้ไข
             }
         };
 
@@ -371,7 +365,48 @@
             }
         };
 
-        init();
+        async function autoSync() {
+                // สร้างฟังก์ชันแจ้งเตือนใช้เองชั่วคราวกรณี utils.js ยังโหลดไม่เสร็จ
+                const toast = (msg, icon = 'success') => {
+                    if (window.showToast) {
+                        window.showToast(msg, icon);
+                    } else {
+                        Swal.fire({
+                            toast: true,
+                            position: 'top-end',
+                            showConfirmButton: false,
+                            timer: 3000,
+                            timerProgressBar: true,
+                            icon: icon,
+                            title: msg
+                        });
+                    }
+                };
+
+                try {
+                    // 1. บันทึกลง Firebase (Real-time)
+                    // ใช้ตัวแปร db และ allItems ที่มีอยู่ใน Scope ของ script module นี้อยู่แล้ว
+                    await set(ref(db, 'schedule'), allItems);
+
+                    // 2. ส่งไป Google Sheets (Background Sync)
+                    fetch(CONFIG.appscriptUrl, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { "Content-Type": "text/plain" },
+                        body: JSON.stringify({
+                            action: "updateFullSchedule",
+                            key: CONFIG.syncKey,
+                            scheduleArray: allItems
+                        })
+                    });
+
+                    toast("บันทึกข้อมูลอัตโนมัติแล้ว", "success");
+                } catch (e) {
+                    console.error("AutoSync Error:", e);
+                    toast("บันทึกลง Firebase ล้มเหลว", "error");
+                }
+            }
+            init();
     </script>
 </body>
 
