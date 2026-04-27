@@ -53,10 +53,18 @@ onValue(ref(db, 'jeopardy'), (snapshot) => {
     // 2. ดักฟังคำสั่งขึ้น Banner (เฉพาะหน้า Board)
     // ตรวจสอบข้อมูลแบบลึก (Deep Check) ป้องกัน Error ตั้งแต่บรรทัดแรก
     if (window.isBoardPage && data.game_state) {
+        const gs = data.game_state;
         const oldTs = state?.game_state?.manual_result_ts || 0;
         const newTs = data.game_state.manual_result_ts || 0;
         const hasActiveQ = data.game_state.active_question_id;
         const isNotBoard = data.game_state.status !== 'BOARD';
+        const lastForceClose = state?.game_state?.force_close_banner_ts || 0;
+        const newForceClose = gs.force_close_banner_ts || 0;
+
+
+        if (newForceClose > lastForceClose) {
+            isBannerManuallyClosed = true; // สั่งปิด Banner ในเครื่อง Board นี้ทันที
+        }
 
         // ถ้ามีการกดตัดสินใหม่ และมีคำถามเปิดอยู่จริง ถึงจะโชว์ Banner
         if (isNotBoard && hasActiveQ && newTs > oldTs) {
@@ -187,15 +195,15 @@ function renderActiveQuestion(gs) {
     const isJudged = gs.is_judged || false; // ดึงสถานะว่าตัดสินไปหรือยัง
 
     // 2. เตรียม HTML สำหรับปุ่ม "จบคำถาม"
-    const finalizeBtnHTML = `
-        <div class="mt-4 pt-4 border-t-2 border-slate-200 animate-fade-in">
-            <button onclick="window.finalizeQuestion()" 
-                class="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-2xl font-black shadow-2xl transition-all flex flex-col items-center justify-center gap-1 active:scale-95 border-2 border-slate-700">
-                <span class="text-[10px] text-slate-400 uppercase tracking-widest">Done / Next Player</span>
-                <span class="text-base flex items-center gap-2">🏁 จบคำถามนี้ และเปลี่ยนคิว</span>
-            </button>
-        </div>
-    `;
+    // const finalizeBtnHTML = `
+    //     <div class="mt-4 pt-4 border-t-2 border-slate-200 animate-fade-in">
+    //         <button onclick="window.finalizeQuestion()" 
+    //             class="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-2xl font-black shadow-2xl transition-all flex flex-col items-center justify-center gap-1 active:scale-95 border-2 border-slate-700">
+    //             <span class="text-[10px] text-slate-400 uppercase tracking-widest">Done / Next Player</span>
+    //             <span class="text-base flex items-center gap-2">🏁 จบคำถามนี้ และเปลี่ยนคิว</span>
+    //         </button>
+    //     </div>
+    // `;
 
     // 3. เตรียม HTML สำหรับแสดงสิ่งที่น้องเลือก (MCQ Preview)
     let choicePreviewHTML = "";
@@ -244,25 +252,22 @@ function renderActiveQuestion(gs) {
         ctrlOwner.classList.remove('hidden');
 
         if (isJudged) {
-            // ตัดสินแล้ว: โชว์สถานะสำเร็จ และปุ่มจบคำถาม
             ctrlOwner.innerHTML = `
-                <div class="p-4 bg-emerald-50 border-2 border-emerald-200 rounded-2xl text-center">
-                    <p class="text-emerald-600 font-black text-sm mb-1">✅ ตัดสินคะแนนเรียบร้อย</p>
-                    <p class="text-slate-400 text-[10px] uppercase">คุณสามารถอธิบายเพิ่มก่อนจบข้อนี้ได้</p>
-                </div>
-                ${finalizeBtnHTML}
-            `;
+            <div class="p-4 bg-emerald-50 border-2 border-emerald-200 rounded-2xl text-center">
+                <p class="text-emerald-600 font-black text-sm mb-1">✅ ตัดสินคะแนนเรียบร้อย</p>
+                <p class="text-slate-400 text-[10px] uppercase">กดปุ่มสีแดงด้านบนเพื่อเริ่มข้อถัดไป</p>
+            </div>
+        `;
         } else {
-            // ยังไม่ตัดสิน: โชว์ปุ่มให้คะแนนปกติ
             ctrlOwner.innerHTML = choicePreviewHTML + `
-                <p class="text-xs font-black text-slate-600 mb-3 text-center uppercase tracking-widest">Judge Owner: House ${gs.active_house}</p>
-                <div class="flex gap-2">
-                    <button onclick="window.triggerManualResult(true); judgeOwner(true);" 
-                        class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md transition-all active:scale-95">✅ ถูก</button>
-                    <button onclick="window.triggerManualResult(false); judgeOwner(false);" 
-                        class="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-xl font-bold border border-red-200 transition-all active:scale-95">❌ ผิด</button>
-                </div>
-            `;
+            <p class="text-xs font-black text-slate-600 mb-3 text-center uppercase tracking-widest">Judge Owner: House ${gs.active_house}</p>
+            <div class="flex gap-2">
+                <button onclick="window.triggerManualResult(true); judgeOwner(true);" 
+                    class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-md transition-all active:scale-95">✅ ถูก</button>
+                <button onclick="window.triggerManualResult(false); judgeOwner(false);" 
+                    class="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-xl font-bold border border-red-200 transition-all active:scale-95">❌ ผิด / ข้าม</button>
+            </div>
+        `;
         }
     }
     // -- CASE B: คิวขโมย (Steal Phase) --
@@ -277,7 +282,6 @@ function renderActiveQuestion(gs) {
                         <p class="text-purple-600 font-black text-sm mb-1">🎯 ตัดสิน Steal เรียบร้อย</p>
                         <p class="text-slate-400 text-[10px] uppercase tracking-tighter">ข้ามไปข้อถัดไปเมื่อพร้อม</p>
                     </div>
-                    ${finalizeBtnHTML}
                 `;
             } else {
                 // รอ Admin ตัดสินคนขโมย
@@ -302,6 +306,16 @@ function renderActiveQuestion(gs) {
                 btnSteal.innerText = "⏳ ระบบเปิดแล้ว... รอน้องกดปุ่ม";
                 btnSteal.disabled = true;
                 btnSteal.className = "w-full bg-slate-200 text-slate-500 py-4 rounded-xl font-black cursor-not-allowed";
+
+                const cancelBtnId = 'admin-cancel-steal-btn';
+                if (!document.getElementById(cancelBtnId)) {
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.id = cancelBtnId;
+                    cancelBtn.innerText = "❌ ไม่มีคนขโมย (ปิดหน้าจอโปรเจกเตอร์)";
+                    cancelBtn.className = "w-full mt-3 bg-red-50 text-red-500 py-2 rounded-xl text-xs font-bold border border-red-100 hover:bg-red-500 hover:text-white transition-all";
+                    cancelBtn.onclick = window.adminForceCloseSteal;
+                    ctrlStealOpen.appendChild(cancelBtn);
+                }
             } else {
                 btnSteal.innerText = "⚡ ปล่อยสัญญาณ STEAL (ไฟเหลือง)";
                 btnSteal.disabled = false;
@@ -949,6 +963,18 @@ window.skipHouseTurn = async function () {
 window.finalizeQuestion = async function () {
     const gs = state.game_state;
     if (!gs.active_question_id) return;
+    
+    // ยืนยันการปิด (เผื่อมือลั่น)
+    const confirm = await Swal.fire({
+        title: 'ยืนยันจบคำถามนี้?',
+        text: "ระบบจะเปลี่ยนคิวไปยังบ้านถัดไปทันที",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'ใช่, จบคำถาม',
+        cancelButtonText: 'ยกเลิก'
+    });
+
+    if (!confirm.isConfirmed) return;
 
     // 1. เพิ่ม Turns Played ให้บ้านที่เป็นเจ้าของคิวเลือก (ไม่ว่าใครจะตอบถูก/ผิด)
     const turnHouseId = gs.active_house;
@@ -1373,6 +1399,21 @@ window.closeStealBanner = function () {
     }
 };
 
+window.adminForceCloseSteal = async function () {
+    try {
+        // อัปเดต State ใน Firebase เพื่อสั่งให้ Board ทุกเครื่องรับทราบ
+        await update(ref(db, 'jeopardy/game_state'), {
+            is_steal_open: false,
+            countdown_active: false,
+            // ส่งสัญญาณพิเศษเพื่อให้ตัวแปร local 'isBannerManuallyClosed' บนบอร์ดทำงาน
+            force_close_banner_ts: Date.now()
+        });
+        showToast("สั่งปิดหน้าจอ Steal บนบอร์ดแล้ว", "info");
+    } catch (e) {
+        console.error(e);
+    }
+};
+
 window.confirmOpenQuestion = function (qId) {
     if (state.game_state.status !== 'BOARD') return;
 
@@ -1697,23 +1738,32 @@ function updateBoardGameState() {
                         countdownHTML = `<p class="text-2xl font-black text-emerald-500 uppercase tracking-[0.5em] animate-bounce">● RELEASED ●</p>`;
                     }
 
-                    stealAlert.innerHTML = `
+                stealAlert.innerHTML = `
         <div class="steal-prep-banner steal-active-banner relative" style="border-color: #10b981; background: #f0fdf4; max-width: 1000px; width: 95vw; padding: 4rem 2rem;">
             ${closeBtn}
             <div class="mb-6">
-                ${winnerId ? `<h2 class="text-8xl font-black text-slate-900 mb-2 italic">บ้าน ${winnerId} ไวที่สุด!</h2>` : `<h2 class="text-8xl font-black text-slate-900 mb-2 italic animate-pulse">กดปุ่มเลย!!!</h2>`}
+                ${winnerId ? `<h2 class="text-8xl font-black text-slate-900 mb-2 italic">บ้าน ${winnerId} ไวที่สุด!</h2>` : `<h2 class="text-8xl font-black text-slate-800 mb-2 italic animate-pulse">กดปุ่มเลย!!!</h2>`}
                 ${countdownHTML}
             </div>
             
             <div class="border-t border-emerald-200 pt-8 mt-4">
                 <p class="text-sm font-black text-slate-400 uppercase tracking-widest mb-6">Reaction Times (Ranked)</p>
-                <!-- ปรับส่วนนี้ให้แสดงผลได้หลายรายการ -->
                 <div class="flex flex-wrap justify-center gap-4 max-h-[300px] overflow-y-auto p-2">
                     ${attemptsHTML || '<p class="text-slate-300 italic">Waiting for first press...</p>'}
                 </div>
             </div>
+
+            <!-- เพิ่มปุ่มนี้เข้าไปด้านล่างสุดของ Modal -->
+            ${!winnerId ? `
+                <div class="mt-8 pt-4 border-t border-emerald-100">
+                    <button onclick="window.closeStealBanner()" 
+                        class="px-6 py-2 bg-white/50 text-slate-400 hover:text-red-500 hover:bg-white rounded-xl text-xs font-bold transition-all border border-slate-200 shadow-sm">
+                        ✕ ไม่มีบ้านไหนขโมย (ปิดหน้าต่างนี้)
+                    </button>
+                </div>
+            ` : ''}
         </div>`;
-                }
+            }
 
             // -- [C] กรณีรอ Admin สั่งเริ่ม --
             else {

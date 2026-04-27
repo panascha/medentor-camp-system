@@ -139,6 +139,19 @@
 
                         <!-- State: Active Question -->
                         <div id="panel-active" class="hidden flex-1 flex flex-col">
+
+                            <!-- Quick Actions -->
+                            <div class="flex justify-between items-center mb-4 p-3 bg-slate-900 rounded-2xl border-2 border-slate-700 shadow-lg">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-[10px] font-black text-amber-400 uppercase tracking-widest">Master Control</span>
+                                </div>
+                                <!-- ปุ่มจบคำถาม (ย้ายมาไว้ตรงนี้เพื่อให้กดได้ตลอด) -->
+                                <button onclick="window.finalizeQuestion()"
+                                    class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-black text-xs shadow-md transition-all active:scale-95 flex items-center gap-2">
+                                    🏁 จบข้อนี้ & เปลี่ยนคิวถัดไป
+                                </button>
+                            </div>
+
                             <!-- Header Info -->
                             <div class="flex justify-between items-start mb-4 border-b pb-4">
                                 <div>
