@@ -9,6 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Fuse.js for fuzzy searching -->
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.js"></script>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="../js/firebase-config.js"></script>
@@ -77,7 +79,13 @@
         <!-- [Form] Student Login -->
         <div id="form-student" class="space-y-4 transition-all duration-500">
             <div class="group">
-                <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">รหัสประจำตัว</label>
+                <div class="flex justify-between items-end mb-1">
+                    <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">รหัสประจำตัว</label>
+                    <!-- ปุ่มกดเพื่อเปิด Modal ค้นหา -->
+                    <button onclick="openIdLookup()" class="text-[10px] text-blue-600 font-bold hover:underline mb-0.5 mr-2">
+                        🔍 ลืม ID? ค้นหาด้วยชื่อ
+                    </button>
+                </div>
                 <input type="text" id="std-id" placeholder="ตัวอย่าง: 101"
                     class="input-focus w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500">
             </div>
@@ -169,6 +177,95 @@
     </div>
 
     <script>
+        // ---- สำหรับ Modal ค้นหา ID นักเรียน ----
+        let studentListForLookup = null;
+        async function openIdLookup() {
+                // 1. โหลดข้อมูลนักเรียนถ้ายังไม่มี
+                if (!studentListForLookup) {
+                    Swal.fire({ title: 'กำลังโหลดข้อมูล...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+                    try {
+                        const resp = await fetch(`${CONFIG.firebaseURL}students.json?auth=${CONFIG.fbSecret}`);
+                        const data = await resp.json();
+                        if (data) {
+                            studentListForLookup = Object.keys(data).map(id => ({ id, ...data[id] }));
+                        }
+                        Swal.close();
+                    } catch (e) {
+                        return Swal.fire('ผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
+                    }
+                }
+
+                // 2. เปิด Modal รับชื่อเพื่อค้นหา
+                const { value: nameQuery } = await Swal.fire({
+                    title: 'ค้นหารหัสประจำตัว (ID)',
+                    input: 'text',
+                    inputLabel: 'กรอกชื่อจริง หรือ นามสกุล ของคุณ',
+                    inputPlaceholder: 'เช่น ปานัส จังตระกูล',
+                    showCancelButton: true,
+                    confirmButtonText: 'ค้นหา',
+                    cancelButtonText: 'ยกเลิก',
+                    inputValidator: (value) => {
+                        if (!value) return 'กรุณากรอกชื่อเพื่อค้นหา'
+                    }
+                });
+
+                if (nameQuery) {
+                    performFuzzySearch(nameQuery);
+                }
+            }
+
+            function performFuzzySearch(query) {
+                const options = {
+                    keys: ['fullName', 'nickname'], // ค้นหาจากชื่อจริงและชื่อเล่น
+                    threshold: 0.4, // ค่าความแม่นยำ (0 = เป๊ะมาก, 1 = มั่วได้เยอะ)
+                };
+
+                const fuse = new Fuse(studentListForLookup, options);
+                const results = fuse.search(query);
+
+                if (results.length === 0) {
+                    Swal.fire('ไม่พบข้อมูล', 'ไม่พบชื่อที่ใกล้เคียงในระบบ กรุณาตรวจสอบการสะกดชื่ออีกครั้ง', 'warning');
+                } else {
+                    // สร้างรายการตัวเลือกให้น้องกด
+                    let listHtml = `<div class="text-left space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">`;
+                    results.forEach(res => {
+                        const s = res.item;
+                        listHtml += `
+                <button onclick="selectFoundId('${s.id}')" 
+                    class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all flex justify-between items-center group">
+                    <div class="text-left">
+                        <p class="font-bold text-slate-800">${s.fullName}</p>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">บ้าน ${s.house} | ${s.nickname}</p>
+                    </div>
+                    <div class="bg-blue-600 text-white px-3 py-1 rounded-lg font-black text-sm">
+                        ID: ${s.id}
+                    </div>
+                </button>`;
+                    });
+                    listHtml += `</div>`;
+
+                    Swal.fire({
+                        title: 'ผลการค้นหา',
+                        html: `
+                <p class="text-[10px] font-bold text-slate-400 uppercase mb-4 tracking-widest">เลือกชื่อของคุณเพื่อเติม ID อัตโนมัติ</p>
+                ${listHtml}`,
+                        showConfirmButton: false,
+                        showCloseButton: true
+                    });
+                }
+            }
+
+            // ฟังก์ชันเมื่อน้องกดเลือกชื่อตัวเอง
+            window.selectFoundId = function (id) {
+                document.getElementById('std-id').value = id;
+                Swal.close();
+                // เพิ่มเอฟเฟกต์กะพริบที่ช่อง ID ให้รู้ว่าเติมแล้ว
+                const input = document.getElementById('std-id');
+                input.classList.add('ring-4', 'ring-blue-500/30');
+                setTimeout(() => input.classList.remove('ring-4', 'ring-blue-500/30'), 1000);
+            }
+        // -----------------------------------
+        
         function showTab(type) {
             const forms = ['student', 'staff', 'reset'];
             forms.forEach(f => document.getElementById('form-' + f).classList.add('hidden'));
