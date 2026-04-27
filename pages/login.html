@@ -78,14 +78,15 @@
 
         <!-- [Form] Student Login -->
         <div id="form-student" class="space-y-4 transition-all duration-500">
+            
+            <!-- ปุ่มค้นหา ID แบบใหม่: ใหญ่และเด่นขึ้น -->
+            <button onclick="openIdLookup()"
+                class="w-full bg-blue-50 text-blue-600 py-4 rounded-2xl font-black text-base border-2 border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95">
+                <span class="text-xl">🔍</span> ลืม ID? ค้นหาด้วยชื่อ
+            </button>
+            
             <div class="group">
-                <div class="flex justify-between items-end mb-1">
-                    <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">รหัสประจำตัว</label>
-                    <!-- ปุ่มกดเพื่อเปิด Modal ค้นหา -->
-                    <button onclick="openIdLookup()" class="text-[10px] text-blue-600 font-bold hover:underline mb-0.5 mr-2">
-                        🔍 ลืม ID? ค้นหาด้วยชื่อ
-                    </button>
-                </div>
+                <label class="text-[10px] font-bold text-slate-400 ml-2 uppercase">รหัสประจำตัว (ID)</label>
                 <input type="text" id="std-id" placeholder="ตัวอย่าง: 101"
                     class="input-focus w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500">
             </div>
@@ -235,7 +236,7 @@
                     class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all flex justify-between items-center group">
                     <div class="text-left">
                         <p class="font-bold text-slate-800">${s.fullName}</p>
-                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">บ้าน ${s.house} | ${s.nickname}</p>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">บ้าน ${s.house}</p>
                     </div>
                     <div class="bg-blue-600 text-white px-3 py-1 rounded-lg font-black text-sm">
                         ID: ${s.id}
@@ -257,13 +258,24 @@
 
             // ฟังก์ชันเมื่อน้องกดเลือกชื่อตัวเอง
             window.selectFoundId = function (id) {
-                document.getElementById('std-id').value = id;
-                Swal.close();
-                // เพิ่มเอฟเฟกต์กะพริบที่ช่อง ID ให้รู้ว่าเติมแล้ว
-                const input = document.getElementById('std-id');
-                input.classList.add('ring-4', 'ring-blue-500/30');
-                setTimeout(() => input.classList.remove('ring-4', 'ring-blue-500/30'), 1000);
-            }
+                    const inputId = document.getElementById('std-id');
+                    inputId.value = id;
+
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'พบ ID ของคุณแล้ว!',
+                        text: `ID: ${id} ถูกเติมลงในช่องกรอกให้แล้วครับ`,
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+
+                    // เอฟเฟกต์กะพริบสีฟ้าที่ช่อง Input
+                    inputId.focus();
+                    inputId.classList.add('ring-4', 'ring-blue-500', 'border-blue-500');
+                    setTimeout(() => {
+                        inputId.classList.remove('ring-4', 'ring-blue-500', 'border-blue-500');
+                    }, 1500);
+                }
         // -----------------------------------
         
         function showTab(type) {
