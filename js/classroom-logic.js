@@ -275,31 +275,56 @@ function showUI(isStarted) {
         document.getElementById('display-session-info').innerText = `${currentRoom} | ${currentSubject}`;
     }
 }
+// ค้นหาฟังก์ชัน updateQuotaUI ใน js/classroom-logic.js แล้ววางทับด้วยโค้ดนี้
 function updateQuotaUI() {
-    const bar = document.getElementById('quota-bar');
-    const text = document.getElementById('quota-text');
-    const remText = document.getElementById('quota-remaining');
+    const barGlobal = document.getElementById('quota-bar-global');
+    const barCurrent = document.getElementById('quota-bar-current');
     const label = document.getElementById('quota-subject-label');
-    if (!bar || !text || !currentSubject) return;
+
+    // Elements สำหรับตัวเลข
+    const txtGlobal = document.getElementById('text-global-used');
+    const txtCurrent = document.getElementById('text-current-session');
+    const txtMax = document.getElementById('text-max-quota');
+    const txtRem = document.getElementById('quota-remaining');
+    const txtDisplayCurrent = document.getElementById('display-current-pts');
+
+    if (!barGlobal || !barCurrent || !currentSubject) return;
 
     label.innerText = `โควต้าวิชา ${currentSubject.toUpperCase()}`;
 
-    // ดึงค่าโควต้ารวมของวิชานี้
+    // 1. ดึงค่าจากข้อมูลส่วนกลาง
     const maxQuota = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].max : 0;
     const globalUsed = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].used : 0;
 
-    // รวมที่ใช้ไปก่อนหน้า + ที่แจกในคาบปัจจุบัน (ยังไม่กด Sync)
+    // quotaUsed คือค่าคะแนนสะสมในตัวแปร Local (คาบนี้)
     const totalUsedNow = globalUsed + quotaUsed;
     const remaining = maxQuota - totalUsedNow;
 
-    text.innerText = `ใช้ไป ${totalUsedNow} / ${maxQuota} PTS`;
-    remText.innerText = remaining >= 0 ? `เหลือแจกได้อีก: ${remaining} Pts` : `แจกเกินโควต้า: ${remaining} Pts!`;
+    // 2. อัปเดตตัวเลข
+    txtGlobal.innerText = globalUsed;
+    txtCurrent.innerText = `(+${quotaUsed})`;
+    txtMax.innerText = maxQuota;
+    txtDisplayCurrent.innerText = `${quotaUsed} PTS`;
+    txtRem.innerText = remaining >= 0 ? `เหลือแจกได้อีก: ${remaining} Pts` : `เกินโควต้า: ${Math.abs(remaining)} Pts!`;
+    txtRem.className = remaining >= 0 ? "text-[9px] font-bold text-slate-400" : "text-[9px] font-black text-red-500 animate-pulse";
 
-    let percent = maxQuota > 0 ? (totalUsedNow / maxQuota) * 100 : 0;
-    if (percent > 100) percent = 100;
+    // 3. คำนวณความกว้างแท่ง (Percentage)
+    let globalPercent = (globalUsed / maxQuota) * 100;
+    let currentPercent = (quotaUsed / maxQuota) * 100;
 
-    bar.style.width = `${percent}%`;
-    bar.className = "quota-bar " + (percent > 90 ? 'quota-danger' : (percent > 70 ? 'quota-warning' : 'quota-safe'));
+    // กัน Percent เกิน 100
+    if (globalPercent > 100) globalPercent = 100;
+    if (globalPercent + currentPercent > 100) currentPercent = 100 - globalPercent;
+
+    // 4. สั่งเปลี่ยนสีแท่ง Current ตามสถานะความอันตราย
+    const totalPercent = ((globalUsed + quotaUsed) / maxQuota) * 100;
+    let statusClass = "bg-blue-500"; // ปกติเป็นสีฟ้า
+    if (totalPercent > 90) statusClass = "bg-red-500";
+    else if (totalPercent > 70) statusClass = "bg-amber-500";
+
+    barGlobal.style.width = `${globalPercent}%`;
+    barCurrent.style.width = `${currentPercent}%`;
+    barCurrent.className = `h-full transition-all duration-500 ${statusClass}`;
 }
 // renderActivityFilter เป็นฟังก์ชันที่วาด Dropdown ขึ้นมาในส่วนหัวของ Live Feed เพื่อให้ครูสามารถเลือกดูคำตอบย้อนหลังได้ตามกิจกรรมที่เคยตั้งไว้ โดยจะดึงข้อมูลจาก activityLog ที่เก็บประวัติคำถามทั้งหมดมาแสดงเป็นตัวเลือกใน Dropdown และเมื่อครูเลือกคำถามไหน ตัวแปร selectedActivityFilter จะถูกอัปเดต และ Live Feed จะกรองคำตอบมาแสดงเฉพาะคำถามนั้นๆ ทันที
 function renderActivityFilter() {
