@@ -11,6 +11,22 @@
         body {
             font-family: 'Prompt', sans-serif;
         }
+
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
     </style>
 </head>
 
@@ -36,14 +52,14 @@
     <main class="max-w-6xl mx-auto p-6">
         <!-- Stats Header -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 text-center">
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Average Rating</p>
-                <div class="flex items-end gap-1">
+                <div class="flex items-center justify-center gap-1">
                     <span id="stat-avg" class="text-4xl font-black text-blue-600">0.0</span>
-                    <span class="text-slate-300 text-sm mb-1">/ 5.0</span>
+                    <span class="text-slate-300 text-sm">/ 5.0</span>
                 </div>
             </div>
-            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 text-center">
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Feedbacks</p>
                 <span id="stat-count" class="text-4xl font-black text-slate-800">0</span>
             </div>
@@ -57,34 +73,39 @@
             </div>
         </div>
 
-        <!-- Filter Area (Only for Admin) -->
-        <div id="admin-filters"
-            class="hidden bg-white p-6 rounded-3xl shadow-sm border border-slate-100 mb-8 flex flex-wrap gap-4">
-            <div class="flex-1 min-w-[200px]">
-                <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Filter by Tutor</label>
-                <select id="filter-tutor" onchange="renderDashboard()"
-                    class="w-full mt-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none">
-                    <option value="all">ทุกคน (All Tutors)</option>
+        <!-- Filter Bar -->
+        <div
+            class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="flex flex-col">
+                <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">เลือกคาบเรียน (Session)</label>
+                <select id="filter-session" onchange="renderDashboard()"
+                    class="w-full mt-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none border-2 border-transparent focus:border-blue-500">
+                    <option value="all">ทุกคาบเรียน (All Sessions)</option>
                 </select>
             </div>
-            <div class="flex-1 min-w-[200px]">
-                <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Filter by Subject</label>
+            <div id="admin-only-tutor" class="hidden flex flex-col">
+                <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">ติวเตอร์ (Admin Only)</label>
+                <select id="filter-tutor" onchange="renderDashboard()"
+                    class="w-full mt-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none border-2 border-transparent focus:border-blue-500">
+                    <option value="all">ทุกคน</option>
+                </select>
+            </div>
+            <div id="admin-only-subject" class="hidden flex flex-col">
+                <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">กลุ่มวิชา (Admin Only)</label>
                 <select id="filter-subject" onchange="renderDashboard()"
-                    class="w-full mt-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none">
-                    <option value="all">ทุกวิชา (All Subjects)</option>
+                    class="w-full mt-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none border-2 border-transparent focus:border-blue-500">
+                    <option value="all">ทุกวิชา</option>
                 </select>
             </div>
         </div>
 
-        <!-- Feedback List -->
+        <!-- Loading State -->
         <div id="loading-state" class="text-center py-20">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <p class="text-slate-400 font-bold uppercase tracking-widest text-xs">กำลังรวบรวมข้อมูล...</p>
         </div>
 
-        <div id="feedback-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- Feedbacks will appear here -->
-        </div>
+        <div id="feedback-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20"></div>
     </main>
 
     <script src="../js/firebase-config.js"></script>
@@ -94,12 +115,49 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
         import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-        // 1. Initialize Firebase
         const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
         const db = getDatabase(app);
 
         let allRatings = [];
         const user = checkAuth();
+
+        // ตารางแปลงเลขห้อง กลับเป็นชื่อกลุ่ม (Class)
+        // อ้างอิงตาม index.html: Class A=3501, B=3502, C=3504, D=3505
+        const ROOM_TO_CLASS_MAP = {
+            '3501': 'CLASS A',
+            '3502': 'CLASS B',
+            '3504': 'CLASS C',
+            '3505': 'CLASS D',
+            'DT1': 'CLASS A',
+            'DT2': 'CLASS B',
+            'DT3': 'CLASS C',
+            'DT4': 'CLASS D'
+        };
+
+        const DIV_TO_SUBJECT_MAP = {
+            "ฟิสิกส์": "physic",
+            "เคมี": "chemistry",
+            "ชีววิทยา": "biology",
+            "IntroDent": "introdent",
+            "IntroMed": "intromed"
+        };
+
+        function formatRoomToClass(roomStr) {
+            if (!roomStr) return 'COMMON';
+            // ลบคำว่า (SCH) และตัดช่องว่าง
+            const cleanRoom = roomStr.replace('(SCH)', '').trim();
+
+            // 1. ถ้ามาในรูปแบบ Room_A ตรงๆ
+            const matchRoom = cleanRoom.match(/Room_([A-D])/i);
+            if (matchRoom) return `CLASS ${matchRoom[1].toUpperCase()}`;
+
+            // 2. ถ้ามาในรูปแบบเลขห้อง 3501, 3502...
+            if (ROOM_TO_CLASS_MAP[cleanRoom]) {
+                return ROOM_TO_CLASS_MAP[cleanRoom];
+            }
+
+            return cleanRoom; // กรณีไม่เข้าเงื่อนไข ให้คืนค่าเดิม
+        }
 
         function init() {
             if (!user || user.userType !== 'staff') {
@@ -110,121 +168,146 @@
             document.getElementById('user-display-name').innerText = user.nickname || user.fullName;
 
             if (user.role === 'Admin') {
-                document.getElementById('admin-filters').classList.remove('hidden');
+                document.getElementById('admin-only-tutor').classList.remove('hidden');
+                document.getElementById('admin-only-subject').classList.remove('hidden');
                 document.getElementById('admin-icon').classList.remove('hidden');
-                document.getElementById('view-mode-badge').innerText = "Admin View: All Data";
+                document.getElementById('view-mode-badge').innerText = "Admin: Full Access";
             } else {
-                document.getElementById('view-mode-badge').innerText = "Tutor View: Your Data";
+                document.getElementById('view-mode-badge').innerText = `Division: ${user.division}`;
             }
 
-            // 2. ดึงข้อมูลจากกิ่ง 'ratings'
             const ratingsRef = ref(db, 'ratings');
-
-            // เพิ่ม Error Handling
             onValue(ratingsRef, (snapshot) => {
-                console.log("Firebase connected. Snapshot exists:", snapshot.exists());
-
                 const data = snapshot.val();
                 document.getElementById('loading-state').classList.add('hidden');
 
                 if (!data) {
-                    console.log("No data found in Firebase path 'ratings'");
                     allRatings = [];
                     renderDashboard();
                     return;
                 }
 
-                // แปลงข้อมูลจาก Object เป็น Array และคัดกรองเฉพาะตัวที่มีข้อมูลครบ
                 allRatings = Object.keys(data).map(key => data[key]);
-
-                // เรียงลำดับตามเวลา (ล่าสุดขึ้นก่อน)
                 allRatings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-                console.log("Total Ratings Loaded:", allRatings.length);
-
-                if (user.role === 'Admin') setupAdminFilters();
+                setupDynamicFilters();
                 renderDashboard();
-            }, (error) => {
-                console.error("Firebase Error:", error);
-                document.getElementById('loading-state').innerHTML = `<p class="text-red-500 font-bold">เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล</p>`;
             });
         }
 
-        let filtersSet = false;
-        function setupAdminFilters() {
-            if (filtersSet) return; // แอดครั้งเดียว
+        let filtersInitialized = false;
+            function setupDynamicFilters() {
+                if (filtersInitialized) return;
 
-            const tutors = [...new Set(allRatings.map(r => r.tutor).filter(t => t))];
-            const subjects = [...new Set(allRatings.map(r => r.subject).filter(s => s))];
+                const sessionSelect = document.getElementById('filter-session');
+                const mySubjectKey = DIV_TO_SUBJECT_MAP[user.division];
 
-            const tutorSelect = document.getElementById('filter-tutor');
-            const subSelect = document.getElementById('filter-subject');
+                let filteredForDropdown = allRatings;
 
-            tutors.forEach(t => {
-                const opt = document.createElement('option');
-                opt.value = t;
-                opt.innerText = t;
-                tutorSelect.appendChild(opt);
-            });
+                // --- ส่วนที่ปรับปรุง: กรองข้อมูลที่จะมาแสดงใน Dropdown ---
+                // ถ้าไม่ใช่ Admin หรือฝ่ายวิชาการ ให้เห็นเฉพาะ Session ที่มีชื่อวิชาตัวเอง
+                if (user.role !== 'Admin' && user.division !== 'วิชาการ') {
+                    if (mySubjectKey) {
+                        filteredForDropdown = allRatings.filter(r =>
+                            r.subject && r.subject.toLowerCase().includes(mySubjectKey.toLowerCase())
+                        );
+                    } else {
+                        // กรณีเป็นสตาฟฝ่ายอื่นที่ไม่มีใน Map (เช่น สวัสดิการ) ให้เห็นเฉพาะที่ตัวเองสอน
+                        filteredForDropdown = allRatings.filter(r => r.tutor === user.nickname);
+                    }
+                }
 
-            subjects.forEach(s => {
-                const opt = document.createElement('option');
-                opt.value = s;
-                opt.innerText = s.toUpperCase();
-                subSelect.appendChild(opt);
-            });
+                // สร้างรายการ Session ที่ไม่ซ้ำกันจากข้อมูลที่กรองแล้ว
+                const uniqueSessions = [...new Set(filteredForDropdown.map(r => r.subject))].sort();
 
-            filtersSet = true;
-        }
+                // ล้างค่าเก่า (ยกเว้น All) และเติมค่าใหม่
+                sessionSelect.innerHTML = '<option value="all">ทุกคาบเรียน</option>';
+                uniqueSessions.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s;
+                    opt.innerText = s;
+                    sessionSelect.appendChild(opt);
+                });
 
+                // ส่วน Admin Filters (คงเดิม)
+                if (user.role === 'Admin') {
+                    const tutorSelect = document.getElementById('filter-tutor');
+                    const uniqueTutors = [...new Set(allRatings.map(r => r.tutor).filter(t => t))].sort();
+                    uniqueTutors.forEach(t => {
+                        const opt = document.createElement('option');
+                        opt.value = t; opt.innerText = t;
+                        tutorSelect.appendChild(opt);
+                    });
+                }
+
+                filtersInitialized = true;
+            }
         window.renderDashboard = function () {
             const myName = user.nickname || user.fullName;
+            const mySubjectKey = DIV_TO_SUBJECT_MAP[user.division];
+
             let displayData = allRatings;
 
-            // กรองสิทธิ์
-            if (user.role !== 'Admin') {
-                displayData = allRatings.filter(r => r.tutor === myName);
-            } else {
-                const tutorFilter = document.getElementById('filter-tutor').value;
-                const subFilter = document.getElementById('filter-subject').value;
-
-                if (tutorFilter !== 'all') displayData = displayData.filter(r => r.tutor === tutorFilter);
-                if (subFilter !== 'all') displayData = displayData.filter(r => r.subject === subFilter);
+            // 1. กรองสิทธิ์ตาม Division / Tutor
+            if (user.role !== 'Admin' && user.division !== 'วิชาการ') {
+                displayData = allRatings.filter(r =>
+                    (r.tutor === myName) ||
+                    (mySubjectKey && r.subject && r.subject.toLowerCase().includes(mySubjectKey.toLowerCase()))
+                );
             }
 
-            // อัปเดตตัวเลข
+            // 2. กรองตามตัวเลือกใน UI
+            const sessionVal = document.getElementById('filter-session').value;
+            if (sessionVal !== 'all') displayData = displayData.filter(r => r.subject === sessionVal);
+
+            if (user.role === 'Admin') {
+                const tutorVal = document.getElementById('filter-tutor').value;
+                const subVal = document.getElementById('filter-subject').value;
+                if (tutorVal !== 'all') displayData = displayData.filter(r => r.tutor === tutorVal);
+                if (subVal !== 'all') displayData = displayData.filter(r => r.subject.toLowerCase().includes(subVal.toLowerCase()));
+            }
+
+            // อัปเดตสถิติ
             const total = displayData.length;
             const avg = total > 0 ? (displayData.reduce((a, b) => a + Number(b.rating), 0) / total).toFixed(1) : "0.0";
-
             document.getElementById('stat-avg').innerText = avg;
             document.getElementById('stat-count').innerText = total;
 
             const grid = document.getElementById('feedback-grid');
-
             if (total === 0) {
-                grid.innerHTML = `<div class="col-span-full py-20 text-center text-slate-400 italic font-bold">ยังไม่มีข้อมูลการประเมินที่ตรงกับเงื่อนไข</div>`;
+                grid.innerHTML = `<div class="col-span-full py-20 text-center text-slate-400 italic">ไม่พบข้อมูลการประเมิน</div>`;
                 return;
             }
 
-            grid.innerHTML = displayData.map(r => `
-                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 hover:border-blue-300 transition-all">
-                    <div class="flex justify-between items-start mb-4">
-                        <div>
-                            <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${r.subject || 'N/A'} | ${r.room || 'N/A'}</span>
-                            <h3 class="font-bold text-slate-800">${user.role === 'Admin' ? 'ติวเตอร์: ' + (r.tutor || 'ไม่ระบุ') : 'Feedback ของคุณ'}</h3>
+            grid.innerHTML = displayData.map(r => {
+                const cardTitle = (r.tutor === myName) ? "คุณได้รับการประเมิน" : `ติวเตอร์: พี่${r.tutor || 'ไม่ระบุ'}`;
+                const classLabel = formatRoomToClass(r.room);
+
+                return `
+                    <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 hover:border-blue-300 transition-all animate-fade-in flex flex-col h-full">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <span class="text-[10px] font-black text-white uppercase tracking-widest bg-blue-600 px-3 py-1 rounded-full shadow-md">
+                                    ${classLabel}
+                                </span>
+                                <p class="text-[9px] font-bold text-slate-400 mt-2 uppercase italic">${r.subject}</p>
+                                <h3 class="font-bold text-slate-800 mt-1">${cardTitle}</h3>
+                            </div>
+                            <div class="text-xs bg-amber-50 px-2 py-1 rounded-lg border border-amber-100 shrink-0">
+                                ${'⭐'.repeat(r.rating || 0)}
+                            </div>
                         </div>
-                        <div class="text-sm">
-                            ${'⭐'.repeat(r.rating || 0)}
+                        <div class="flex-1">
+                            <p class="text-slate-600 text-sm italic bg-slate-50 p-4 rounded-2xl border-l-4 border-blue-400">
+                                "${r.comment || ''}"
+                            </p>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-slate-50 text-[9px] text-slate-300 font-bold uppercase text-right">
+                            ${r.timestamp ? new Date(r.timestamp).toLocaleString('th-TH') : '-'}
                         </div>
                     </div>
-                    <p class="text-slate-600 text-sm italic bg-slate-50 p-4 rounded-2xl border-l-4 border-blue-100">
-                        "${r.comment || 'ไม่มีข้อความเพิ่มเติม'}"
-                    </p>
-                    <div class="mt-4 text-[9px] text-slate-400 font-bold uppercase text-right">
-                        ${r.timestamp ? new Date(r.timestamp).toLocaleString('th-TH') : '-'}
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         init();
