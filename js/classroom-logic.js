@@ -566,7 +566,8 @@ function listenForForceClose(room) {
         });
 
         if (result.isConfirmed || result.dismiss === Swal.DismissReason.timer) {
-            window.finishSession(true);
+            console.log("Force closing session..."); 
+            window.finishSession(true, room); // ส่งพารามิเตอร์บอกว่าเป็นการปิดแบบถูกบังคับ
         } else if (result.dismiss === Swal.DismissReason.cancel) {
             // ปฏิเสธคำขอ: เปลี่ยน status เป็น rejected
             await update(ref(db, `active_sessions/${room}/forceCloseRequest`), { status: 'rejected' });
@@ -965,8 +966,11 @@ window.runRandom = async function (mode) {
     }
 };
 
-window.finishSession = async function (isAuto = false) {
-    // 1. ตรวจสอบว่ามีการกดยืนยันหรือไม่ (ถ้าไม่ใช่การปิดอัตโนมัติให้ถามก่อน)
+window.finishSession = async function (isAuto = false, roomOverride = null) {
+    // 1. ดึงชื่อห้องจาก Parameter หรือ Global Variable หรือ LocalStorage เพื่อป้องกันค่าว่าง
+    const roomToClear = roomOverride || currentRoom || localStorage.getItem('active_tutor_room');
+
+    // 2. ตรวจสอบว่ามีการกดยืนยันหรือไม่ (ถ้าไม่ใช่การปิดอัตโนมัติให้ถามก่อน)
     if (!isAuto) {
         const result = await Swal.fire({
             title: 'สิ้นสุดคาบเรียน?',
@@ -981,7 +985,7 @@ window.finishSession = async function (isAuto = false) {
         if (!result.isConfirmed) return;
     }
 
-    // 2. แสดงสถานะกำลังดำเนินการ
+    // 3. แสดงสถานะกำลังดำเนินการ
     Swal.fire({
         title: isAuto ? 'ระบบกำลังจบคลาสอัตโนมัติ...' : 'กำลังซิงค์ข้อมูล...',
         text: 'กรุณารอสักครู่ ระบบกำลังนำส่งข้อมูลเข้า Google Sheets',
@@ -990,10 +994,9 @@ window.finishSession = async function (isAuto = false) {
     });
 
     try {
-        const roomToClear = currentRoom;
         if (!roomToClear) throw new Error("No active room found");
 
-        // 3. เตรียมข้อมูลสำหรับ Sync (บันทึกทุกคนที่มีส่วนร่วม)
+        // 4. เตรียมข้อมูลสำหรับ Sync (บันทึกทุกคนที่มีส่วนร่วม)
         const studentScoresCleaned = {};
 
         allStudentsInClass.forEach(s => {
@@ -1004,8 +1007,8 @@ window.finishSession = async function (isAuto = false) {
             // เงื่อนไข: บันทึกถ้า (คะแนน > 0) OR (พูด > 0) OR (ส่งคำตอบ > 0)
             if (scoreData.score > 0 || scoreData.speakCount > 0 || respCount > 0) {
                 studentScoresCleaned[id] = {
-                    name: s.nickname, // หรือ s.fullName ตามชอบ
-                    house: s.house,   // บันทึกบ้านไปด้วย
+                    name: s.nickname,
+                    house: s.house,
                     score: scoreData.score,
                     speakCount: scoreData.speakCount,
                     responseCount: respCount
@@ -1013,7 +1016,7 @@ window.finishSession = async function (isAuto = false) {
             }
         });
 
-        // 3.1 เตรียมข้อมูล House (ส่งเฉพาะบ้านที่ได้คะแนนจริง)
+        // 4.1 เตรียมข้อมูล House
         const houseScoresCleaned = {};
         for (let hID in scoresToSync.houseScores) {
             if (scoresToSync.houseScores[hID] > 0) {
@@ -1025,13 +1028,13 @@ window.finishSession = async function (isAuto = false) {
             action: "syncClassroomScore",
             key: CONFIG.syncKey,
             room: roomToClear,
-            subject: currentSubject,
+            subject: currentSubject || "N/A", // ป้องกันค่าว่าง
             tutor: checkAuth()?.nickname || "Tutor",
             studentScores: studentScoresCleaned,
             houseScores: houseScoresCleaned || {}
         };
 
-        // 4. ส่งข้อมูลไป Google Sheets (Background Sync)
+        // 5. ส่งข้อมูลไป Google Sheets (Background Sync)
         fetch(CONFIG.appscriptUrl, {
             method: 'POST',
             mode: 'no-cors',
@@ -1039,8 +1042,8 @@ window.finishSession = async function (isAuto = false) {
             body: JSON.stringify(syncPayload)
         });
 
-        // 5. ล้างข้อมูลใน Firebase พร้อมกัน (ใช้ Promise.all เพื่อความเร็ว)
-        // การลบกิ่ง active_sessions จะรวมถึงการลบ forceCloseRequest ทิ้งด้วย
+        // 6. ล้างข้อมูลใน Firebase พร้อมกัน 
+        // (กิ่ง active_sessions จะรวมถึงการลบ forceCloseRequest ทิ้งด้วย)
         await Promise.all([
             remove(ref(db, `active_sessions/${roomToClear}`)),
             remove(ref(db, `presence/${roomToClear}`)),
@@ -1049,12 +1052,12 @@ window.finishSession = async function (isAuto = false) {
             remove(ref(db, `private_questions/${roomToClear}`))
         ]);
 
-        // 6. ล้างสถานะในตัวแปรและ Local Storage
+        // 7. ล้างสถานะในตัวแปรและ Local Storage
         localStorage.removeItem('active_tutor_room');
         currentRoom = null;
         currentSubject = null;
 
-        // 7. แจ้งเตือนสำเร็จ
+        // 8. แจ้งเตือนสำเร็จ
         await Swal.fire({
             icon: 'success',
             title: isAuto ? 'หมดเวลาและจบคลาสแล้ว' : 'จบคลาสสำเร็จ!',
