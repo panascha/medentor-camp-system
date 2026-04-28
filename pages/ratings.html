@@ -232,11 +232,25 @@
                 // ส่วน Admin Filters (คงเดิม)
                 if (user.role === 'Admin') {
                     const tutorSelect = document.getElementById('filter-tutor');
-                    const uniqueTutors = [...new Set(allRatings.map(r => r.tutor).filter(t => t))].sort();
+                    const subjectSelect = document.getElementById('filter-subject');
+
+                    const uniqueTutors = [...new Set(allRatings.map(r => r.tutor))].sort();
+                    const uniqueSubjects = [...new Set(allRatings.map(r => r.subject))].sort();
+
+                    tutorSelect.innerHTML = '<option value="all">ทุกคน</option>';
                     uniqueTutors.forEach(t => {
                         const opt = document.createElement('option');
-                        opt.value = t; opt.innerText = t;
+                        opt.value = t;
+                        opt.innerText = t;
                         tutorSelect.appendChild(opt);
+                    });
+
+                    subjectSelect.innerHTML = '<option value="all">ทุกวิชา</option>';
+                    uniqueSubjects.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s;
+                        opt.innerText = s;
+                        subjectSelect.appendChild(opt);
                     });
                 }
 
@@ -299,7 +313,7 @@
                         </div>
                         <div class="flex-1">
                             <p class="text-slate-600 text-sm italic bg-slate-50 p-4 rounded-2xl border-l-4 border-blue-400">
-                                "${r.comment || ''}"
+                                ${r.comment? r.comment.replace(/\n/g, '<br>') : '<span class="text-slate-300">ไม่มีความคิดเห็นเพิ่มเติม</span>'}
                             </p>
                         </div>
                         <div class="mt-4 pt-3 border-t border-slate-50 text-[9px] text-slate-300 font-bold uppercase text-right">
