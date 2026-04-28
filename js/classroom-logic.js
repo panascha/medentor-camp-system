@@ -263,6 +263,7 @@ function initTutorListeners() {
 
     // 8. Listen Private Questions: มีน้องส่งคำถามส่วนตัวมาหรือเปล่า (ถ้ามีให้แสดงในหน้าจอทันที)
     listenPrivateQuestions();
+    listenSpeakRequests();
     listenForForceClose(currentRoom); // เริ่มฟังว่ามีใครมาขอให้ปิดห้องไหม (กรณีที่เราเปิดห้องทับคนอื่น)
 }
 
@@ -556,6 +557,57 @@ function listenPrivateQuestions() {
                         </button>
                     </div>
                     <p class="text-slate-600 text-sm bg-orange-50/50 p-3 rounded-2xl">${q.question}</p>
+                </div>
+            `;
+        }).join('');
+    });
+}
+function listenSpeakRequests() {
+    if (!currentRoom) return;
+
+    // ตรวจสอบก่อนว่าหน้านี้มีที่แสดงรายการไหม (ถ้าเป็นหน้าน้อง ตัวนี้จะเป็น null)
+    const listEl = document.getElementById('speak-requests-list');
+    const badge = document.getElementById('req-badge');
+
+    if (!listEl) return; // ถ้าไม่มี Element นี้ ให้หยุดทำงาน (ป้องกัน Error)
+
+    onValue(ref(db, `speak_requests/${currentRoom}`), (snapshot) => {
+        const data = snapshot.val() || {};
+        const keys = Object.keys(data);
+
+        if (badge) {
+            badge.innerText = keys.length;
+            badge.classList.toggle('hidden', keys.length === 0);
+        }
+
+        if (keys.length === 0) {
+            listEl.innerHTML = `<p class="text-center py-20 text-slate-400 italic">ไม่มีรายการรออนุมัติ</p>`;
+            return;
+        }
+
+        listEl.innerHTML = keys.map(key => {
+            const r = data[key];
+            return `
+                <div class="bg-white p-5 rounded-3xl border-2 border-purple-100 shadow-sm flex justify-between items-center animate-fade-in">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-purple-600 text-white rounded-2xl flex items-center justify-center font-black text-lg">
+                            ${r.house}
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-slate-800">${r.nickname}</h4>
+                            <p class="text-[10px] text-slate-400 uppercase font-black">ID: ${r.studentID} | รอยืนยันการพูด</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="approveSpeak('${r.studentID}', '${r.nickname}')" 
+                            class="bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-emerald-600 shadow-md transition-all">
+                            ยืนยัน
+                        </button>
+                        <button onclick="rejectSpeak('${r.studentID}')" 
+                            class="bg-slate-100 text-slate-400 px-4 py-2 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-500 transition-all">
+                            ข้าม
+                        </button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -859,17 +911,17 @@ window.viewHistory = function (id, name) {
     });
 }
 window.switchTab = function (tab) {
-    const tabs = ['live', 'summary', 'questions'];
+    const tabs = ['live', 'summary', 'questions', 'requests'];
 
     tabs.forEach(t => {
         const viewEl = document.getElementById(`view-${t}`);
         const btnEl = document.getElementById(`tab-${t}`);
 
-        if (!viewEl || !btnEl) return;
+        if (!viewEl || !btnEl) return; // ข้ามไปถ้าไม่มี Element ในหน้านี้
 
         if (t === tab) {
-            // แสดงผล: ใช้ flex สำหรับหน้า Feed/Summary และ block สำหรับ Q&A
-            viewEl.style.setProperty('display', (t === 'questions' ? 'block' : 'flex'), 'important');
+            // แสดงผล: ใช้ flex สำหรับหน้า Feed/Summary และ block สำหรับ Q&A/Requests
+            viewEl.style.setProperty('display', (t === 'questions' || t === 'requests' ? 'block' : 'flex'), 'important');
             viewEl.classList.remove('hidden');
 
             // สไตล์ปุ่ม Active
@@ -982,7 +1034,46 @@ window.updateActivity = async function (status) {
         }
     }
 };
+window.approveSpeak = async function (stdID, nickname) {
+    // 1. เพิ่ม SpeakCount ในระบบ Local (สำหรับ Sync ตอนจบคาบ)
+    if (!scoresToSync.studentScores[stdID]) {
+        scoresToSync.studentScores[stdID] = { name: nickname, score: 0, speakCount: 0 };
+    }
+    scoresToSync.studentScores[stdID].speakCount = (scoresToSync.studentScores[stdID].speakCount || 0) + 1;
 
+    // 2. ลบคำขอออกจาก Firebase
+    await remove(ref(db, `speak_requests/${currentRoom}/${stdID}`));
+
+    showToast(`ยืนยันการพูดให้ ${nickname} แล้ว (+1)`);
+    renderSummaryTable(); // อัปเดตตารางสรุปผลทันที
+};
+
+window.rejectSpeak = async function (stdID) {
+    await remove(ref(db, `speak_requests/${currentRoom}/${stdID}`));
+    showToast("ยกเลิกรายการ", "info");
+};
+
+// อัปเดตฟังก์ชัน switchTab ใน classroom-logic.js เพื่อให้รองรับ tab 'requests'
+window.switchTab = function (tab) {
+    const tabs = ['live', 'summary', 'questions', 'requests'];
+    tabs.forEach(t => {
+        const viewEl = document.getElementById(`view-${t}`);
+        const btnEl = document.getElementById(`tab-${t}`);
+        if (!viewEl || !btnEl) return;
+
+        if (t === tab) {
+            viewEl.style.setProperty('display', (t === 'questions' || t === 'requests' ? 'block' : 'flex'), 'important');
+            viewEl.classList.remove('hidden');
+            btnEl.classList.add('border-blue-600', 'text-blue-600');
+            btnEl.classList.remove('border-transparent', 'text-slate-400');
+        } else {
+            viewEl.style.setProperty('display', 'none', 'important');
+            viewEl.classList.add('hidden');
+            btnEl.classList.remove('border-blue-600', 'text-blue-600');
+            btnEl.classList.add('border-transparent', 'text-slate-400');
+        }
+    });
+};
 window.runRandom = async function (mode) {
     let list = allStudentsInClass;
 
@@ -1436,6 +1527,32 @@ window.submitResponse = async function () {
         // 👉 บรรทัดนี้จะช่วยพ่น Error จริงๆ ออกมาดูที่หน้าต่าง Console
         console.error("เกิดข้อผิดพลาดหลังส่งคำตอบ:", e);
         showToast("ส่งคำตอบไม่สำเร็จ", "error");
+    }
+};
+
+window.sendSpeakRequest = async function () {
+    if (!myRoom || !userSession) return;
+
+    // ตรวจสอบว่าเคยส่งไปหรือยัง (กันกดรัว)
+    const requestKey = `speak_req_${myRoom}_${userSession.id}`;
+    if (localStorage.getItem(requestKey)) {
+        return showToast("ส่งคำขอไปแล้ว กรุณารอพี่ติวเตอร์อนุมัติ", "info");
+    }
+
+    try {
+        const speakRef = ref(db, `speak_requests/${myRoom}/${userSession.id}`);
+        await set(speakRef, {
+            studentID: userSession.id,
+            nickname: userSession.nickname,
+            house: userSession.house,
+            timestamp: Date.now(),
+            status: "pending"
+        });
+
+        localStorage.setItem(requestKey, "true"); // ล็อคปุ่มชั่วคราว
+        showToast("ส่งคำขอ Speak Count แล้ว!", "success");
+    } catch (e) {
+        showToast("ส่งคำขอไม่สำเร็จ", "error");
     }
 };
 
