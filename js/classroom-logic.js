@@ -538,40 +538,70 @@ function listenPrivateQuestions() {
     });
 }
 function listenForForceClose(room) {
-    const requestRef = ref(db, `active_sessions/${room}/forceCloseRequest`);
+    // เปลี่ยนจากฟังแค่กิ่งย่อย forceCloseRequest เป็นฟัง "กิ่งหลักของห้อง"
+    const sessionRef = ref(db, `active_sessions/${room}`);
 
-    onValue(requestRef, async (snapshot) => {
-        const request = snapshot.val();
-        // สนใจเฉพาะคำขอที่ status เป็น pending เท่านั้น
-        if (!request || request.status !== 'pending') return;
+    onValue(sessionRef, async (snapshot) => {
+        const session = snapshot.val();
+        if (!session) return;
 
-        if (request.requestedBy === (checkAuth().nickname || checkAuth().fullName)) return;
+        // --- [CASE 1: ADMIN FORCE CLOSE] ตรวจสอบ Flag จาก Admin ---
+        // เช็คทั้ง adminForceClose หรือ forceCloseByAdmin ตามข้อมูลใน DB ของคุณ
+        if (session.adminForceClose === true || session.forceCloseByAdmin === true) {
 
-        let timerInterval;
-        const result = await Swal.fire({
-            title: 'มีคำขอคืนห้องเรียน!',
-            html: `พี่ <b>${request.requestedBy}</b> รอสอนคาบถัดไป<br><br>ระบบจะปิดห้องอัตโนมัติในอีก <b><span></span></b> วินาที`,
-            icon: 'warning',
-            timer: 30000,
-            timerProgressBar: true,
-            showCancelButton: true,
-            confirmButtonColor: '#ef4444',
-            confirmButtonText: 'ปิดห้องและ Sync ทันที',
-            cancelButtonText: 'ขอสอนต่อ (ปฏิเสธ)',
-            didOpen: () => {
-                const b = Swal.getHtmlContainer().querySelector('span');
-                timerInterval = setInterval(() => { b.textContent = Math.ceil(Swal.getTimerLeft() / 1000); }, 100);
-            },
-            willClose: () => { clearInterval(timerInterval); }
-        });
+            // ป้องกันการเด้ง Popup ซ้ำซ้อน
+            if (window.isAlreadyClosing) return;
+            window.isAlreadyClosing = true;
 
-        if (result.isConfirmed || result.dismiss === Swal.DismissReason.timer) {
-            console.log("Force closing session...");
-            window.finishSession(true, room); // ส่งพารามิเตอร์บอกว่าเป็นการปิดแบบถูกบังคับ
-        } else if (result.dismiss === Swal.DismissReason.cancel) {
-            // ปฏิเสธคำขอ: เปลี่ยน status เป็น rejected
-            await update(ref(db, `active_sessions/${room}/forceCloseRequest`), { status: 'rejected' });
-            showToast("ส่งสัญญาณแจ้งว่าคุณยังสอนไม่เสร็จแล้ว", "info");
+            const adminName = session.adminName || "Admin";
+
+            await Swal.fire({
+                title: 'ถูกสั่งปิดโดย Admin',
+                html: `พี่ <b>${adminName}</b> สั่งปิดห้องเรียนนี้<br>ระบบกำลังบันทึกคะแนนและออกจากห้อง...`,
+                icon: 'error',
+                timer: 3000,
+                showConfirmButton: false,
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            // เรียกฟังก์ชันจบคลาส (isAuto = true)
+            // ส่งค่า room เข้าไปด้วยเพื่อให้ชัวร์ว่าลบถูกห้อง
+            window.finishSession(true, room);
+            return;
+        }
+
+        // --- [CASE 2: TUTOR TAKEOVER] ระบบขอคืนห้องปกติ (พี่ปอนขอพี่บิว) ---
+        const request = session.forceCloseRequest;
+        if (request && request.status === 'pending') {
+            const myName = checkAuth()?.nickname || checkAuth()?.fullName;
+            // ถ้าคนขอเป็นคนเดียวกับคนล็อคอิน ไม่ต้องโชว์ (กันตัวเองขอตัวเอง)
+            if (request.requestedBy === myName) return;
+
+            let timerInterval;
+            const result = await Swal.fire({
+                title: 'มีคำขอคืนห้องเรียน!',
+                html: `พี่ <b>${request.requestedBy}</b> รอสอนคาบถัดไป<br><br>ระบบจะปิดห้องอัตโนมัติในอีก <b><span></span></b> วินาที`,
+                icon: 'warning',
+                timer: 30000,
+                timerProgressBar: true,
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                confirmButtonText: 'ปิดห้องและ Sync ทันที',
+                cancelButtonText: 'ขอสอนต่อ (ปฏิเสธ)',
+                didOpen: () => {
+                    const b = Swal.getHtmlContainer().querySelector('span');
+                    timerInterval = setInterval(() => { b.textContent = Math.ceil(Swal.getTimerLeft() / 1000); }, 100);
+                },
+                willClose: () => { clearInterval(timerInterval); }
+            });
+
+            if (result.isConfirmed || result.dismiss === Swal.DismissReason.timer) {
+                window.finishSession(true, room);
+            } else if (result.dismiss === Swal.DismissReason.cancel) {
+                await update(ref(db, `active_sessions/${room}/forceCloseRequest`), { status: 'rejected' });
+                showToast("ปฏิเสธคำขอแล้ว", "info");
+            }
         }
     });
 }
@@ -603,14 +633,41 @@ window.sendTakeoverRequest = async function (targetRoom) {
     }
 };
 
+window.adminForceCloseRoom = async function (targetRoom) {
+    const user = checkAuth();
+    const confirm = await Swal.fire({
+        title: 'ยืนยัน Force Close?',
+        text: `สั่งปิดห้อง ${targetRoom} ทันทีโดยไม่รอการตอบกลับจากติวเตอร์`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'สั่งปิดห้อง!'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+        // อัปเดตข้อมูลให้ตรงกับโครงสร้างที่คุณต้องการ
+        await update(ref(db, `active_sessions/${targetRoom}`), {
+            adminForceClose: true,
+            forceCloseByAdmin: true,
+            adminName: user.nickname || user.fullName || "Admin",
+            forceClosedAt: Date.now()
+        });
+        showToast("ส่งคำสั่ง Force Close แล้ว");
+    } catch (e) {
+        showToast("เกิดข้อผิดพลาด", "error");
+    }
+};
+
 // Room Selector Logic: เมื่อครูเลือกห้องเรียนจาก Dropdown ในหน้าจอ Setup ระบบจะเริ่มฟังข้อมูลแบบเรียลไทม์จาก Firebase ว่าห้องนั้นมีสถานะเป็นอย่างไร (เปิด/ปิด, ใครเป็นติวเตอร์, มีคำขอปิดห้องไหม) และอัปเดต UI ตามข้อมูลที่ได้รับมา เช่น แสดงชื่อติวเตอร์ที่กำลังสอน, แสดงสถานะห้องเรียน, และถ้าเราส่งคำขอไปแล้วก็จะแสดงสถานะการรอคำตอบจากเจ้าของห้องด้วย
 function initGlobalRoomStatusWatcher() {
     const statusContainer = document.getElementById('global-room-status');
     const rooms = ['Room_A', 'Room_B', 'Room_C', 'Room_D'];
     const user = checkAuth();
     const myName = user.nickname || user.fullName;
+    const isAdmin = user.role === 'Admin';
 
-    // ฟังข้อมูลจากกิ่ง active_sessions ทั้งหมด
     onValue(ref(db, `active_sessions`), (snapshot) => {
         const allSessions = snapshot.val() || {};
         let html = '';
@@ -619,25 +676,33 @@ function initGlobalRoomStatusWatcher() {
             const session = allSessions[roomId];
             const isLive = session && session.isOpen;
 
-            // ตรวจสอบสถานะการขอจองห้อง (Takeover Request)
-            let requestHTML = '';
-            if (isLive && session.forceCloseRequest) {
-                const req = session.forceCloseRequest;
-                if (req.requestedBy === myName) {
-                    if (req.status === 'rejected') {
-                        requestHTML = `<p class="text-[10px] text-orange-600 font-bold mt-1 italic animate-pulse">⚠️ พี่ ${session.tutor} ขอสอนต่ออีกครู่หนึ่ง</p>`;
-                    } else {
-                        requestHTML = `<p class="text-[10px] text-blue-500 font-bold mt-1 italic animate-pulse">⏳ ส่งคำขอแล้ว... รอการตอบกลับ</p>`;
-                    }
+            let actionButtons = '';
+            if (isLive) {
+                if (session.tutor === myName) {
+                    // --- จุดที่แก้ไข: เปลี่ยนจากป้าย "กำลังสอน" เป็นปุ่ม "ปิดห้อง" ---
+                    actionButtons = `
+                        <button onclick="finishSession(false, '${roomId}')" class="text-[9px] font-black bg-red-600 text-white px-2 py-1 rounded-lg hover:bg-red-700 transition-all shadow-sm">
+                            ปิดห้องเรียน
+                        </button>`;
+                } else if (isAdmin) {
+                    actionButtons = `
+                        <button onclick="finishSession(false, '${roomId}')" class="text-[9px] font-black bg-red-600 text-white px-2 py-1 rounded-lg hover:bg-red-700 transition-all shadow-sm">
+                            FORCE CLOSE
+                        </button>`;
+                } else {
+                    actionButtons = `
+                        <button onclick="sendTakeoverRequest('${roomId}')" class="text-[9px] font-black bg-white border border-red-200 text-red-600 px-2 py-1 rounded-lg hover:bg-red-600 hover:text-white transition-all">
+                            ขอจองต่อ
+                        </button>`;
                 }
             }
 
             html += `
-                <div class="p-4 rounded-2xl border-2 transition-all ${isLive ? 'border-red-100 bg-red-50/30' : 'border-slate-100 bg-white'}">
+                <div class="p-4 rounded-2xl border-2 transition-all ${isLive ? 'border-blue-100 bg-blue-50/30' : 'border-slate-100 bg-white'}">
                     <div class="flex justify-between items-start">
                         <div>
                             <div class="flex items-center gap-2">
-                                <span class="w-2 h-2 rounded-full ${isLive ? 'bg-red-500 animate-ping' : 'bg-slate-300'}"></span>
+                                <span class="w-2 h-2 rounded-full ${isLive ? 'bg-blue-500 animate-ping' : 'bg-slate-300'}"></span>
                                 <span class="text-xs font-black text-slate-800">${roomId.replace('_', ' ')}</span>
                             </div>
                             ${isLive ? `
@@ -647,13 +712,10 @@ function initGlobalRoomStatusWatcher() {
                                 <p class="text-[10px] text-slate-400 font-bold mt-1 uppercase italic">ว่าง (Available)</p>
                             `}
                         </div>
-                        ${isLive && session.tutor !== myName ? `
-                            <button onclick="sendTakeoverRequest('${roomId}')" class="text-[9px] font-black bg-white border border-red-200 text-red-600 px-2 py-1 rounded-lg hover:bg-red-600 hover:text-white transition-all">
-                                ขอจองต่อ
-                            </button>
-                        ` : ''}
+                        <div class="flex flex-col gap-1 items-end">
+                            ${actionButtons}
+                        </div>
                     </div>
-                    ${requestHTML}
                 </div>
             `;
         });
@@ -661,6 +723,7 @@ function initGlobalRoomStatusWatcher() {
         if (statusContainer) statusContainer.innerHTML = html;
     });
 }
+
 document.getElementById('select-room')?.addEventListener('change', (e) => {
     const selectedRoom = e.target.value;
     const statusDiv = document.getElementById('room-occupancy-status');
@@ -967,10 +1030,19 @@ window.runRandom = async function (mode) {
 };
 
 window.finishSession = async function (isAuto = false, roomOverride = null) {
-    // 1. ดึงชื่อห้องจาก Parameter หรือ Global Variable หรือ LocalStorage เพื่อป้องกันค่าว่าง
+    // 1. ระบุห้องที่ต้องการปิด (ใช้ลำดับความสำคัญ: Override > Current > LocalStorage)
     const roomToClear = roomOverride || currentRoom || localStorage.getItem('active_tutor_room');
 
-    // 2. ตรวจสอบว่ามีการกดยืนยันหรือไม่ (ถ้าไม่ใช่การปิดอัตโนมัติให้ถามก่อน)
+    // ตรวจสอบความผิดพลาดเบื้องต้น
+    if (!roomToClear) {
+        console.error("FinishSession Error: No room identifier found.");
+        return;
+    }
+
+    // ป้องกันการรันซ้ำซ้อน (Concurrency Lock)
+    if (window.isClosingProcessActive) return;
+
+    // 2. จัดการเรื่องการกดยืนยัน
     if (!isAuto) {
         const result = await Swal.fire({
             title: 'สิ้นสุดคาบเรียน?',
@@ -985,26 +1057,25 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
         if (!result.isConfirmed) return;
     }
 
+    // เริ่มขั้นตอนการปิด
+    window.isClosingProcessActive = true;
+
     // 3. แสดงสถานะกำลังดำเนินการ
     Swal.fire({
-        title: isAuto ? 'ระบบกำลังจบคลาสอัตโนมัติ...' : 'กำลังซิงค์ข้อมูล...',
+        title: isAuto ? 'กำลังจบคลาสอัตโนมัติ...' : 'กำลังซิงค์ข้อมูล...',
         text: 'กรุณารอสักครู่ ระบบกำลังนำส่งข้อมูลเข้า Google Sheets',
         allowOutsideClick: false,
         didOpen: () => Swal.showLoading()
     });
 
     try {
-        if (!roomToClear) throw new Error("No active room found");
-
-        // 4. เตรียมข้อมูลสำหรับ Sync (บันทึกทุกคนที่มีส่วนร่วม)
+        // 4. เตรียมข้อมูลสำหรับ Sync (บันทึกเฉพาะคนที่มีส่วนร่วม)
         const studentScoresCleaned = {};
-
         allStudentsInClass.forEach(s => {
             const id = s.id;
             const scoreData = scoresToSync.studentScores[id] || { score: 0, speakCount: 0 };
             const respCount = responsesHistory[id] ? responsesHistory[id].length : 0;
 
-            // เงื่อนไข: บันทึกถ้า (คะแนน > 0) OR (พูด > 0) OR (ส่งคำตอบ > 0)
             if (scoreData.score > 0 || scoreData.speakCount > 0 || respCount > 0) {
                 studentScoresCleaned[id] = {
                     name: s.nickname,
@@ -1016,7 +1087,6 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
             }
         });
 
-        // 4.1 เตรียมข้อมูล House
         const houseScoresCleaned = {};
         for (let hID in scoresToSync.houseScores) {
             if (scoresToSync.houseScores[hID] > 0) {
@@ -1024,17 +1094,17 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
             }
         }
 
+        // 5. ส่งข้อมูลไปยัง Google Apps Script (Background Sync)
         const syncPayload = {
             action: "syncClassroomScore",
             key: CONFIG.syncKey,
             room: roomToClear,
-            subject: currentSubject || "N/A", // ป้องกันค่าว่าง
+            subject: currentSubject || "N/A",
             tutor: checkAuth()?.nickname || "Tutor",
             studentScores: studentScoresCleaned,
             houseScores: houseScoresCleaned || {}
         };
 
-        // 5. ส่งข้อมูลไป Google Sheets (Background Sync)
         fetch(CONFIG.appscriptUrl, {
             method: 'POST',
             mode: 'no-cors',
@@ -1042,8 +1112,7 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
             body: JSON.stringify(syncPayload)
         });
 
-        // 6. ล้างข้อมูลใน Firebase พร้อมกัน 
-        // (กิ่ง active_sessions จะรวมถึงการลบ forceCloseRequest ทิ้งด้วย)
+        // 6. ล้างข้อมูลใน Firebase (ลบกิ่งที่เกี่ยวข้องกับห้องนี้ทั้งหมด)
         await Promise.all([
             remove(ref(db, `active_sessions/${roomToClear}`)),
             remove(ref(db, `presence/${roomToClear}`)),
@@ -1052,25 +1121,27 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
             remove(ref(db, `private_questions/${roomToClear}`))
         ]);
 
-        // 7. ล้างสถานะในตัวแปรและ Local Storage
+        // 7. เคลียร์สถานะในเครื่อง
         localStorage.removeItem('active_tutor_room');
         currentRoom = null;
         currentSubject = null;
+        window.isClosingProcessActive = false;
 
         // 8. แจ้งเตือนสำเร็จ
         await Swal.fire({
             icon: 'success',
-            title: isAuto ? 'หมดเวลาและจบคลาสแล้ว' : 'จบคลาสสำเร็จ!',
+            title: isAuto ? 'ห้องเรียนถูกปิดโดย Admin' : 'จบคลาสสำเร็จ!',
             text: 'คะแนนถูกส่งเข้าสู่คลังข้อมูลกลางเรียบร้อยแล้ว',
             timer: 2000,
             showConfirmButton: false
         });
 
-        // กลับหน้าหลัก
+        // 9. กลับหน้าหลัก
         window.location.href = '../index.html';
 
     } catch (e) {
         console.error("Finish Session Error:", e);
+        window.isClosingProcessActive = false;
         Swal.fire({
             icon: 'error',
             title: 'เกิดข้อผิดพลาด',
