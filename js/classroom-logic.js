@@ -1,4 +1,4 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { initializeApp} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, set, onValue, push, remove, update, get, onDisconnect } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 // 1. Initialize Firebase
@@ -30,6 +30,15 @@ const HOUSE_THEMES = {
     6: 'bg-pink-50 text-pink-700 border-pink-200',
     7: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     8: 'bg-teal-50 text-teal-700 border-teal-200'
+};
+const DIV_TO_SUBJECT_MAP = {
+    "เคมี": "chemistry",
+    "ฟิสิกส์": "physic",
+    "ชีววิทยา": "biology",
+    "IntroDent": "introdent",
+    "IntroMed": "intromed",
+    "วิชาการ": "all", // ฝ่ายวิชาการเข้าได้ทุกวิชา
+    "coreteam": "all" // Core Team เข้าได้ทุกวิชา
 };
 
 // ---------------------------------------------------------
@@ -74,41 +83,74 @@ window.startSession = async function () {
     const subject = document.getElementById('select-subject').value;
     const user = checkAuth();
     const tutorName = user.nickname || user.fullName;
+    const userDivision = user.division;
 
     try {
         const snapshot = await get(ref(db, `active_sessions/${room}`));
         const session = snapshot.val();
 
         if (session && session.isOpen) {
-            // แก้ไขจาก session.tutorName เป็น session.tutor ให้ตรงกับฐานข้อมูล
             const currentTutor = session.tutor || "ติวเตอร์";
+            const sessionSubject = session.subject;
 
-            const result = await Swal.fire({
-                title: 'ห้องเรียนไม่ว่าง!',
-                html: `พี่ <b>${currentTutor}</b> กำลังสอนวิชา <b>${session.subject.toUpperCase()}</b><br><br>ต้องการส่งสัญญาณให้ปิดห้องภายใน 30 วินาทีหรือไม่?`,
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#ef4444',
-                confirmButtonText: 'ส่งสัญญาณแจ้งเตือน',
-                cancelButtonText: 'ยกเลิก'
-            });
+            // เช็คสิทธิ์: เป็น Admin หรือ อยู่ Division เดียวกับวิชาที่กำลังสอนอยู่หรือไม่
+            const canJoinAsAssistant =
+                user.role === 'Admin' ||
+                DIV_TO_SUBJECT_MAP[userDivision] === "all" ||
+                DIV_TO_SUBJECT_MAP[userDivision] === sessionSubject;
 
-            if (result.isConfirmed) {
-                // เรียกใช้ฟังก์ชันส่งคำขอ
-                await sendTakeoverRequest(room);
+            if (canJoinAsAssistant) {
+                // กรณีอยู่ฝ่ายเดียวกัน -> ให้เข้าร่วมได้เลย
+                const result = await Swal.fire({
+                    title: 'ห้องนี้กำลังมีการสอนอยู่',
+                    html: `พี่ <b>${currentTutor}</b> กำลังสอนวิชา <b>${sessionSubject.toUpperCase()}</b><br><br>คุณอยู่ในฝ่ายเดียวกัน ต้องการเข้าร่วมเพื่อช่วยจัดการใช่หรือไม่?`,
+                    icon: 'info',
+                    showCancelButton: true,
+                    confirmButtonColor: '#3b82f6',
+                    confirmButtonText: 'เข้าร่วม (Assistant)',
+                    cancelButtonText: 'ยกเลิก'
+                });
+
+                if (result.isConfirmed) {
+                    // เข้าร่วมโดยไม่ต้องอัปเดต Firebase (ใช้ข้อมูลเดิมของห้อง)
+                    currentRoom = room;
+                    currentSubject = sessionSubject;
+                    localStorage.setItem('active_tutor_room', room);
+
+                    showUI(true);
+                    await loadClassMetadata();
+                    initTutorListeners();
+                    showToast(`เข้าร่วมห้อง ${room} ในฐานะผู้ช่วยแล้ว`);
+                }
+                return;
+            } else {
+                // กรณีอยู่คนละฝ่าย -> ใช้ Logic เดิม (ขอ Takeover)
+                const result = await Swal.fire({
+                    title: 'ห้องเรียนไม่ว่าง!',
+                    html: `พี่ <b>${currentTutor}</b> กำลังสอนวิชา <b>${sessionSubject.toUpperCase()}</b><br><br>ต้องการส่งสัญญาณให้ปิดห้องภายใน 30 วินาทีหรือไม่?`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#ef4444',
+                    confirmButtonText: 'ส่งสัญญาณแจ้งคืนห้อง',
+                    cancelButtonText: 'ยกเลิก'
+                });
+
+                if (result.isConfirmed) {
+                    await sendTakeoverRequest(room);
+                }
+                return;
             }
-            return;
         }
 
-        // ตอนบันทึก ใช้คีย์ 'tutor' เป็นหลัก
+        // --- กรณีห้องว่าง เปิดห้องใหม่ตามปกติ ---
         await set(ref(db, `active_sessions/${room}`), {
             isOpen: true,
             subject: subject,
-            tutor: tutorName, // ใช้คำว่า tutor
+            tutor: tutorName,
+            division: userDivision, // เก็บ division ไว้ใน session ด้วย
             startTime: Date.now()
         });
 
-        // บันทึกสถานะลงเครื่อง
         localStorage.setItem('active_tutor_room', room);
         currentRoom = room;
         currentSubject = subject;
@@ -116,7 +158,6 @@ window.startSession = async function () {
         showUI(true);
         await loadClassMetadata();
         initTutorListeners();
-
         showToast(`เปิดห้องเรียน ${room} สำเร็จ!`);
 
     } catch (e) {
@@ -178,6 +219,39 @@ function initTutorListeners() {
         if (selectedActivityFilter === 'current' && Object.keys(activityLog).length > 0) {
             const keys = Object.keys(activityLog);
             selectedActivityFilter = keys[keys.length - 1];
+        }
+    });
+
+    onValue(ref(db, `active_sessions/${currentRoom}`), async (snapshot) => {
+        const session = snapshot.val();
+
+        // ถ้าห้องถูกลบไปแล้ว (session เป็น null) หรือสถานะกลายเป็นปิด
+        if (!session || !session.isOpen) {
+
+            // เช็คว่าเครื่องเรายังจำว่าอยู่ในห้องนี้ไหม (ถ้าติวเตอร์หลักเป็นคนปิด ค่านี้ในเครื่องติวเตอร์จะถูกลบไปก่อนแล้ว จะไม่เข้าเงื่อนไขนี้)
+            if (localStorage.getItem('active_tutor_room') === currentRoom) {
+
+                // ป้องกันการเด้ง Popup ซ้ำซ้อน
+                if (window.isAlreadyKicked) return;
+                window.isAlreadyKicked = true;
+
+                // เคลียร์สถานะในเครื่อง Assistant
+                localStorage.removeItem('active_tutor_room');
+                currentRoom = null;
+                currentSubject = null;
+
+                // แจ้งเตือนและพากลับหน้าหลัก
+                await Swal.fire({
+                    icon: 'info',
+                    title: 'ห้องเรียนถูกปิดแล้ว',
+                    text: 'ติวเตอร์หลักได้ทำการปิดห้องและ Sync คะแนนเรียบร้อยแล้ว ระบบกำลังพากลับหน้าหลัก...',
+                    timer: 3000,
+                    showConfirmButton: false,
+                    allowOutsideClick: false
+                });
+
+                window.location.href = '../index.html';
+            }
         }
     });
 
@@ -259,6 +333,14 @@ function initTutorListeners() {
                 get(ref(db, `responses/${currentRoom}`)).then(snap => renderResponses(snap.val() || {}));
             }
         }
+    });
+
+    onValue(ref(db, `classroom_scores/${currentRoom}/live_scores`), (snapshot) => {
+        const data = snapshot.val() || { studentScores: {}, houseScores: {} };
+        // อัปเดตตัวแปรในเครื่องให้ตรงกับ Firebase
+        scoresToSync.studentScores = data.studentScores || {};
+        scoresToSync.houseScores = data.houseScores || {};
+        renderSummaryTable(); // วาดตารางใหม่ทันทีที่ข้อมูลใน Firebase เปลี่ยน
     });
 
     // 8. Listen Private Questions: มีน้องส่งคำถามส่วนตัวมาหรือเปล่า (ถ้ามีให้แสดงในหน้าจอทันที)
@@ -742,6 +824,7 @@ function initGlobalRoomStatusWatcher() {
     const rooms = ['Room_A', 'Room_B', 'Room_C', 'Room_D'];
     const user = checkAuth();
     const myName = user.nickname || user.fullName;
+    const userDivision = user.division;
     const isAdmin = user.role === 'Admin';
 
     onValue(ref(db, `active_sessions`), (snapshot) => {
@@ -754,18 +837,26 @@ function initGlobalRoomStatusWatcher() {
 
             let actionButtons = '';
             if (isLive) {
+                // เช็คสิทธิ์: เป็นฝ่ายเดียวกัน หรือ Admin หรือไม่
+                const canJoinAsAssistant =
+                    isAdmin ||
+                    DIV_TO_SUBJECT_MAP[userDivision] === "all" ||
+                    DIV_TO_SUBJECT_MAP[userDivision] === session.subject;
+
                 if (session.tutor === myName) {
-                    // --- จุดที่แก้ไข: เปลี่ยนจากป้าย "กำลังสอน" เป็นปุ่ม "ปิดห้อง" ---
+                    // กรณีเราเป็นเจ้าของห้อง
                     actionButtons = `
                         <button onclick="finishSession(false, '${roomId}')" class="text-[9px] font-black bg-red-600 text-white px-2 py-1 rounded-lg hover:bg-red-700 transition-all shadow-sm">
                             ปิดห้องเรียน
                         </button>`;
-                } else if (isAdmin) {
+                } else if (canJoinAsAssistant) {
+                    // กรณีอยู่ฝ่ายเดียวกัน -> แสดงปุ่ม "ช่วยจัดการ"
                     actionButtons = `
-                        <button onclick="finishSession(false, '${roomId}')" class="text-[9px] font-black bg-red-600 text-white px-2 py-1 rounded-lg hover:bg-red-700 transition-all shadow-sm">
-                            FORCE CLOSE
+                        <button onclick="joinAsAssistant('${roomId}')" class="text-[9px] font-black bg-blue-600 text-white px-2 py-1 rounded-lg hover:bg-blue-700 transition-all shadow-md">
+                            ช่วยจัดการ
                         </button>`;
                 } else {
+                    // กรณีอยู่คนละฝ่าย -> แสดงปุ่ม "ขอคืนห้อง"
                     actionButtons = `
                         <button onclick="sendTakeoverRequest('${roomId}')" class="text-[9px] font-black bg-white border border-red-200 text-red-600 px-2 py-1 rounded-lg hover:bg-red-600 hover:text-white transition-all">
                             ขอจองต่อ
@@ -892,6 +983,43 @@ window.selectManualRoom = function (roomId) {
             joinClass();
         }
     });
+};
+window.joinAsAssistant = async function (roomId) {
+    try {
+        const snapshot = await get(ref(db, `active_sessions/${roomId}`));
+        const session = snapshot.val();
+
+        if (!session || !session.isOpen) {
+            showToast("ห้องนี้ถูกปิดไปแล้ว", "error");
+            return;
+        }
+
+        const result = await Swal.fire({
+            title: 'เข้าร่วมจัดการห้องเรียน?',
+            html: `เข้าร่วมเพื่อช่วยพี่ <b>${session.tutor}</b><br>วิชา: <b>${session.subject.toUpperCase()}</b>`,
+            icon: 'info',
+            showCancelButton: true,
+            confirmButtonColor: '#2563eb',
+            confirmButtonText: 'เข้าร่วมเลย',
+            cancelButtonText: 'ยกเลิก'
+        });
+
+        if (result.isConfirmed) {
+            // บันทึกค่าลงสถานะเครื่อง
+            currentRoom = roomId;
+            currentSubject = session.subject;
+            localStorage.setItem('active_tutor_room', roomId);
+
+            // เริ่มการทำงานของ UI
+            showUI(true);
+            await loadClassMetadata();
+            initTutorListeners();
+            showToast(`เข้าร่วมห้อง ${roomId} เรียบร้อย`);
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("เกิดข้อผิดพลาดในการเข้าร่วม", "error");
+    }
 };
 window.viewHistory = function (id, name) {
     const history = responsesHistory[id] || [];
@@ -1035,17 +1163,17 @@ window.updateActivity = async function (status) {
     }
 };
 window.approveSpeak = async function (stdID, nickname) {
-    // 1. เพิ่ม SpeakCount ในระบบ Local (สำหรับ Sync ตอนจบคาบ)
-    if (!scoresToSync.studentScores[stdID]) {
-        scoresToSync.studentScores[stdID] = { name: nickname, score: 0, speakCount: 0 };
-    }
-    scoresToSync.studentScores[stdID].speakCount = (scoresToSync.studentScores[stdID].speakCount || 0) + 1;
+    const currentData = scoresToSync.studentScores[stdID] || { score: 0, speakCount: 0 };
 
-    // 2. ลบคำขอออกจาก Firebase
+    // อัปเดตขึ้น Firebase โดยตรง ข้อมูลจะ Sync ไปทุกเครื่องเอง
+    await update(ref(db, `classroom_scores/${currentRoom}/live_scores/studentScores/${stdID}`), {
+        name: nickname,
+        score: currentData.score || 0,
+        speakCount: (currentData.speakCount || 0) + 1
+    });
+
     await remove(ref(db, `speak_requests/${currentRoom}/${stdID}`));
-
-    showToast(`ยืนยันการพูดให้ ${nickname} แล้ว (+1)`);
-    renderSummaryTable(); // อัปเดตตารางสรุปผลทันที
+    showToast(`ยืนยันการพูดให้ ${nickname}`);
 };
 
 window.rejectSpeak = async function (stdID) {
@@ -1145,23 +1273,56 @@ window.runRandom = async function (mode) {
 };
 
 window.finishSession = async function (isAuto = false, roomOverride = null) {
-    // 1. ระบุห้องที่ต้องการปิด (ใช้ลำดับความสำคัญ: Override > Current > LocalStorage)
+    // 1. ระบุห้องที่ต้องการปิด
     const roomToClear = roomOverride || currentRoom || localStorage.getItem('active_tutor_room');
 
-    // ตรวจสอบความผิดพลาดเบื้องต้น
     if (!roomToClear) {
         console.error("FinishSession Error: No room identifier found.");
         return;
     }
 
-    // ป้องกันการรันซ้ำซ้อน (Concurrency Lock)
+    // --- [ส่วนที่เพิ่มใหม่: ตรวจสอบสิทธิ์ Assistant] ---
+    const user = checkAuth();
+    const myName = user.nickname || user.fullName;
+    const isAdmin = user.role === 'Admin';
+
+    // ดึงข้อมูลจาก Firebase เพื่อเช็คว่าใครเป็นคนเปิดห้อง (Main Tutor)
+    const sessionSnap = await get(ref(db, `active_sessions/${roomToClear}`));
+    const sessionData = sessionSnap.val();
+
+    // ตรวจสอบว่าเป็นเจ้าของห้องตัวจริงหรือไม่
+    const isMainTutor = sessionData && (sessionData.tutor === myName);
+
+    // ถ้าไม่ใช่เจ้าของห้อง, ไม่ใช่ Admin และไม่ใช่การสั่งปิดจากระบบ (isAuto)
+    if (!isMainTutor && !isAdmin && !isAuto) {
+        const result = await Swal.fire({
+            title: 'ออกจากหน้าจัดการ?',
+            text: `คุณเข้าร่วมในฐานะผู้ช่วย การกดปุ่มนี้จะเพียงแค่พาคุณกลับหน้าหลัก โดยห้องเรียนของพี่ ${sessionData?.tutor || 'ท่านอื่น'} จะยังเปิดอยู่`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#3b82f6',
+            confirmButtonText: 'กลับหน้าหลัก',
+            cancelButtonText: 'อยู่ช่วยต่อ'
+        });
+
+        if (result.isConfirmed) {
+            localStorage.removeItem('active_tutor_room');
+            currentRoom = null;
+            currentSubject = null;
+            window.location.href = '../index.html';
+        }
+        return; // หยุดการทำงาน ไม่ให้ไปถึงส่วน Sync และลบข้อมูลด้านล่าง
+    }
+    // --- [จบส่วนตรวจสอบสิทธิ์] ---
+
+
+    // 2. จัดการเรื่องการกดยืนยัน (สำหรับเจ้าของห้อง หรือ Admin)
     if (window.isClosingProcessActive) return;
 
-    // 2. จัดการเรื่องการกดยืนยัน
     if (!isAuto) {
         const result = await Swal.fire({
             title: 'สิ้นสุดคาบเรียน?',
-            text: "ระบบจะทำการ Sync คะแนนเข้าสู่ Google Sheet และปิดห้องเรียน",
+            text: "ระบบจะทำการ Sync คะแนนเข้าสู่ Google Sheet และปิดห้องเรียนถาวร",
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#22c55e',
@@ -1215,7 +1376,7 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
             key: CONFIG.syncKey,
             room: roomToClear,
             subject: currentSubject || "N/A",
-            tutor: checkAuth()?.nickname || "Tutor",
+            tutor: sessionData?.tutor || myName, // ใช้ชื่อเจ้าของห้องในการบันทึก
             studentScores: studentScoresCleaned,
             houseScores: houseScoresCleaned || {}
         };
@@ -1227,13 +1388,14 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
             body: JSON.stringify(syncPayload)
         });
 
-        // 6. ล้างข้อมูลใน Firebase (ลบกิ่งที่เกี่ยวข้องกับห้องนี้ทั้งหมด)
+        // 6. ล้างข้อมูลใน Firebase
         await Promise.all([
             remove(ref(db, `active_sessions/${roomToClear}`)),
             remove(ref(db, `presence/${roomToClear}`)),
             remove(ref(db, `responses/${roomToClear}`)),
             remove(ref(db, `classroom_scores/${roomToClear}`)),
-            remove(ref(db, `private_questions/${roomToClear}`))
+            remove(ref(db, `private_questions/${roomToClear}`)),
+            remove(ref(db, `speak_requests/${roomToClear}`)) // เพิ่มการลบคำขอพูดด้วย
         ]);
 
         // 7. เคลียร์สถานะในเครื่อง
@@ -1465,6 +1627,18 @@ window.joinClass = async function () {
 // --- [4] ฟังก์ชันฟังคำถาม (เหมือนเดิม) ---
 window.initStudentListener = function () {
     if (!myRoom) return;
+    const session = JSON.parse(localStorage.getItem("userSession"));
+    if (session) {
+        const speakRef = ref(window.db, `speak_requests/${myRoom}/${session.id}`);
+        const requestKey = `speak_req_sent_${myRoom}_${session.id}`;
+
+        onValue(speakRef, (snapshot) => {
+            if (!snapshot.exists()) {
+                // ถ้าใน Firebase ไม่มีข้อมูลค้างอยู่ แปลว่าพี่ติวเตอร์จัดการเสร็จแล้ว
+                localStorage.removeItem(requestKey);
+            }
+        });
+    }
     onValue(ref(db, `active_sessions/${myRoom}/current_activity`), (snapshot) => {
         const activity = snapshot.val();
 
@@ -1493,6 +1667,8 @@ window.initStudentListener = function () {
             text.innerText = isOpen ? "LIVE: เปิดรับคำตอบ" : "Tutor Closed Responses";
         }
     });
+
+
 }
 
 // --- [5] ฟังก์ชันส่งคำตอบ (เหมือนเดิม) ---
@@ -1531,28 +1707,46 @@ window.submitResponse = async function () {
 };
 
 window.sendSpeakRequest = async function () {
-    if (!myRoom || !userSession) return;
+    const session = JSON.parse(localStorage.getItem("userSession"));
+    const room = myRoom || localStorage.getItem('joined_room');
 
-    // ตรวจสอบว่าเคยส่งไปหรือยัง (กันกดรัว)
-    const requestKey = `speak_req_${myRoom}_${userSession.id}`;
+    if (!session || !room) return showToast("ไม่พบข้อมูลห้องเรียน", "error");
+
+    const requestKey = `speak_req_sent_${room}_${session.id}`;
+
+    // ตรวจสอบว่าโดนล็อคอยู่ไหม
     if (localStorage.getItem(requestKey)) {
         return showToast("ส่งคำขอไปแล้ว กรุณารอพี่ติวเตอร์อนุมัติ", "info");
     }
 
     try {
-        const speakRef = ref(db, `speak_requests/${myRoom}/${userSession.id}`);
+        const { ref, set, onValue } = await import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js");
+
+        const speakRef = ref(window.db, `speak_requests/${room}/${session.id}`);
+
+        // 1. ส่งข้อมูลขึ้น Firebase
         await set(speakRef, {
-            studentID: userSession.id,
-            nickname: userSession.nickname,
-            house: userSession.house,
+            studentID: session.id,
+            nickname: session.nickname,
+            house: session.house,
             timestamp: Date.now(),
             status: "pending"
         });
 
-        localStorage.setItem(requestKey, "true"); // ล็อคปุ่มชั่วคราว
-        showToast("ส่งคำขอ Speak Count แล้ว!", "success");
+        // 2. ล็อคปุ่มในเครื่องน้อง
+        localStorage.setItem(requestKey, "true");
+        showToast("ส่งคำขอเรียบร้อย!", "success");
+
+        // 3. [ส่วนสำคัญ] ดักฟังว่าถ้าข้อมูลหายไป (ติวเตอร์ Approve) ให้ปลดล็อค
+        onValue(speakRef, (snapshot) => {
+            if (!snapshot.exists()) {
+                // เมื่อข้อมูลใน Firebase ถูกลบ (Tutor กดยืนยัน) -> ปลดล็อค localStorage
+                localStorage.removeItem(requestKey);
+            }
+        });
+
     } catch (e) {
-        showToast("ส่งคำขอไม่สำเร็จ", "error");
+        showToast("ผิดพลาด: " + e.message, "error");
     }
 };
 
@@ -1609,26 +1803,33 @@ window.customScore = async function (id, name, type) {
     }
 }
 window.giveScore = async function (id, name, pts) {
-    // คำนวณลิมิตใหม่
     const maxQuota = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].max : 0;
     const globalUsed = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].used : 0;
 
-    // เช็คว่าถ้าบวกไปแล้วเกินแม็กซ์โควต้าไหม (กรณีให้คะแนนบวก ไม่ใช่การลดคะแนน)
     if (pts > 0 && (globalUsed + quotaUsed + pts) > maxQuota) {
-        return Swal.fire("โควต้าเต็ม", `วิชา ${currentSubject} เหลือโควต้าให้แจกได้แค่ ${maxQuota - (globalUsed + quotaUsed)} คะแนน`, "warning");
+        return Swal.fire("โควต้าเต็ม", `เหลือโควต้าแค่ ${maxQuota - (globalUsed + quotaUsed)} คะแนน`, "warning");
     }
 
-    if (!scoresToSync.studentScores[id]) scoresToSync.studentScores[id] = { name: name, score: 0, speakCount: 0 };
-
-    let newScore = scoresToSync.studentScores[id].score + pts;
+    // ดึงค่าปัจจุบันจากตัวแปรที่ Sync กับ Firebase แล้ว
+    const currentData = scoresToSync.studentScores[id] || { score: 0, speakCount: 0 };
+    let newScore = currentData.score + pts;
     if (newScore < 0) newScore = 0;
 
-    const actualDiff = newScore - scoresToSync.studentScores[id].score;
-    scoresToSync.studentScores[id].score = newScore;
+    const actualDiff = newScore - currentData.score;
 
-    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + actualDiff });
+    // อัปเดตขึ้น Firebase กิ่งรายละเอียดคะแนน
+    await update(ref(db, `classroom_scores/${currentRoom}/live_scores/studentScores/${id}`), {
+        name: name,
+        score: newScore,
+        speakCount: currentData.speakCount || 0
+    });
+
+    // อัปเดตโควต้ารวม (เพื่อให้แท่ง Quota ขยับทุกเครื่อง)
+    await update(ref(db, `classroom_scores/${currentRoom}`), {
+        quotaUsed: quotaUsed + actualDiff
+    });
+
     showToast(`${name}: ${newScore} คะแนน`);
-    renderSummaryTable();
 };
 
 window.giveHouseScore = async function (house, pts) {
@@ -1636,38 +1837,38 @@ window.giveHouseScore = async function (house, pts) {
     const globalUsed = subjectQuotas[currentSubject] ? subjectQuotas[currentSubject].used : 0;
 
     if (pts > 0 && (globalUsed + quotaUsed + pts) > maxQuota) {
-        return Swal.fire("โควต้าเต็ม", `วิชา ${currentSubject} เหลือโควต้าให้แจกได้แค่ ${maxQuota - (globalUsed + quotaUsed)} คะแนน`, "warning");
+        return Swal.fire("โควต้าเต็ม", "โควต้าไม่เพียงพอ", "warning");
     }
 
-    if (!scoresToSync.houseScores[house]) scoresToSync.houseScores[house] = 0;
-
-    let newScore = scoresToSync.houseScores[house] + pts;
+    const currentHouseScore = scoresToSync.houseScores[house] || 0;
+    let newScore = currentHouseScore + pts;
     if (newScore < 0) newScore = 0;
 
-    const actualDiff = newScore - scoresToSync.houseScores[house];
-    scoresToSync.houseScores[house] = newScore;
+    const actualDiff = newScore - currentHouseScore;
 
-    await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + actualDiff });
+    // อัปเดตคะแนนบ้านรายหลังขึ้น Firebase
+    await set(ref(db, `classroom_scores/${currentRoom}/live_scores/houseScores/${house}`), newScore);
+
+    // อัปเดตโควต้ารวม
+    await update(ref(db, `classroom_scores/${currentRoom}`), {
+        quotaUsed: quotaUsed + actualDiff
+    });
+
     showToast(`บ้าน ${house}: ${newScore} คะแนน`);
-    renderSummaryTable();
 };
 
-window.giveSpeakCount = function (id, name, val) {
-    // 1. ตรวจสอบ/สร้างข้อมูลนักเรียนในตัวแปรสำหรับ Sync
-    if (!scoresToSync.studentScores[id]) {
-        scoresToSync.studentScores[id] = { name: name, score: 0, speakCount: 0 };
-    }
+window.giveSpeakCount = async function (id, name, val) {
+    const currentData = scoresToSync.studentScores[id] || { score: 0, speakCount: 0 };
+    let nextSpeak = (currentData.speakCount || 0) + val;
+    if (nextSpeak < 0) nextSpeak = 0;
 
-    // 2. คำนวณค่าใหม่ (ห้ามติดลบ)
-    let current = scoresToSync.studentScores[id].speakCount || 0;
-    let next = current + val;
-    if (next < 0) next = 0;
-
-    // 3. อัปเดตค่าและรีเฟรชหน้าจอ
-    scoresToSync.studentScores[id].speakCount = next;
-
-    showToast(`${name}: สถิติการพูด ${next} ครั้ง`, val > 0 ? "success" : "info");
-    renderSummaryTable();
+    // อัปเดตขึ้น Firebase
+    await update(ref(db, `classroom_scores/${currentRoom}/live_scores/studentScores/${id}`), {
+        name: name,
+        score: currentData.score || 0,
+        speakCount: nextSpeak
+    });
+    showToast(`${name}: สถิติการพูด ${nextSpeak} ครั้ง`);
 };
 
 window.openHistoryEditor = async function () {
