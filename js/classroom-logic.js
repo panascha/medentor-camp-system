@@ -416,10 +416,24 @@ function renderSummaryTable() {
 
                 <!-- 5. Speak Count (โดนสุ่ม/เสนอตัว) -->
                 <td class="p-3 text-center border-b align-middle">
-                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-50 text-purple-600 font-black border border-purple-100">
-                        ${indivData.speakCount || 0}
-                    </div>
-                </td>
+    <div class="flex flex-col items-center gap-1">
+        <!-- ตัวเลขแสดงจำนวนครั้ง -->
+        <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-50 text-purple-600 font-black border border-purple-100">
+            ${indivData.speakCount || 0}
+        </div>
+        <!-- ปุ่ม +/- แบบย่อ -->
+        <div class="flex gap-1">
+            <button onclick="giveSpeakCount('${s.id}', '${s.nickname}', 1)" 
+                class="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-bold hover:bg-purple-600 hover:text-white transition-colors">
+                +1
+            </button>
+            <button onclick="giveSpeakCount('${s.id}', '${s.nickname}', -1)" 
+                class="text-[9px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded font-bold hover:bg-red-500 hover:text-white transition-colors">
+                -1
+            </button>
+        </div>
+    </div>
+</td>
 
                 <!-- 6. Indiv. Pts (Action ใต้คะแนน) -->
                 <td class="p-3 text-center border-b align-middle">
@@ -1505,6 +1519,24 @@ window.giveHouseScore = async function (house, pts) {
 
     await update(ref(db, `classroom_scores/${currentRoom}`), { quotaUsed: quotaUsed + actualDiff });
     showToast(`บ้าน ${house}: ${newScore} คะแนน`);
+    renderSummaryTable();
+};
+
+window.giveSpeakCount = function (id, name, val) {
+    // 1. ตรวจสอบ/สร้างข้อมูลนักเรียนในตัวแปรสำหรับ Sync
+    if (!scoresToSync.studentScores[id]) {
+        scoresToSync.studentScores[id] = { name: name, score: 0, speakCount: 0 };
+    }
+
+    // 2. คำนวณค่าใหม่ (ห้ามติดลบ)
+    let current = scoresToSync.studentScores[id].speakCount || 0;
+    let next = current + val;
+    if (next < 0) next = 0;
+
+    // 3. อัปเดตค่าและรีเฟรชหน้าจอ
+    scoresToSync.studentScores[id].speakCount = next;
+
+    showToast(`${name}: สถิติการพูด ${next} ครั้ง`, val > 0 ? "success" : "info");
     renderSummaryTable();
 };
 
