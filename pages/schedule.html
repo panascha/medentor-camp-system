@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Camp Schedule - Medentor System</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
@@ -118,36 +119,160 @@
             renderSchedule();
         }
 
-        function renderSchedule() {
-                const container = document.getElementById('schedule-list');
-                const filtered = allItems.filter(i => i.day === selectedDay);
+                // ค้นหาฟังก์ชัน renderSchedule ใน schedule.html แล้วแทนที่ด้วย Code นี้
+                    function renderSchedule() {
+                        const container = document.getElementById('schedule-list');
+                        const filtered = allItems.filter(i => i.day === selectedDay);
+                        const user = checkAuth(); // ดึงข้อมูล user เพื่อเอา ID มาทำ key
 
-                container.innerHTML = filtered.map(item => `
-            <div class="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 hover:border-blue-200 transition-all">
-                <div class="flex flex-col items-center justify-center min-w-[70px] border-r pr-4">
-                    <span class="text-xs font-black text-slate-800">${item.startTime}</span>
-                    <span class="text-[10px] text-slate-400 font-bold uppercase">ถึง</span>
-                    <span class="text-xs font-bold text-slate-400">${item.endTime}</span>
-                </div>
-                <div class="flex-1">
-                    <div class="flex justify-between items-start">
-                        <!-- แก้ไขบรรทัดนี้เพื่อเรียกใช้ฟังก์ชันแปลชื่อวิชา -->
-                        <h3 class="font-black text-slate-800 text-lg leading-tight">${getSubjectName(item.subject)}</h3>
-                        
-                        ${item.classTarget === 'ALL' ? '<span class="bg-purple-100 text-purple-600 text-[8px] px-2 py-0.5 rounded-full font-black">ALL CLASS</span>' : ''}
+                        if (filtered.length === 0) {
+                            container.innerHTML = "<p class='text-center py-20 text-slate-400'>ยังไม่มีข้อมูลตารางเรียนในวันนี้</p>";
+                            return;
+                        }
+
+                        container.innerHTML = filtered.map(item => {
+                            const isEvaluable = item.subject && item.subject.trim() !== "";
+
+                            // --- ส่วนที่เพิ่มใหม่: สร้าง Unique Key สำหรับตรวจสอบว่าประเมินไปหรือยัง ---
+                            // รูปแบบ: rated_101_Day28/4_9:00_physic
+                            const sessionKey = `rated_${user.id}_${item.day}_${item.startTime}_${item.subject}`.replace(/\s+/g, '');
+                            const isAlreadyRated = localStorage.getItem(sessionKey) === 'true';
+
+                            return `
+            <div class="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col gap-4 hover:border-blue-200 transition-all">
+                <div class="flex gap-4">
+                    <div class="flex flex-col items-center justify-center min-w-[70px] border-r pr-4">
+                        <span class="text-xs font-black text-slate-800">${item.startTime}</span>
+                        <span class="text-[10px] text-slate-400 font-bold uppercase">ถึง</span>
+                        <span class="text-xs font-bold text-slate-400">${item.endTime}</span>
                     </div>
-                    <p class="text-blue-600 text-xs font-bold mt-1">พี่ติวเตอร์: ${item.tutor || '-'}</p>
-                    <div class="flex items-center gap-1 mt-3 text-slate-500">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                        <span class="text-[10px] font-medium">${item.room}</span>
+                    <div class="flex-1">
+                        <div class="flex justify-between items-start">
+                            <h3 class="font-black text-slate-800 text-lg leading-tight">${getSubjectName(item.subject)}</h3>
+                            ${item.classTarget === 'ALL' ? '<span class="bg-purple-100 text-purple-600 text-[8px] px-2 py-0.5 rounded-full font-black">ALL CLASS</span>' : ''}
+                        </div>
+                        <p class="text-blue-600 text-xs font-bold mt-1">พี่ติวเตอร์: ${item.tutor || '-'}</p>
+                        <div class="flex items-center gap-1 mt-3 text-slate-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                            <span class="text-[10px] font-medium">${item.room}</span>
+                        </div>
                     </div>
-                    ${item.note ? `<p class="mt-2 text-[10px] text-orange-500 italic font-medium bg-orange-50 p-2 rounded-lg">Note: ${item.note}</p>` : ''}
                 </div>
+
+                <!-- ปุ่มประเมิน: จะแสดงเฉพาะคาบที่มีวิชา และยังไม่เคยประเมินเท่านั้น -->
+                ${(isEvaluable && !isAlreadyRated) ? `
+                <div class="pt-3 border-t border-slate-50">
+                    <button onclick="openScheduleRating('${item.day}', '${item.startTime}', '${item.subject}', '${item.tutor}', '${item.room}')" 
+                        class="w-full bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2">
+                        ⭐ ประเมินคาบเรียนนี้
+                    </button>
+                </div>
+                ` : (isEvaluable && isAlreadyRated) ? `
+                <div class="pt-3 border-t border-slate-50 text-center">
+                    <span class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest bg-emerald-50 px-4 py-1.5 rounded-full">
+                        ✓ ประเมินเรียบร้อยแล้ว
+                    </span>
+                </div>
+                ` : ''}
             </div>
-        `).join('');
-            }
+        `;
+                        }).join('');
+                    }
+        window.openScheduleRating = async function (day, time, subject, tutors, room) {
+                const user = checkAuth();
+                if (!user) return;
 
-        init();
+                // 1. สร้าง Unique Key สำหรับตรวจสอบว่าเคยประเมินหรือยัง (อิงตาม ID น้อง + วัน + เวลา + วิชา)
+                const sessionKey = `rated_${user.id}_${day}_${time}_${subject}`.replace(/\s+/g, '');
+
+                // 2. กำหนดชื่อวิชาและข้อมูลที่จะส่งไป Apps Script ให้รู้ว่าเป็นคาบไหน
+                const sessionInfo = `${subject.toUpperCase()} (${day} @ ${time})`;
+                const tutorDisplay = tutors || "ไม่ระบุชื่อ";
+
+                // 3. แสดงหน้าต่างประเมินผล
+                const { value: formValues } = await Swal.fire({
+                    title: 'ประเมินการสอน',
+                    html: `
+            <div class="text-left bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-4">
+                <p class="text-[10px] font-black text-blue-500 uppercase tracking-widest">คาบเรียน</p>
+                <p class="text-sm font-bold text-slate-800">${sessionInfo}</p>
+                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">พี่ติวเตอร์</p>
+                <p class="text-sm font-bold text-slate-600">${tutorDisplay}</p>
+            </div>
+            <div class="flex flex-col gap-4">
+                <label class="text-left text-xs font-bold text-slate-500 ml-1">ให้คะแนนความพึงพอใจ</label>
+                <select id="swal-rating" class="p-3 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500">
+                    <option value="5">⭐⭐⭐⭐⭐ (ดีมาก)</option>
+                    <option value="4">⭐⭐⭐⭐ (ดี)</option>
+                    <option value="3">⭐⭐⭐ (ปานกลาง)</option>
+                    <option value="2">⭐⭐ (พอใช้)</option>
+                    <option value="1">⭐ (ควรปรับปรุง)</option>
+                </select>
+                <label class="text-left text-xs font-bold text-slate-500 ml-1">ข้อเสนอแนะเพิ่มเติม</label>
+                <textarea id="swal-comment" class="p-3 border-2 border-slate-100 rounded-xl text-sm outline-none focus:border-blue-500" rows="3" placeholder="น้องๆ มีอะไรอยากบอกพี่ติวเตอร์ในคาบนี้ไหม..."></textarea>
+            </div>
+        `,
+                    confirmButtonText: 'ส่งคะแนนประเมิน',
+                    showCancelButton: true,
+                    cancelButtonText: 'ไว้ทีหลัง',
+                    confirmButtonColor: '#2563eb',
+                    allowOutsideClick: false,
+                    preConfirm: () => {
+                        return {
+                            rating: document.getElementById('swal-rating').value,
+                            comment: document.getElementById('swal-comment').value
+                        }
+                    }
+                });
+
+                // 4. ถ้ากดยืนยันการส่ง
+                if (formValues) {
+                    Swal.fire({
+                        title: 'กำลังบันทึก...',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal.showLoading()
+                    });
+
+                    try {
+                        // ส่งข้อมูลไปยัง Google Apps Script
+                        await fetch(CONFIG.appscriptUrl, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            body: JSON.stringify({
+                                action: "submitRating",
+                                key: CONFIG.syncKey,
+                                room: room + " (SCH)", // ระบุว่ามาจากหน้า Schedule
+                                subject: sessionInfo,   // ส่งเป็น "PHYSIC (Day 28/4 @ 9:00)"
+                                tutor: tutorDisplay,    // ส่งชื่อติวเตอร์ตามตาราง เช่น "ใหม่-แดน"
+                                rating: formValues.rating,
+                                comment: formValues.comment
+                            })
+                        });
+
+                        // 5. บันทึกสถานะว่าประเมินแล้วลงเครื่อง
+                        localStorage.setItem(sessionKey, 'true');
+
+                        await Swal.fire({
+                            icon: 'success',
+                            title: 'บันทึกสำเร็จ!',
+                            text: 'ขอบคุณสำหรับทุกความเห็นครับ',
+                            timer: 2000,
+                            showConfirmButton: false
+                        });
+
+                        // 6. สั่ง Re-render ตารางใหม่เพื่อให้ปุ่มประเมินหายไป/เปลี่ยนสถานะ
+                        if (typeof renderSchedule === 'function') {
+                            renderSchedule();
+                        }
+
+                    } catch (e) {
+                        console.error("Rating Error:", e);
+                        Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่', 'error');
+                    }
+                }
+            };
+            
+                init();
     </script>
 </body>
 
