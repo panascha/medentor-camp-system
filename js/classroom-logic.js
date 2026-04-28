@@ -1341,13 +1341,15 @@ window.joinClass = async function () {
             fullName: currentUser.fullName,
             nickname: currentUser.nickname,
             house: currentUser.house,
-            joinedAt: new Date().toISOString()
+            joinedAt: new Date().toISOString(),
+            status: "online"
         });
 
         onDisconnect(myPresenceRef).remove();
 
         // ตั้งค่าสถานะการเข้าเรียน
         window.isInClass = true;
+        localStorage.setItem('joined_room', myRoom);
         window.lastActiveSubject = activeSessionData.subject;
 
         // สลับหน้าจอ UI
