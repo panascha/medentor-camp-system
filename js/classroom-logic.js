@@ -19,8 +19,18 @@ let onlineStudents = {};     // เด็กที่ต่อเน็ตอย
 let responsesHistory = {};   // เก็บแบบ { studentID: [ {activity: "...", answer: "...", time: "..."}, ... ] }
 let scoresToSync = { studentScores: {}, houseScores: {} };
 let activityLog = {}; // เก็บ { activity_id: { title: "...", status: "..." } }
-let subjectQuotas = {}; // 
+let subjectQuotas = {}; // เก็บ { subject: { used: number, total: number } }
 let selectedActivityFilter = 'current'; // 'current' หรือ activity_id เจาะจง
+const HOUSE_THEMES = {
+    1: 'bg-red-50 text-red-700 border-red-200',
+    2: 'bg-blue-50 text-blue-700 border-blue-200',
+    3: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    4: 'bg-amber-50 text-amber-700 border-amber-200',
+    5: 'bg-purple-50 text-purple-700 border-purple-200',
+    6: 'bg-pink-50 text-pink-700 border-pink-200',
+    7: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    8: 'bg-teal-50 text-teal-700 border-teal-200'
+};
 
 // ---------------------------------------------------------
 // Persistence Logic: รีเฟรชแล้วไม่หลุด
@@ -1463,6 +1473,7 @@ window.exitClass = async function () {
 // ---------------------------------------------------------
 // [SECTION: SCORING LOGIC] - สำหรับการให้คะแนนและจัดการโควต้า
 // ---------------------------------------------------------
+let stagedChanges = {};
 
 window.customScore = async function (id, name, type) {
     const { value: pts } = await Swal.fire({
@@ -1543,79 +1554,61 @@ window.giveSpeakCount = function (id, name, val) {
 window.openHistoryEditor = async function () {
     const user = checkAuth();
     const subject = document.getElementById('select-subject').value;
+    stagedChanges = {}; // Reset ทุกครั้งที่เปิด
 
-    // แสดง Loading ระหว่างดึงข้อมูล
-    Swal.fire({ title: 'กำลังดึงประวัติ...', didOpen: () => Swal.showLoading() });
+    Swal.fire({ title: 'กำลังโหลดประวัติ...', didOpen: () => Swal.showLoading() });
 
     try {
-        const resp = await fetch(CONFIG.appscriptUrl, {
-            method: 'POST',
-            body: JSON.stringify({
-                action: 'getPastSessionScores',
-                key: CONFIG.syncKey,
-                subject: subject,
-                tutor: user.nickname || user.fullName,
-                role: user.role
-            })
-        });
+        const stdSnapshot = await get(ref(db, `students`));
+        const allStudentsArray = Object.keys(stdSnapshot.val() || {}).map(id => ({ id: id.toString(), ...stdSnapshot.val()[id] }));
+        const resp = await fetch(CONFIG.appscriptUrl, { method: 'POST', body: JSON.stringify({ action: 'getPastSessionScores', key: CONFIG.syncKey, subject: subject, tutor: user.nickname, division: user.division, role: user.role }) });
         const resData = await resp.json();
         const sessions = resData.data;
 
-        if (!sessions || Object.keys(sessions).length === 0) {
-            return Swal.fire('ไม่พบประวัติ', `ไม่มีประวัติการแจกคะแนนวิชา ${subject}`, 'info');
-        }
+        if (!sessions) return Swal.fire('ไม่พบข้อมูล', '', 'info');
 
-        let html = `<div class="max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar space-y-8" id="history-container">`;
+        let html = `
+            <div class="max-h-[65vh] overflow-y-auto pr-2 custom-scrollbar space-y-6" id="history-container">`;
 
-        Object.values(sessions).reverse().forEach(session => {
+        Object.entries(sessions).reverse().forEach(([sessionId, session]) => {
             const info = session.info;
-            session.data.sort((a, b) => a.house - b.house || (a.type !== b.type ? (a.type === 'House' ? -1 : 1) : a.targetName.localeCompare(b.targetName)));
+            const logRoomLetter = info.room.replace('Room_', '');
+            const fullList = allStudentsArray.filter(std => std.classID === logRoomLetter).map(std => {
+                const logEntry = session.data.find(d => String(d.targetId) === String(std.id));
+                return logEntry || { targetId: std.id, targetName: std.nickname, house: std.house, score: 0, speakCount: 0, responseCount: 0, rowNumber: -1 };
+            });
+            fullList.sort((a, b) => a.house - b.house);
 
             html += `
-                <div class="bg-white rounded-[2rem] border-2 border-slate-100 overflow-hidden shadow-sm">
-                    <div class="bg-slate-800 p-4 text-white flex justify-between items-center">
-                        <div>
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Session Summary</p>
-                            <h4 class="font-black text-sm">${new Date(info.timestamp).toLocaleString('th-TH')}</h4>
+                <div class="bg-white rounded-[1.5rem] border-2 border-slate-100 overflow-hidden shadow-sm mb-4">
+                    <div class="bg-slate-800 p-3 text-white flex justify-between items-center">
+                        <div class="text-left">
+                            <p class="text-[8px] font-bold text-slate-400 uppercase">คาบเรียนวันที่ ${new Date(info.timestamp).toLocaleDateString('th-TH')}</p>
+                            <h4 class="font-black text-[11px] text-blue-400">Tutor: ${info.tutor}</h4>
                         </div>
-                        <div class="text-right">
-                            <span class="bg-blue-600 px-3 py-1 rounded-full text-[10px] font-black uppercase">${info.room.replace('_', ' ')}</span>
-                        </div>
+                        <span class="bg-blue-600 px-2 py-0.5 rounded-lg text-[10px] font-black">${info.room}</span>
                     </div>
-                    <table class="w-full text-left text-[11px]">
+                    <table class="w-full text-left text-[10px]">
                         <thead class="bg-slate-50 border-b text-slate-500 font-bold uppercase">
-                            <tr>
-                                <th class="p-3 w-16 text-center">House</th>
-                                <th class="p-3">Target / Student Info</th>
-                                <th class="p-3 text-center">💬 Resp.</th>
-                                <th class="p-3 text-center">🙋‍♂️ Speak</th>
-                                <th class="p-3 text-center">Score</th>
-                                <th class="p-3 text-right">Action</th>
+                            <tr class="text-center">
+                                <th class="p-2 w-8">บ.</th>
+                                <th class="p-2 text-left">ชื่อ</th>
+                                <th class="p-2">Score</th><th class="p-2">Speak</th><th class="p-2">Resp</th><th class="p-2 w-10"></th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-50">
-                            ${session.data.map(row => {
-                const isHouseType = row.type === 'House';
+                        <tbody>
+                            ${fullList.map(row => {
+                const houseClass = HOUSE_THEMES[row.house] || 'bg-slate-50';
                 return `
-                                <tr class="${isHouseType ? 'bg-amber-50/50' : 'hover:bg-blue-50/30'} transition-colors" id="row-${row.rowNumber}">
-                                    <td class="p-3 text-center">
-                                        <span class="font-black ${isHouseType ? 'text-amber-600 border-amber-200 bg-amber-100' : 'text-blue-600 border-blue-100 bg-blue-50'} px-2 py-1 rounded-lg border">
-                                            บ.${row.house}
-                                        </span>
-                                    </td>
-                                    <td class="p-3">
-                                        ${isHouseType
-                        ? `<span class="font-black text-amber-700">🏠 House Bonus</span>`
-                        : `<div><p class="font-bold text-slate-700">${row.targetName}</p><p class="text-[9px] font-mono text-slate-400">${row.targetId}</p></div>`}
-                                    </td>
-                                    <td class="p-3 text-center font-bold text-slate-400">${isHouseType ? '-' : (row.responseCount || 0)}</td>
-                                    <td class="p-3 text-center font-bold text-slate-400">${isHouseType ? '-' : (row.speakCount || 0)}</td>
-                                    <td class="p-3 text-center" id="score-cell-${row.rowNumber}">
-                                        <span class="font-black ${isHouseType ? 'text-amber-600' : 'text-blue-700'} text-sm">${row.score}</span>
-                                    </td>
-                                    <td class="p-3 text-right" id="action-cell-${row.rowNumber}">
-                                        <button onclick="startInlineEdit(${row.rowNumber}, '${row.targetName}', ${row.score}, '${subject}')" 
-                                            class="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg transition-all">✎</button>
+                                <tr class="border-b ${houseClass}" id="row-${sessionId}-${row.targetId}">
+                                    <td class="p-2 text-center font-black">${row.house}</td>
+                                    <td class="p-2 font-bold text-slate-700 std-nickname">${row.targetName}</td>
+                                    <td class="p-2 text-center font-black" id="v-score-${sessionId}-${row.targetId}">${row.score}</td>
+                                    <td class="p-2 text-center font-bold" id="v-speak-${sessionId}-${row.targetId}">${row.speakCount}</td>
+                                    <td class="p-2 text-center font-bold opacity-60" id="v-resp-${sessionId}-${row.targetId}">${row.responseCount}</td>
+                                    <td class="p-2 text-right" id="action-${sessionId}-${row.targetId}">
+                                        <button onclick="startHistoryEdit('${sessionId}', '${row.targetId}', ${row.score}, ${row.speakCount}, ${row.responseCount}, ${row.rowNumber})" 
+                                            class="bg-white/60 p-2 rounded-lg shadow-sm border border-black/5 hover:bg-white transition-all">✎</button>
                                     </td>
                                 </tr>`;
             }).join('')}
@@ -1623,92 +1616,208 @@ window.openHistoryEditor = async function () {
                     </table>
                 </div>`;
         });
-        html += `</div>`;
 
-        // แสดงหน้าต่างประวัติแบบห้ามปิดเองโดยไม่ได้ตั้งใจ (AllowOutsideClick: true ปกติ)
+        html += `</div>
+            <!-- ปุ่มบันทึกลอย (Footer ของ Modal) -->
+            <div class="mt-4 p-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex justify-between items-center">
+                <div class="text-left">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase">แถวที่รอการบันทึก</p>
+                    <p id="staged-count" class="text-lg font-black text-slate-700">0 รายการ</p>
+                </div>
+                <button onclick="saveAllHistoryChanges()" id="btn-save-bulk" disabled
+                    class="bg-slate-300 text-white px-10 py-3 rounded-xl font-black shadow-lg transition-all flex items-center gap-2">
+                    💾 บันทึกข้อมูลทั้งหมด
+                </button>
+            </div>
+        `;
+
         Swal.fire({
-            title: `ประวัติการแจกคะแนน: ${subject.toUpperCase()}`,
+            title: `จัดการคะแนน: ${subject.toUpperCase()}`,
             html: html,
             width: '850px',
             showConfirmButton: false,
             showCloseButton: true,
-            focusConfirm: false
+            allowOutsideClick: false
         });
 
-    } catch (e) {
-        console.error(e);
-        Swal.fire('Error', 'ไม่สามารถโหลดข้อมูลได้', 'error');
+    } catch (e) { console.error(e); }
+};
+
+// 2. ฟังก์ชันเริ่มแก้ไข (ถอดปุ่ม ✅ ออก)
+window.startHistoryEdit = function (sessionId, stdId, score, speak, resp, rowNumber) {
+    const fields = ['score', 'speak', 'resp'];
+    const values = [score, speak, resp];
+
+    fields.forEach((f, i) => {
+        const inputId = `i-${f}-${sessionId}-${stdId}`;
+        document.getElementById(`v-${f}-${sessionId}-${stdId}`).innerHTML =
+            `<input type="number" id="${inputId}" 
+                oninput="stageDataChange('${sessionId}', '${stdId}', ${rowNumber})"
+                class="w-14 p-1 text-center border-2 border-blue-500 rounded-lg font-black text-xs" 
+                value="${values[i]}">`;
+    });
+
+    // ปุ่มเปลี่ยนเป็นยกเลิก (✕) อย่างเดียว เพราะจะบันทึกรวมด้านล่าง
+    document.getElementById(`action-${sessionId}-${stdId}`).innerHTML = `
+        <button onclick="cancelHistoryEdit('${sessionId}', '${stdId}', ${score}, ${speak}, ${resp}, ${rowNumber})" 
+            class="bg-red-50 text-red-500 w-10 h-10 rounded-lg flex items-center justify-center text-lg">✕</button>
+    `;
+};
+
+window.stageDataChange = function (sessionId, stdId, rowNumber) {
+    const nScore = document.getElementById(`i-score-${sessionId}-${stdId}`).value;
+    const nSpeak = document.getElementById(`i-speak-${sessionId}-${stdId}`).value;
+    const nResp = document.getElementById(`i-resp-${sessionId}-${stdId}`).value;
+
+    const user = checkAuth();
+    const subject = document.getElementById('select-subject').value;
+    const rowEl = document.getElementById(`row-${sessionId}-${stdId}`);
+
+    // --- จุดที่แก้ไข: ดึงข้อมูลจากคลาส std-nickname และ td ช่องแรก ---
+    const nickname = rowEl.querySelector('.std-nickname').innerText.trim();
+    const house = rowEl.cells[0].innerText.replace('บ.', '').trim();
+
+    stagedChanges[`${sessionId}-${stdId}`] = {
+        rowNumber: rowNumber,
+        newScore: nScore,
+        newSpeak: nSpeak,
+        newResp: nResp,
+        student: {
+            id: stdId,
+            nickname: nickname, // ดึงชื่อที่ถูกต้องมาแล้ว
+            house: house
+        },
+        sessionInfo: {
+            room: rowEl.closest('.bg-white').querySelector('.bg-blue-600').innerText,
+            timestamp: sessionId.split('_')[1],
+            subject: subject,
+            tutor: user.nickname || user.fullName
+        }
+    };
+
+    // อัปเดต UI ปุ่มบันทึกด้านล่าง (คงเดิม)
+    const count = Object.keys(stagedChanges).length;
+    const stagedCountEl = document.getElementById('staged-count');
+    if (stagedCountEl) stagedCountEl.innerText = `${count} รายการ`;
+
+    const btn = document.getElementById('btn-save-bulk');
+    if (btn && count > 0) {
+        btn.disabled = false;
+        btn.className = "bg-blue-600 text-white px-10 py-3 rounded-xl font-black shadow-lg shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all cursor-pointer";
     }
-}
-
-// ฟังก์ชันเปลี่ยนช่องคะแนนเป็น Input
-window.startInlineEdit = function (rowNumber, targetName, currentScore, subject) {
-    const scoreCell = document.getElementById(`score-cell-${rowNumber}`);
-    const actionCell = document.getElementById(`action-cell-${rowNumber}`);
-
-    // เปลี่ยนช่องคะแนนเป็น Input
-    scoreCell.innerHTML = `
-        <input type="number" id="input-edit-${rowNumber}" 
-            class="w-16 p-1 text-center border-2 border-blue-500 rounded font-black text-sm" 
-            value="${currentScore}" onkeydown="if(event.key==='Enter') saveInlineEdit(${rowNumber}, '${subject}')">
-    `;
-
-    // เปลี่ยนปุ่ม ✎ เป็นปุ่ม Save/Cancel
-    actionCell.innerHTML = `
-        <div class="flex gap-1 justify-end">
-            <button onclick="saveInlineEdit(${rowNumber}, '${subject}')" class="bg-emerald-500 text-white p-1.5 rounded-lg shadow-sm">✅</button>
-            <button onclick="cancelInlineEdit(${rowNumber}, ${currentScore}, '${targetName}', '${subject}')" class="bg-slate-200 text-slate-600 p-1.5 rounded-lg">✕</button>
-        </div>
-    `;
-
-    document.getElementById(`input-edit-${rowNumber}`).focus();
-    document.getElementById(`input-edit-${rowNumber}`).select();
 };
 
-// ฟังก์ชันยกเลิกการแก้ไข
-window.cancelInlineEdit = function (rowNumber, originalScore, targetName, subject) {
-    const scoreCell = document.getElementById(`score-cell-${rowNumber}`);
-    const actionCell = document.getElementById(`action-cell-${rowNumber}`);
+window.saveAllHistoryChanges = async function () {
+    const updates = Object.values(stagedChanges);
+    if (updates.length === 0) return;
 
-    scoreCell.innerHTML = `<span class="font-black text-blue-700 text-sm">${originalScore}</span>`;
-    actionCell.innerHTML = `<button onclick="startInlineEdit(${rowNumber}, '${targetName}', ${originalScore}, '${subject}')" class="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg transition-all">✎</button>`;
-};
-
-// ฟังก์ชันบันทึกข้อมูล (Background Sync)
-window.saveInlineEdit = async function (rowNumber, subject) {
-    const newVal = document.getElementById(`input-edit-${rowNumber}`).value;
-    if (newVal === "") return;
-
-    const scoreCell = document.getElementById(`score-cell-${rowNumber}`);
-    const actionCell = document.getElementById(`action-cell-${rowNumber}`);
-
-    // 1. Update UI ทันที (Optimistic)
-    scoreCell.innerHTML = `<span class="font-black text-orange-500 animate-pulse text-sm">${newVal}</span>`;
-    showToast("กำลังบันทึกคะแนน...", "info");
+    const btn = document.getElementById('btn-save-bulk');
+    btn.disabled = true;
+    btn.innerText = "⏳ กำลังบันทึก...";
 
     try {
-        // 2. ส่งข้อมูลไป Google Sheets (Background)
-        fetch(CONFIG.appscriptUrl, {
+        await fetch(CONFIG.appscriptUrl, {
             method: 'POST',
             mode: 'no-cors',
             body: JSON.stringify({
-                action: 'editPastSessionScore',
+                action: 'bulkEditPastSessionScores',
                 key: CONFIG.syncKey,
-                rowNumber: rowNumber,
-                newScore: parseFloat(newVal),
-                subject: subject
+                updates: updates
             })
         });
 
-        // 3. เปลี่ยน UI กลับเป็นสถานะปกติ (แต่เป็นคะแนนใหม่)
-        setTimeout(() => {
-            scoreCell.innerHTML = `<span class="font-black text-blue-700 text-sm">${newVal}</span>`;
-            actionCell.innerHTML = `<button onclick="startInlineEdit(${rowNumber}, 'นักเรียน', ${newVal}, '${subject}')" class="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg transition-all">✎</button>`;
-            showToast("บันทึกสำเร็จ", "success");
-        }, 500);
+        // แสดงความสำเร็จแล้วปิด Modal หรือโหลดข้อมูลใหม่
+        await Swal.fire({
+            icon: 'success',
+            title: 'บันทึกข้อมูลทั้งหมดแล้ว',
+            text: `อัปเดตเรียบร้อยจำนวน ${updates.length} รายการ`,
+            timer: 2000,
+            showConfirmButton: false
+        });
+
+        // โหลด Modal ใหม่เพื่อแสดงข้อมูลล่าสุดที่บันทึกแล้ว
+        window.openHistoryEditor();
 
     } catch (e) {
-        showToast("เกิดข้อผิดพลาด", "error");
-        openHistoryEditor(); // กรณีพลาดจริงๆ ให้โหลดใหม่
+        showToast("เกิดข้อผิดพลาดในการบันทึกรวม", "error");
+        btn.disabled = false;
+        btn.innerText = "💾 บันทึกข้อมูลทั้งหมด";
     }
+};
+
+// บันทึกแบบ Background และแสดง Toast แทนการใช้ Swal.fire ปกติ
+window.saveHistoryEdit = async function (sessionId, stdId, rowNumber) {
+    const nScore = document.getElementById(`i-score-${sessionId}-${stdId}`).value;
+    const nSpeak = document.getElementById(`i-speak-${sessionId}-${stdId}`).value;
+    const nResp = document.getElementById(`i-resp-${sessionId}-${stdId}`).value;
+
+    const actionArea = document.getElementById(`action-${sessionId}-${stdId}`);
+    const user = checkAuth();
+
+    // ดึงข้อมูลจากแถว
+    const rowEl = document.getElementById(`row-${sessionId}-${stdId}`);
+    const nickname = rowEl.querySelector('p.font-bold').innerText;
+    const house = rowEl.cells[0].innerText.replace('บ.', '').trim();
+
+    actionArea.innerHTML = `<div class="w-12 h-12 flex items-center justify-center animate-pulse text-orange-500">...</div>`;
+
+    try {
+        const subject = document.getElementById('select-subject').value;
+        const container = rowEl.closest('.bg-white');
+        const sessionRoom = container.querySelector('.bg-blue-600').innerText;
+
+        const payload = {
+            action: 'editPastSessionScore',
+            key: CONFIG.syncKey,
+            rowNumber: rowNumber,
+            newScore: nScore, newSpeak: nSpeak, newResp: nResp,
+            subject: subject,
+            student: { id: stdId, nickname: nickname, house: house },
+            sessionInfo: { room: sessionRoom, timestamp: sessionId.split('_')[1], subject: subject, tutor: user.nickname || user.fullName }
+        };
+
+        // ส่งข้อมูล (Background)
+        fetch(CONFIG.appscriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(payload) });
+
+        // อัปเดต UI ทันที
+        document.getElementById(`v-score-${sessionId}-${stdId}`).innerText = nScore;
+        document.getElementById(`v-speak-${sessionId}-${stdId}`).innerText = nSpeak;
+        document.getElementById(`v-resp-${sessionId}-${stdId}`).innerText = nResp;
+
+        // คืนค่าปุ่มขนาดเท่าเดิม
+        actionArea.innerHTML = `
+            <button onclick="startHistoryEdit('${sessionId}', '${stdId}', ${nScore}, ${nSpeak}, ${nResp}, ${rowNumber})" 
+                class="bg-white/50 hover:bg-white p-3 rounded-xl shadow-sm border border-black/5 transition-all">
+                <span class="text-lg">✎</span>
+            </button>`;
+
+        // แจ้งเตือนแบบ Toast (ไม่ปิด Modal หลัก)
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 2000,
+            timerProgressBar: true
+        });
+        Toast.fire({ icon: 'success', title: 'บันทึกสำเร็จ' });
+
+    } catch (e) {
+        console.error(e);
+        showToast("เกิดข้อผิดพลาด", "error");
+    }
+};
+
+window.cancelHistoryEdit = function (sessionId, stdId, score, speak, resp, rowNumber) {
+    // คืนค่าตัวเลข
+    document.getElementById(`v-score-${sessionId}-${stdId}`).innerText = score;
+    document.getElementById(`v-speak-${sessionId}-${stdId}`).innerText = speak;
+    document.getElementById(`v-resp-${sessionId}-${stdId}`).innerText = resp;
+
+    // คืนค่าปุ่มแก้ไข (ใช้ Class ชุดเดิมเพื่อให้ขนาดเท่าเดิม)
+    document.getElementById(`action-${sessionId}-${stdId}`).innerHTML = `
+        <button onclick="startHistoryEdit('${sessionId}', '${stdId}', ${score}, ${speak}, ${resp}, ${rowNumber})" 
+            class="bg-white/50 hover:bg-white p-3 rounded-xl shadow-sm border border-black/5 transition-all">
+            <span class="text-lg">✎</span>
+        </button>
+    `;
 };

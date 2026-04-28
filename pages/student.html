@@ -302,24 +302,29 @@
         let lastTutorName = "ไม่ระบุชื่อ";
 
 
-        if (myRoom) {
-            onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
-                const session = snapshot.val();
-                const interactionBar = document.getElementById('interaction-bar');
+        // ค้นหาโค้ดส่วนนี้ในหน้า student.html แล้วแก้เป็นแบบนี้
+            if (myRoom) {
+                onValue(ref(db, `active_sessions/${myRoom}`), (snapshot) => {
+                    const session = snapshot.val();
+                    const interactionBar = document.getElementById('interaction-bar');
 
-                if (session && session.isOpen) {
-                    if (interactionBar) interactionBar.classList.remove('hidden');
-                    lastTutorName = session.tutor || "ไม่ระบุชื่อ"; 
-                    lastSubjectForRating = session.subject;
-                    hasRatedThisSession = false;
-                } else {
-                    if (interactionBar) interactionBar.classList.add('hidden');
-                    if (!hasRatedThisSession && lastSubjectForRating !== "" && window.isInClass) {
-                        triggerRating(lastSubjectForRating);
+                    if (session && session.isOpen) {
+                        // เพิ่ม IF เช็ค interactionBar
+                        if (interactionBar) interactionBar.classList.remove('hidden');
+
+                        lastTutorName = session.tutor || "ไม่ระบุชื่อ";
+                        lastSubjectForRating = session.subject;
+                        hasRatedThisSession = false;
+                    } else {
+                        // เพิ่ม IF เช็ค interactionBar ตรงนี้ด้วย
+                        if (interactionBar) interactionBar.classList.add('hidden');
+
+                        if (!hasRatedThisSession && lastSubjectForRating !== "" && window.isInClass) {
+                            triggerRating(lastSubjectForRating);
+                        }
                     }
-                }
-            });
-        }
+                });
+            }
         function startWatchingActiveSession() {
                 if (!myRoom) return;
 
@@ -329,24 +334,34 @@
                     const interactionBar = document.getElementById('interaction-bar');
 
                     if (session && session.isOpen) {
-                        if (roomBadge) roomBadge.innerText = `${myRoom} | ${session.subject.toUpperCase()}`;
-                        if (window.isInClass && interactionBar) interactionBar.classList.remove('hidden');
+                        // เช็คก่อนว่ามี element roomBadge ไหม
+                        if (roomBadge) {
+                            roomBadge.innerText = `${myRoom.replace('_', ' ')} | ${session.subject.toUpperCase()}`;
+                        }
 
-                        // เก็บชื่อวิชาไว้ล่าสุด
+                        // เช็คก่อนว่ามี element interactionBar ไหม
+                        if (window.isInClass && interactionBar) {
+                            interactionBar.classList.remove('hidden');
+                        }
+
                         window.lastActiveSubject = session.subject;
                     } else {
-                        // กรณีห้องปิด/ถูกลบ
-                        if (roomBadge) roomBadge.innerText = `${myRoom} | CLOSED`;
-                        if (interactionBar) interactionBar.classList.add('hidden');
+                        if (roomBadge) {
+                            roomBadge.innerText = `${myRoom.replace('_', ' ')} | CLOSED`;
+                        }
 
-                        // ถ้ากำลังเรียนอยู่ (isInClass = true) และยังไม่ได้ประเมิน
+                        // เพิ่ม IF เช็คตรงนี้เพื่อป้องกัน Error
+                        if (interactionBar) {
+                            interactionBar.classList.add('hidden');
+                        }
+
                         if (window.isInClass && !hasRatedThisSession && window.lastActiveSubject) {
                             triggerRating(window.lastActiveSubject);
                         }
                     }
                 });
             }
-    async function triggerRating(subject) {
+            async function triggerRating(subject) {
             // ป้องกันการเรียกซ้อน
             if (hasRatedThisSession) return;
             hasRatedThisSession = true;
