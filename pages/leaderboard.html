@@ -32,21 +32,40 @@
 
     <main class="max-w-4xl mx-auto p-6">
         <!-- Section สำหรับ Admin: แสดง Podium และตาราง -->
+        <!-- ค้นหาส่วน <div id="admin-view"> แล้ววางทับด้วย code นี้ -->
         <div id="admin-view" class="hidden space-y-8">
-            <div class="grid grid-cols-3 gap-4 items-end pt-10 pb-6" id="podium">
-                <!-- Top 3 จะแสดงตรงนี้ -->
+            <!-- Legend: คำอธิบายสีแหล่งคะแนน -->
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-4 justify-center">
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-blue-500"></span><span
+                        class="text-[10px] font-bold">ฟิสิกส์</span></div>
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-orange-500"></span><span
+                        class="text-[10px] font-bold">เคมี</span></div>
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500"></span><span
+                        class="text-[10px] font-bold">ชีวะ</span></div>
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-amber-500"></span><span
+                        class="text-[10px] font-bold">Jeopardy</span></div>
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-indigo-600"></span><span
+                        class="text-[10px] font-bold">ชุมนุมวิชาการ</span></div>
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-slate-400"></span><span
+                        class="text-[10px] font-bold">อื่นๆ</span></div>
             </div>
+        
+            <div class="grid grid-cols-3 gap-4 items-end pt-10 pb-6" id="podium">
+                <!-- Top 3 -->
+            </div>
+        
             <div class="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-100">
                 <table class="w-full text-left">
                     <thead class="bg-slate-800 text-white text-[10px] uppercase tracking-widest">
                         <tr>
-                            <th class="p-5">Rank</th>
-                            <th class="p-5">House</th>
-                            <th class="p-5 text-right">Total Score</th>
+                            <th class="p-5 w-20">Rank</th>
+                            <th class="p-5 w-32">House</th>
+                            <th class="p-5">Score Composition (Source Breakdown)</th>
+                            <th class="p-5 text-right w-32">Total</th>
                         </tr>
                     </thead>
                     <tbody id="full-ranking-body" class="divide-y divide-slate-50">
-                        <!-- รายการบ้านทั้งหมด -->
+                        <!-- รายการบ้านพร้อมแถบสีจะแสดงที่นี่ -->
                     </tbody>
                 </table>
             </div>
