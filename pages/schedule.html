@@ -12,6 +12,33 @@
         body {
             font-family: 'Prompt', sans-serif;
         }
+
+        /* สไตล์สำหรับแท็บ "วันนี้" */
+.tab-today {
+    border: 2px solid #2563eb !important; /* ขอบสีน้ำเงินเด่นขึ้น */
+    position: relative;
+}
+
+.tab-today::after {
+    content: 'TODAY';
+    position: absolute;
+    top: -8px;
+    right: 5px;
+    background: #2563eb;
+    color: white;
+    font-size: 7px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-weight: 900;
+}
+
+/* สไตล์สำหรับปุ่มประเมินที่ยังไม่ถึงเวลา */
+.btn-locked {
+    background-color: #f1f5f9 !important;
+    color: #cbd5e1 !important;
+    cursor: not-allowed;
+    border: 1px dashed #cbd5e1 !important;
+}
     </style>
 </head>
 
@@ -77,53 +104,86 @@
                 return SUBJECTS[key] || key; // ถ้าไม่เจอให้คืนค่าเดิม
             }
 
-        function init() {
-            if (!user) { window.location.href = 'login.html'; return; }
-
-            const myClass = user.classID ? user.classID.toUpperCase() : "ยังไม่มีกลุ่ม";
-            document.getElementById('display-class').innerText = "Class " + myClass;
-
-            const scheduleRef = ref(db, 'schedule');
-            onValue(scheduleRef, (snapshot) => {
-                const data = snapshot.val();
-                if (!data) {
-                    document.getElementById('schedule-list').innerHTML = "<p class='text-center py-20 text-slate-400'>ยังไม่มีข้อมูลตารางเรียน</p>";
-                    return;
+            function parseDayToDate(dayStr) {
+                    const parts = dayStr.replace('Day ', '').split('/'); // ตัดเหลือ ["28", "4"]
+                    const day = parseInt(parts[0]);
+                    const month = parseInt(parts[1]) - 1; // ใน JS Month เริ่มที่ 0-11
+                    const year = 2026; // กำหนดปีตามระบบของคุณ
+                    return new Date(year, month, day);
                 }
 
-                // กรองเฉพาะห้องของตัวเอง (Class A เห็นแค่ A และ ALL)
-                allItems = Object.values(data).filter(item =>
-                    item.classTarget === "ALL" || item.classTarget === myClass
-                );
+        function init() {
+                if (!user) { window.location.href = 'login.html'; return; }
 
-                const days = [...new Set(allItems.map(i => i.day))];
-                selectedDay = days[0];
-                renderTabs(days);
-                renderSchedule();
-            });
-        }
+                const myClass = user.classID ? user.classID.toUpperCase() : "ยังไม่มีกลุ่ม";
+                document.getElementById('display-class').innerText = "Class " + myClass;
 
+                const scheduleRef = ref(db, 'schedule');
+                onValue(scheduleRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (!data) {
+                        document.getElementById('schedule-list').innerHTML = "<p class='text-center py-20 text-slate-400'>ยังไม่มีข้อมูลตารางเรียน</p>";
+                        return;
+                    }
+
+                    allItems = Object.values(data).filter(item =>
+                        item.classTarget === "ALL" || item.classTarget === myClass
+                    );
+
+                    const days = [...new Set(allItems.map(i => i.day))];
+
+                    // --- เพิ่ม Logic เลือกวันปัจจุบันให้อัตโนมัติ ---
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0); // รีเซ็ตเวลาเพื่อเทียบแต่วันที่
+
+                    const todayStr = `Day ${today.getDate()}/${today.getMonth() + 1}`;
+
+                    // ถ้าวันที่มีอยู่ในตาราง ตรงกับวันนี้ ให้เปิดวันนั้นเป็นค่าเริ่มต้น
+                    if (days.includes(todayStr)) {
+                        selectedDay = todayStr;
+                    } else if (!selectedDay) {
+                        selectedDay = days[0];
+                    }
+
+                    renderTabs(days);
+                    renderSchedule();
+                });
+            }
         function renderTabs(days) {
-            const container = document.getElementById('day-tabs');
-            container.innerHTML = days.map(day => `
-                <button onclick="setDay('${day}')" class="px-6 py-2 rounded-full font-bold text-sm whitespace-nowrap transition-all ${selectedDay === day ? 'bg-slate-800 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}">
-                    ${day}
-                </button>
-            `).join('');
-        }
+                const container = document.getElementById('day-tabs');
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const todayMatchStr = `Day ${today.getDate()}/${today.getMonth() + 1}`;
+
+                container.innerHTML = days.map(day => {
+                    const isToday = day === todayMatchStr;
+                    const activeClass = selectedDay === day ? 'bg-slate-800 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200';
+                    const todayClass = isToday ? 'tab-today' : '';
+
+                    return `
+            <button onclick="setDay('${day}')" class="px-6 py-2 rounded-full font-bold text-sm whitespace-nowrap transition-all ${activeClass} ${todayClass}">
+                ${day}
+            </button>
+        `;
+                }).join('');
+            }
 
         window.setDay = function (day) {
             selectedDay = day;
             const days = [...new Set(allItems.map(i => i.day))];
             renderTabs(days);
             renderSchedule();
-        }
-
-                // ค้นหาฟังก์ชัน renderSchedule ใน schedule.html แล้วแทนที่ด้วย Code นี้
-                    function renderSchedule() {
+        }                    
+                function renderSchedule() {
                         const container = document.getElementById('schedule-list');
                         const filtered = allItems.filter(i => i.day === selectedDay);
-                        const user = checkAuth(); // ดึงข้อมูล user เพื่อเอา ID มาทำ key
+                        const user = checkAuth();
+
+                        // คำนวณวันที่ปัจจุบันเพื่อตรวจสอบว่าอนาคตหรือไม่
+                        const now = new Date();
+                        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                        const itemDate = parseDayToDate(selectedDay).getTime();
+                        const isFuture = itemDate > todayStart; // ถ้าวันที่ของไอเท็มมากกว่าวันนี้
 
                         if (filtered.length === 0) {
                             container.innerHTML = "<p class='text-center py-20 text-slate-400'>ยังไม่มีข้อมูลตารางเรียนในวันนี้</p>";
@@ -132,11 +192,39 @@
 
                         container.innerHTML = filtered.map(item => {
                             const isEvaluable = item.subject && item.subject.trim() !== "";
-
-                            // --- ส่วนที่เพิ่มใหม่: สร้าง Unique Key สำหรับตรวจสอบว่าประเมินไปหรือยัง ---
-                            // รูปแบบ: rated_101_Day28/4_9:00_physic
                             const sessionKey = `rated_${user.id}_${item.day}_${item.startTime}_${item.subject}`.replace(/\s+/g, '');
                             const isAlreadyRated = localStorage.getItem(sessionKey) === 'true';
+
+                            let ratingButtonHtml = '';
+
+                            if (isEvaluable) {
+                                if (isAlreadyRated) {
+                                    // กรณีประเมินแล้ว
+                                    ratingButtonHtml = `
+                    <div class="pt-3 border-t border-slate-50 text-center">
+                        <span class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest bg-emerald-50 px-4 py-1.5 rounded-full">
+                            ✓ ประเมินเรียบร้อยแล้ว
+                        </span>
+                    </div>`;
+                                } else if (isFuture) {
+                                    // กรณีวันที่ยังมาไม่ถึง (Lock ไว้)
+                                    ratingButtonHtml = `
+                    <div class="pt-3 border-t border-slate-50">
+                        <button disabled class="w-full btn-locked py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                            🔒 จะเปิดให้ประเมินเมื่อถึงวันเรียน
+                        </button>
+                    </div>`;
+                                } else {
+                                    // กรณีประเมินได้ปกติ
+                                    ratingButtonHtml = `
+                    <div class="pt-3 border-t border-slate-50">
+                        <button onclick="openScheduleRating('${item.day}', '${item.startTime}', '${item.subject}', '${item.tutor}', '${item.room}')" 
+                            class="w-full bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2">
+                            ⭐ ประเมินคาบเรียนนี้
+                        </button>
+                    </div>`;
+                                }
+                            }
 
                             return `
             <div class="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col gap-4 hover:border-blue-200 transition-all">
@@ -158,27 +246,12 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- ปุ่มประเมิน: จะแสดงเฉพาะคาบที่มีวิชา และยังไม่เคยประเมินเท่านั้น -->
-                ${(isEvaluable && !isAlreadyRated) ? `
-                <div class="pt-3 border-t border-slate-50">
-                    <button onclick="openScheduleRating('${item.day}', '${item.startTime}', '${item.subject}', '${item.tutor}', '${item.room}')" 
-                        class="w-full bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2">
-                        ⭐ ประเมินคาบเรียนนี้
-                    </button>
-                </div>
-                ` : (isEvaluable && isAlreadyRated) ? `
-                <div class="pt-3 border-t border-slate-50 text-center">
-                    <span class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest bg-emerald-50 px-4 py-1.5 rounded-full">
-                        ✓ ประเมินเรียบร้อยแล้ว
-                    </span>
-                </div>
-                ` : ''}
+                ${ratingButtonHtml}
             </div>
         `;
                         }).join('');
                     }
-        window.openScheduleRating = async function (day, time, subject, tutors, room) {
+                    window.openScheduleRating = async function (day, time, subject, tutors, room) {
                 const user = checkAuth();
                 if (!user) return;
 
@@ -271,7 +344,7 @@
                     }
                 }
             };
-            
+
                 init();
     </script>
 </body>
