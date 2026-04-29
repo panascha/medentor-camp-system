@@ -618,6 +618,109 @@ function renderBoardScoreboard() {
 // ---------------------------------------------------------
 // 6. Game Logic Functions (Bind to Window)
 // ---------------------------------------------------------
+// --- [เพิ่มใหม่] ฟังก์ชันเปิดหน้าต่างแก้ไขคะแนน Jeopardy ---
+window.openJeopardyScoreEditor = async function () {
+    if (!state.houses) return;
+
+    let tableHtml = `
+        <div class="overflow-x-auto custom-scrollbar">
+            <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                    <tr class="bg-slate-100 text-slate-500 uppercase font-black">
+                        <th class="p-2 text-center">บ้าน</th>
+                        <th class="p-2 text-center">Correct (+)</th>
+                        <th class="p-2 text-center">Penalty (-)</th>
+                        <th class="p-2 text-center">Net Score</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+    `;
+
+    for (let i = 1; i <= 8; i++) {
+        const h = state.houses[i] || { correct_points: 0, penalty_points: 0, jeopardy_score: 0 };
+        tableHtml += `
+            <tr class="hover:bg-slate-50">
+                <td class="p-2 text-center font-black text-blue-600 bg-blue-50/30">บ.${i}</td>
+                <td class="p-2">
+                    <input type="number" id="edit-correct-${i}" 
+                        oninput="recalculateEditRow(${i})"
+                        class="w-full p-2 border-2 border-slate-100 rounded-lg text-center font-bold text-emerald-600" 
+                        value="${h.correct_points || 0}">
+                </td>
+                <td class="p-2">
+                    <input type="number" id="edit-penalty-${i}" 
+                        oninput="recalculateEditRow(${i})"
+                        class="w-full p-2 border-2 border-slate-100 rounded-lg text-center font-bold text-red-500" 
+                        value="${h.penalty_points || 0}">
+                </td>
+                <td class="p-2 text-center">
+                    <span id="edit-net-display-${i}" class="text-sm font-black text-slate-700">${(h.correct_points || 0) - (h.penalty_points || 0)}</span>
+                </td>
+            </tr>
+        `;
+    }
+
+    tableHtml += `</tbody></table></div>`;
+
+    const { value: formValues } = await Swal.fire({
+        title: 'Jeopardy Master Score Editor',
+        html: tableHtml,
+        width: '600px',
+        showCancelButton: true,
+        confirmButtonText: '💾 บันทึกการเปลี่ยนแปลง',
+        cancelButtonText: 'ยกเลิก',
+        confirmButtonColor: '#4f46e5',
+        preConfirm: () => {
+            let updates = {};
+            for (let i = 1; i <= 8; i++) {
+                const correct = parseInt(document.getElementById(`edit-correct-${i}`).value) || 0;
+                const penalty = parseInt(document.getElementById(`edit-penalty-${i}`).value) || 0;
+                updates[i] = {
+                    ...state.houses[i], // เก็บค่าเดิม (session_id, etc.)
+                    correct_points: correct,
+                    penalty_points: penalty,
+                    jeopardy_score: correct - penalty
+                };
+            }
+            return updates;
+        }
+    });
+
+    if (formValues) {
+        saveManualJeopardyScores(formValues);
+    }
+};
+
+// ฟังก์ชันคำนวณคะแนน Net ในตารางแบบ Real-time (ช่วยให้ Admin เห็นผลก่อนกดบันทึก)
+window.recalculateEditRow = function (houseId) {
+    const c = parseInt(document.getElementById(`edit-correct-${houseId}`).value) || 0;
+    const p = parseInt(document.getElementById(`edit-penalty-${houseId}`).value) || 0;
+    document.getElementById(`edit-net-display-${houseId}`).innerText = (c - p).toLocaleString();
+};
+
+// ฟังก์ชันบันทึกข้อมูลทั้งหมดลง Firebase
+async function saveManualJeopardyScores(updatedHouses) {
+    Swal.fire({ title: 'กำลังบันทึก...', didOpen: () => Swal.showLoading() });
+
+    try {
+        await saveUndoState(); // เซฟประวัติเผื่อกดพลาด
+
+        const { ref, update } = await import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js");
+
+        // อัปเดตกิ่ง houses ทั้งหมด
+        await update(ref(db, 'jeopardy/houses'), updatedHouses);
+
+        // Log กิจกรรม
+        await update(ref(db, 'jeopardy/game_state'), {
+            last_action_log: `Admin manually adjusted all scores at ${new Date().toLocaleTimeString()}`
+        });
+
+        Swal.fire({ icon: 'success', title: 'อัปเดตคะแนนเรียบร้อย', timer: 1500, showConfirmButton: false });
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'ไม่สามารถบันทึกคะแนนได้', 'error');
+    }
+}
 window.saveUndoState = async function () {
     await set(ref(db, 'jeopardy/history/last_state'), {
         houses: state.houses,
