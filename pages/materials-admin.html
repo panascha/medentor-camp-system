@@ -53,16 +53,20 @@
     <main class="max-w-5xl mx-auto p-4 md:p-8 space-y-8">
 
         <!-- Section: Add New Material -->
-        <div class="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-            <div class="flex items-center gap-2 mb-6">
-                <div
-                    class="w-10 h-10 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-100">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
-                        stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                    </svg>
+        <div class="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-slate-100" id="admin-form-container">
+            <div class="flex justify-between items-center mb-6">
+                <div class="flex items-center gap-2">
+                    <div id="form-icon"
+                        class="w-10 h-10 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                        </svg>
+                    </div>
+                    <h2 id="form-title" class="text-lg font-black text-slate-800 uppercase italic">เพิ่มเอกสารใหม่</h2>
                 </div>
-                <h2 class="text-lg font-black text-slate-800 uppercase italic">เพิ่มเอกสารใหม่</h2>
+                <button id="btn-cancel-edit" onclick="resetMaterialForm()"
+                    class="hidden text-xs font-bold text-red-500 hover:underline">ยกเลิกการแก้ไข</button>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -91,11 +95,17 @@
                     <div class="flex gap-2">
                         <input type="text" id="file-url" placeholder="https://drive.google.com/file/d/..."
                             class="flex-1 mt-1 p-4 bg-slate-50 border-2 border-slate-50 rounded-2xl outline-none focus:border-blue-500 focus:bg-white transition-all font-mono text-xs">
+                            <div class="md:col-span-3">
+                                <label class="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">ตั้งเวลาปล่อยไฟล์
+                                    (ทิ้งว่างไว้ถ้าต้องการให้เห็นทันที)</label>
+                                <input type="datetime-local" id="release-time"
+                                    class="w-full mt-1 p-4 bg-slate-50 border-2 border-slate-50 rounded-2xl outline-none focus:border-blue-500 focus:bg-white transition-all font-medium">
+                            </div>
                         <button onclick="previewLink()"
                             class="mt-1 bg-slate-100 text-slate-600 px-6 rounded-2xl font-bold text-xs hover:bg-slate-200 transition-all">ตรวจสอบ</button>
                     </div>
                 </div>
-                <button onclick="saveMaterial()"
+                <button onclick="saveMaterial()" id="btn-submit"
                     class="md:col-span-3 bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-blue-100 hover:bg-blue-700 active:scale-95 transition-all mt-2">
                     บันทึกลงฐานข้อมูล
                 </button>
@@ -136,9 +146,12 @@
     </script>
     <script src="../js/firebase-config.js"></script>
     <script src="../js/auth.js"></script>
+    <script>
+        let editingKey = null;
+    </script>
     <script type="module">
         import { initializeApp } from "firebase/app";
-        import { getDatabase, ref, push, onValue, remove, set } from "firebase/database";
+    import { getDatabase, ref, push, onValue, remove, set, get, update } from "firebase/database";
 
         const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
         const db = getDatabase(app);
@@ -176,89 +189,135 @@
             window.open(url, '_blank');
         }
 
-        window.saveMaterial = async function () {
-            const title = document.getElementById('file-title').value.trim();
-            const subject = document.getElementById('file-subject').value;
-            const rawUrl = document.getElementById('file-url').value.trim();
+    // ฟังก์ชันสำหรับ Render ตารางใหม่ (เพิ่มปุ่ม Toggle และ Release Now)
+    onValue(ref(db, 'learning_materials'), (snapshot) => {
+        const data = snapshot.val();
+        const tbody = document.getElementById('material-list');
+        if (!data) { tbody.innerHTML = "<tr><td colspan='4' class='p-10 text-center'>ไม่มีข้อมูล</td></tr>"; return; }
 
-            if (!title || !rawUrl) {
-                return Swal.fire({ icon: 'error', title: 'กรุณากรอกข้อมูลให้ครบ' });
-            }
+        const items = Object.keys(data).map(key => ({ id: key, ...data[key] })).sort((a, b) => b.timestamp - a.timestamp);
 
-            const driveUrl = formatDriveUrl(rawUrl);
+        tbody.innerHTML = items.map(item => {
+            const sub = SUBJECT_MAP[item.subject] || { name: item.subject, color: 'slate' };
+            const isVisible = item.isVisible !== false; // default เป็น true
+            const hasPassed = !item.releaseTime || item.releaseTime <= Date.now();
 
-            Swal.fire({ title: 'กำลังบันทึก...', didOpen: () => Swal.showLoading() });
+            return `
+            <tr class="hover:bg-slate-50/50 ${!isVisible ? 'opacity-50' : ''}">
+                <td class="p-4">
+                    <span class="bg-${sub.color}-100 text-${sub.color}-600 text-[10px] font-black px-2 py-1 rounded-lg uppercase">${sub.name}</span>
+                </td>
+                <td class="p-4">
+                    <p class="font-bold text-slate-700 text-sm">${item.title}</p>
+                    <div class="flex items-center gap-2 mt-1">
+                        ${item.releaseTime ? `<span class="text-[9px] font-bold text-orange-500">⏰ ${new Date(item.releaseTime).toLocaleString('th-TH')}</span>` : '<span class="text-[9px] text-emerald-500 font-bold">✅ ปล่อยทันที</span>'}
+                        ${!hasPassed ? `<button onclick="releaseNow('${item.id}')" class="text-[9px] bg-orange-100 text-orange-600 px-1.5 rounded hover:bg-orange-600 hover:text-white">ปล่อยตอนนี้เลย</button>` : ''}
+                    </div>
+                </td>
+                <td class="p-4">
+                    <button onclick="toggleVisibility('${item.id}', ${isVisible})" class="flex items-center gap-1 ${isVisible ? 'text-emerald-600' : 'text-slate-400'} font-bold text-xs">
+                        ${isVisible ? '👁️ แสดงอยู่' : '🙈 ซ่อนจากน้อง'}
+                    </button>
+                </td>
+                <td class="p-4 text-right">
+                    <div class="flex justify-end gap-1">
+                        <button onclick="editMaterial('${item.id}')" class="p-2 text-blue-500 hover:bg-blue-50 rounded-lg">✏️</button>
+                        <button onclick="deleteMaterial('${item.id}')" class="p-2 text-red-400 hover:bg-red-50 rounded-lg">🗑️</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+        }).join('');
+    });
 
-            try {
-                await push(ref(db, 'learning_materials'), {
-                    title,
-                    subject,
-                    driveUrl,
-                    uploadedBy: user.nickname || user.fullName,
-                    timestamp: Date.now()
-                });
 
-                Swal.fire({ icon: 'success', title: 'บันทึกไฟล์เรียบร้อย', timer: 1500 });
-                document.getElementById('file-title').value = "";
-                document.getElementById('file-url').value = "";
-            } catch (e) {
-                Swal.fire('เกิดข้อผิดพลาด', e.message, 'error');
-            }
+    window.editMaterial = async function (key) {
+        const snapshot = await get(ref(db, `learning_materials/${key}`));
+        const data = snapshot.val();
+        if (!data) return;
+
+        editingKey = key;
+        document.getElementById('file-title').value = data.title;
+        document.getElementById('file-subject').value = data.subject;
+        document.getElementById('file-url').value = data.driveUrl;
+        if (data.releaseTime) {
+            const d = new Date(data.releaseTime);
+            d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+            document.getElementById('release-time').value = d.toISOString().slice(0, 16);
         }
 
-        // Listen for data
-        onValue(ref(db, 'learning_materials'), (snapshot) => {
-            const data = snapshot.val();
-            const tbody = document.getElementById('material-list');
-            const countEl = document.getElementById('file-count');
+        document.getElementById('form-title').innerText = "แก้ไขเอกสาร";
+        document.getElementById('btn-submit').innerText = "อัปเดตข้อมูล";
+        document.getElementById('btn-cancel-edit').classList.remove('hidden');
+        document.getElementById('admin-form-container').scrollIntoView({ behavior: 'smooth' });
+    };
 
-            if (!data) {
-                tbody.innerHTML = `<tr><td colspan="4" class="p-20 text-center text-slate-300 italic">ยังไม่มีเอกสารในระบบ</td></tr>`;
-                countEl.innerText = "0 FILES";
-                return;
-            }
+    window.resetMaterialForm = function () {
+        editingKey = null;
+        document.getElementById('file-title').value = "";
+        document.getElementById('file-url').value = "";
+        document.getElementById('release-time').value = "";
+        document.getElementById('form-title').innerText = "เพิ่มเอกสารใหม่";
+        document.getElementById('btn-submit').innerText = "บันทึกลงฐานข้อมูล";
+        document.getElementById('btn-cancel-edit').classList.add('hidden');
+    };
 
-            // Convert to array and sort by timestamp desc
-            const items = Object.keys(data).map(key => ({ id: key, ...data[key] }))
-                .sort((a, b) => b.timestamp - a.timestamp);
+    window.releaseNow = async function (key) {
+        await update(ref(db, `learning_materials/${key}`), { releaseTime: 0 });
+        // ส่งไป Sheets ด้วย
+        fetch(CONFIG.appscriptUrl, {
+            method: 'POST', mode: 'no-cors',
+            body: JSON.stringify({ action: "updateMaterialStatus", key: CONFIG.syncKey, id: key, releaseTime: 0 })
+        });
+        showToast("ปล่อยไฟล์เรียบร้อย");
+    };
 
-            countEl.innerText = `${items.length} FILES`;
-            tbody.innerHTML = items.map(item => {
-                const sub = SUBJECT_MAP[item.subject] || { name: item.subject, color: 'slate' };
-                return `
-                    <tr class="hover:bg-slate-50/50 transition-colors">
-                        <td class="p-5">
-                            <span class="bg-${sub.color}-100 text-${sub.color}-600 text-[10px] font-black px-2 py-1 rounded-lg uppercase">
-                                ${sub.name}
-                            </span>
-                        </td>
-                        <td class="p-5">
-                            <p class="font-bold text-slate-700 text-sm">${item.title}</p>
-                            <p class="text-[9px] text-slate-400 font-mono mt-1 truncate max-w-xs">${item.driveUrl}</p>
-                        </td>
-                        <td class="p-5">
-                            <p class="text-xs font-bold text-slate-500">${item.uploadedBy || 'System'}</p>
-                            <p class="text-[9px] text-slate-400">${new Date(item.timestamp).toLocaleDateString('th-TH')}</p>
-                        </td>
-                        <td class="p-5 text-right">
-                            <div class="flex justify-end gap-2">
-                                <a href="${item.driveUrl}" target="_blank" class="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                    </svg>
-                                </a>
-                                <button onclick="deleteMaterial('${item.id}')" class="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
+    window.toggleVisibility = async function (key, currentStatus) {
+        const newStatus = !currentStatus;
+        await update(ref(db, `learning_materials/${key}`), { isVisible: newStatus });
+        // ส่งไป Sheets
+        fetch(CONFIG.appscriptUrl, {
+            method: 'POST', mode: 'no-cors',
+            body: JSON.stringify({ action: "updateMaterialStatus", key: CONFIG.syncKey, id: key, status: newStatus ? "active" : "hidden" })
+        });
+    };
+
+    // แก้ไขฟังก์ชัน saveMaterial เดิมให้รองรับ Update
+    window.saveMaterial = async function () {
+        const title = document.getElementById('file-title').value.trim();
+        const subject = document.getElementById('file-subject').value;
+        const rawUrl = document.getElementById('file-url').value.trim();
+        const releaseTimeVal = document.getElementById('release-time').value;
+        const releaseTime = releaseTimeVal ? new Date(releaseTimeVal).getTime() : 0;
+
+        if (!title || !rawUrl) return Swal.fire("กรุณากรอกข้อมูลให้ครบ", "", "error");
+
+        const data = {
+            title, subject,
+            driveUrl: formatDriveUrl(rawUrl),
+            releaseTime,
+            uploadedBy: user.nickname,
+            timestamp: Date.now(),
+            isVisible: true
+        };
+
+        if (editingKey) {
+            await update(ref(db, `learning_materials/${editingKey}`), data);
+            data.action = "editMaterial";
+            data.oldTitle = title; // ใช้หาแถวใน Sheet
+        } else {
+            await push(ref(db, 'learning_materials'), data);
+            data.action = "addMaterial";
+        }
+
+        fetch(CONFIG.appscriptUrl, {
+            method: 'POST', mode: 'no-cors',
+            body: JSON.stringify({ ...data, key: CONFIG.syncKey })
         });
 
+        Swal.fire("บันทึกสำเร็จ", "", "success");
+        resetMaterialForm();
+    };
         window.deleteMaterial = async function (key) {
             const confirm = await Swal.fire({
                 title: "ลบเอกสารนี้?",
