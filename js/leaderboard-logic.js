@@ -24,7 +24,7 @@ const SUBJECT_LABELS = {
     "introdent": "Dent",
     "intromed": "Med",
     "jeopardy": "เกม",
-    "ชุมนุมวิชาการ": "ชุมนุม",
+    "ชุมนุมวิชาการ": "ชุมนุมวิชาการ",
     "default": "อื่นๆ"
 };
 
