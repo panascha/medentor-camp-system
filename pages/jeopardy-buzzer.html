@@ -607,37 +607,48 @@
             }
 
             window.selectJeopardyAnswer = async function (answerIndex) {
-                    // 1. ตรวจสอบสถานะเบื้องต้น
-                    if (isStunned) return; // ถ้าโดนล็อคปุ่มอยู่ห้ามกด
+                    if (isStunned) return;
 
                     const gs = gameState.game_state;
+                    const buzzerData = gameState.buzzers || {};
+
+                    // 1. ตรวจสอบสถานะเกม: ต้องไม่อยู่หน้าบอร์ด
                     if (!gs || gs.status === 'BOARD') return;
 
-                    // 2. เช็คสิทธิ์: ต้องเป็นบ้านที่เป็นคนตอบปัจจุบันเท่านั้น
-                    const buzzerData = gameState.buzzers || {};
-                    const currentAnswering = (gs.status === 'STEAL_WAIT' && buzzerData.winner)
-                        ? buzzerData.winner
-                        : gs.active_house;
-
-                    if (currentAnswering != myHouseId) {
-                        // ถ้าไม่ใช่คิวเราตอบ (อาจจะกดเล่นๆ) ไม่ต้องส่งค่าไป
+                    // 2. ตรวจสอบว่าข้อนี้ถูกตอบผิดไปแล้วหรือยัง
+                    const wrongAnswers = gs.wrong_answers || [];
+                    if (wrongAnswers.includes(answerIndex)) {
+                        showToast("ข้อนี้ถูกตอบไปแล้วและผิด!", "error");
                         return;
                     }
 
-                    try {
-                        // 3. อัปเดตคำตอบที่เลือกลง Firebase
-                        // ใช้คำสั่ง update จาก firebase/database (มี import อยู่แล้วด้านบน)
-                        await update(ref(db, 'jeopardy/game_state'), {
-                            selected_answer: answerIndex
-                        });
+                    // 3. ตรวจสอบสิทธิ์การกดเลือกคำตอบ
+                    let canISelect = false;
 
-                        // เล่นเสียงเบาๆ ให้รู้ว่ากดติด
-                        if (typeof playBeep === 'function') playBeep(550, 0.05);
-                    } catch (e) {
-                        console.error("Select Answer Error:", e);
+                    if (gs.status === 'QUESTION') {
+                        // เฟสปกติ: ต้องเป็นเจ้าของข้อเท่านั้นที่กดได้
+                        if (gs.active_house.toString() === myHouseId) canISelect = true;
+                    }
+                    else if (gs.status === 'STEAL_WAIT') {
+                        // เฟส Steal: ต้องเป็น "ผู้ชนะ Buzzer" เท่านั้นถึงจะกดเลือกคำตอบได้
+                        if (buzzerData.winner && buzzerData.winner.toString() === myHouseId) {
+                            canISelect = true;
+                        }
+                    }
+
+                    if (canISelect) {
+                        try {
+                            await update(ref(db, 'jeopardy/game_state'), {
+                                selected_answer: answerIndex
+                            });
+                            if (typeof playBeep === 'function') playBeep(550, 0.05);
+                        } catch (e) {
+                            console.error("Select Answer Error:", e);
+                        }
+                    } else {
+                        console.log("คุณไม่มีสิทธิ์เลือกคำตอบในขณะนี้");
                     }
                 };
-
             window.handleBuzzIn = async function () {
                     const now = Date.now();
                     const gs = gameState.game_state;

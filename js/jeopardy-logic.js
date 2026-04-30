@@ -974,7 +974,8 @@ window.judgeOwner = async function (isCorrect) {
             status: 'STEAL_WAIT',
             is_steal_open: false,
             is_timer_running: false,
-            is_judged: false // ยังไม่จบ เพราะต้องรอ Steal
+            is_judged: false, // ยังไม่จบ เพราะต้องรอ Steal
+            selected_answer: null
         });
         showToast("เจ้าของข้อตอบผิด! เตรียมตัว STEAL", "warning");
     }
