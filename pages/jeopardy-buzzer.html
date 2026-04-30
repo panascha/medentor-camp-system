@@ -520,91 +520,71 @@
                     const myHouseIdInt = parseInt(myHouseId);
                     const isWinner = buzzerData.winner == myHouseId;
                     const someoneElseWon = buzzerData.winner && buzzerData.winner != myHouseId;
-                    const isOwner = gs.active_house === myHouseIdInt;
+                    const isOwner = gs.active_house === myHouseIdInt; // เช็คว่าเป็นเจ้าของข้อไหม
                     const f1Outer = document.getElementById('f1-lights-outer');
 
+                    // --- [กรณีที่ 1: ถ้าเราเป็นเจ้าของข้อ] ---
                     if (isOwner) {
-                        // ถ้าเป็นเจ้าของข้อ ให้ล็อคปุ่มถาวรในเฟสนี้
                         statusText.innerText = "WAITING FOR STEAL";
                         questionInfo.innerText = "บ้านคุณไม่มีสิทธิ์ Steal ข้อนี้";
                         icon.innerText = "🚫";
                         text.innerText = "BLOCKED";
-                        btn.disabled = true;
-                        btn.classList.add('bg-slate-900', 'border-slate-800');
-                    } 
-                    else if (isWinner) {
-                        // กรณีบ้านเรากดติด
-                        if (statusText) statusText.innerText = "YOU BUZZED IN!";
-                        if (body) body.classList.add('state-win');
-                        if (questionInfo) questionInfo.innerText = "บ้านคุณได้สิทธิ์ตอบ!";
-                        if (icon) icon.innerText = "🎯";
-                        if (text) text.innerText = "ANSWER NOW";
-
-                        btn.classList.add('buzzer-win');
-                        btn.disabled = true;
-                        if (ring) ring.classList.add('bg-emerald-500', 'opacity-30');
-                        if (innerGlow) innerGlow.style.opacity = "1";
+                        btn.disabled = true; // ล็อคปุ่มถาวร
+                        btn.className = "buzzer-btn relative rounded-full bg-slate-900 border-[8px] border-slate-800 flex flex-col items-center justify-center opacity-50";
+                        f1Outer.classList.add('hidden'); // ซ่อนไฟ F1 สำหรับเจ้าของ
                     }
-                    else if (someoneElseWon) {
-                        // คำนวณเวลาที่ผ่านไปหลังจากบ้านแรกกด
-                        const timeSinceWinner = buzzerData.timestamp ? (Date.now() - buzzerData.timestamp) : 0;
-                        const isWindowOpen = timeSinceWinner < 5000; // ยังอยู่ในช่วง 5 วินาทีหรือไม่
-
-                        if (isWindowOpen) {
-                            // จังหวะที่มีคนชนะแล้ว แต่ยังไม่ครบ 5 วิ -> ให้บ้านอื่นกดเพื่อบันทึกเวลาได้
-                            if (statusText) statusText.innerText = "ALMOST THERE!";
-                            if (questionInfo) questionInfo.innerText = `บ้าน ${buzzerData.winner} กดไปแล้ว!`;
-                            if (icon) icon.innerText = "⏱️";
-                            if (text) text.innerText = "PRESS NOW!";
-
-                            btn.disabled = false;
-                            btn.classList.add('bg-orange-900', 'border-orange-700', 'animate-pulse');
-                        } else {
-                            // ครบ 5 วิแล้ว หรือกดไม่ทันช่วงโควต้า -> ปิดปุ่มถาวร
-                            if (statusText) statusText.innerText = "TOO LATE!";
-                            if (questionInfo) questionInfo.innerText = `หมดเวลาช่วง Steal แล้ว`;
-                            if (icon) icon.innerText = "💨";
-                            if (text) text.innerText = "LOCKED";
-
+                    // --- [กรณีที่ 2: ถ้าเราไม่ใช่เจ้าของ (มีสิทธิ์ขโมย)] ---
+                    else {
+                        if (isWinner) {
+                            // เรากดติดคนแรก
+                            statusText.innerText = "YOU BUZZED IN!";
+                            if (body) body.classList.add('state-win');
+                            questionInfo.innerText = "บ้านคุณได้สิทธิ์ตอบ!";
+                            icon.innerText = "🎯";
+                            text.innerText = "ANSWER NOW";
+                            btn.classList.add('buzzer-win');
+                            btn.disabled = true;
+                            f1Outer.classList.add('hidden');
+                        }
+                        else if (someoneElseWon) {
+                            // บ้านอื่นกดติดไปแล้ว
+                            statusText.innerText = "TOO LATE!";
+                            questionInfo.innerText = `บ้าน ${buzzerData.winner} ได้สิทธิ์ไปแล้ว`;
+                            icon.innerText = "💨";
+                            text.innerText = "LOCKED";
                             btn.disabled = true;
                             btn.classList.add('bg-red-950', 'border-red-900');
+                            f1Outer.classList.add('hidden');
                         }
-                    }
-                    if (gs.countdown_active) {
-                        // --- ช่วงไฟแดงวิ่ง ---
-                        renderBuzzerLights(gs); // เรียกฟังก์ชันวาดไฟ
-
-                        statusText.innerText = "COUNTDOWN...";
-                        icon.innerText = "🛑";
-                        text.innerText = "WAIT...";
-                        btn.disabled = false;
-                        btn.className = "buzzer-btn relative rounded-full bg-slate-900 border-[8px] border-red-900 flex flex-col items-center justify-center opacity-100";
-
-                        // หน่วงเวลา loop เพื่อความลื่นไหลของไฟ
-                        setTimeout(() => updateUI(gameState), 50);
-                    } 
-                    else if (gs.is_steal_open) {
-                        // ไฟเขียวแล้ว (Released)
-                        f1Outer.classList.add('hidden');
-                        statusText.innerText = "STEAL NOW!";
-                        statusText.classList.add('text-emerald-400');
-                        questionInfo.innerHTML = `<p class="text-emerald-500 font-black text-2xl animate-bounce">GO GO GO!</p>`;
-                        icon.innerText = "⚡";
-                        text.innerText = "PRESS!";
-                        btn.disabled = false;
-                        btn.classList.add('buzzer-active', 'border-emerald-400'); // buzzer-active ใช้ animation ที่เตรียมไว้
-                        body.classList.add('state-steal-open');
-                    } else {
-                        // กรณีรอสัญญาณ Steal
-                        if (statusText) statusText.innerText = "READY TO STEAL";
-                        if (questionInfo) questionInfo.innerText = "เตรียมตัวกดปุ่ม...";
-                        if (icon) icon.innerText = "✋";
-                        if (text) text.innerText = "GET READY";
-
-                        f1Outer.classList.add('hidden');
-                        btn.disabled = false; // ให้กดได้เพื่อ trigger showEarlyAlert
-                        btn.classList.add('bg-indigo-950', 'border-indigo-800');
-                        if (statusDot) statusDot.classList.add('bg-indigo-400');
+                        else if (gs.countdown_active) {
+                            // ช่วงนับไฟ F1 (ไฟแดง)
+                            renderBuzzerLights(gs);
+                            statusText.innerText = "COUNTDOWN...";
+                            icon.innerText = "🛑";
+                            text.innerText = "WAIT...";
+                            btn.disabled = false; // ให้กดได้เพื่อ Trigger STUN
+                            btn.className = "buzzer-btn relative rounded-full bg-slate-900 border-[8px] border-red-900 flex flex-col items-center justify-center opacity-100";
+                        }
+                        else if (gs.is_steal_open) {
+                            // ช่วงไฟเขียว (เปิดให้กด)
+                            f1Outer.classList.add('hidden');
+                            statusText.innerText = "STEAL NOW!";
+                            questionInfo.innerHTML = `<p class="text-emerald-500 font-black text-2xl animate-bounce">GO GO GO!</p>`;
+                            icon.innerText = "⚡";
+                            text.innerText = "PRESS!";
+                            btn.disabled = false;
+                            btn.className = "buzzer-btn buzzer-active relative rounded-full border-[8px] border-emerald-400 flex flex-col items-center justify-center";
+                            body.classList.add('state-steal-open');
+                        }
+                        else {
+                            // รอสตาฟสั่งเริ่ม
+                            statusText.innerText = "READY TO STEAL";
+                            questionInfo.innerText = "เตรียมตัวกดปุ่ม...";
+                            icon.innerText = "✋";
+                            text.innerText = "GET READY";
+                            btn.disabled = false;
+                            btn.classList.add('bg-indigo-950', 'border-indigo-800');
+                        }
                     }
                 }
             }
