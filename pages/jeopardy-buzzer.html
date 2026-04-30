@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Jeopardy Buzzer - Medentor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -73,7 +74,6 @@
             user-select: none;
             transition: all 0.1s active;
             touch-action: none;
-    user-select: none;            /* ป้องกันการคลุมดำข้อความ */
     -webkit-user-select: none;
     -webkit-touch-callout: none;  /* ปิดเมนูคลิกขวา/แช่ค้างบน iOS */
     width: 65vmin !important; 
@@ -789,14 +789,24 @@
         }
         document.addEventListener('touchstart', function (event) {
                 if (event.touches.length > 1) {
-                    event.preventDefault(); // ป้องกันการใช้ 2 นิ้วขยาย
+                    event.preventDefault(); // ป้องกันการใช้ 2 นิ้วขยายหน้าจอ
                 }
             }, { passive: false });
 
+            let lastTouchEnd = 0;
+            document.addEventListener('touchend', function (event) {
+                const now = (new Date()).getTime();
+                if (now - lastTouchEnd <= 300) {
+                    event.preventDefault(); // ป้องกัน Double-tap to zoom
+                }
+                lastTouchEnd = now;
+            }, false);
+
+            // สำหรับ iOS เฉพาะทาง (ห้ามขยายด้วย Gesture)
             document.addEventListener('gesturestart', function (event) {
-                event.preventDefault(); // ป้องกัน Gesture บน iOS
+                event.preventDefault();
             });
-    </script>
+        </script>
 
     
 </body>
