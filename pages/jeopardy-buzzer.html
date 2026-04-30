@@ -522,6 +522,8 @@
                     const someoneElseWon = buzzerData.winner && buzzerData.winner != myHouseId;
                     const isOwner = gs.active_house === myHouseIdInt; // เช็คว่าเป็นเจ้าของข้อไหม
                     const f1Outer = document.getElementById('f1-lights-outer');
+                    const elapsed = Date.now() - (gs.steal_start_ts || Date.now());
+                    const sequenceFinished = elapsed >= 4000; // ไฟ 5 ดวง ดวงละ 0.8s = 4000ms
 
                     // --- [กรณีที่ 1: ถ้าเราเป็นเจ้าของข้อ] ---
                     if (isOwner) {
@@ -566,26 +568,30 @@
                             btn.classList.add('bg-red-950', 'border-red-900');
                             f1Outer.classList.add('hidden');
                         }
-                        else if (gs.countdown_active) {
-                            // ช่วงนับไฟ F1 (ไฟแดง)
+                        else if (gs.countdown_active || (gs.is_steal_open && !sequenceFinished)) {
+                            // ถ้า Firebase สั่งนับถอยหลัง OR (สั่งเขียวแล้วแต่ไฟแดงในจอน้องยังวิ่งไม่ครบ 5 ดวง)
                             renderBuzzerLights(gs);
                             statusText.innerText = "COUNTDOWN...";
                             icon.innerText = "🛑";
                             text.innerText = "WAIT...";
-                            btn.disabled = false; // ให้กดได้เพื่อ Trigger STUN
+                            btn.disabled = false;
                             btn.className = "buzzer-btn relative rounded-full bg-slate-900 border-[8px] border-red-900 flex flex-col items-center justify-center opacity-100";
+
+                            // บังคับ Loop ให้เนียน
+                            setTimeout(() => updateUI(gameState), 50);
                         }
-                        else if (gs.is_steal_open) {
-                            // ช่วงไฟเขียว (เปิดให้กด)
+                        else if (gs.is_steal_open && sequenceFinished) {
+                            // ต้องเขียวจาก Firebase และไฟในเครื่องต้องวิ่งครบ 5 ดวงแล้วเท่านั้นถึงจะแสดงสีเขียว
                             f1Outer.classList.add('hidden');
                             statusText.innerText = "STEAL NOW!";
+                            statusText.classList.add('text-emerald-400');
                             questionInfo.innerHTML = `<p class="text-emerald-500 font-black text-2xl animate-bounce">GO GO GO!</p>`;
                             icon.innerText = "⚡";
                             text.innerText = "PRESS!";
                             btn.disabled = false;
                             btn.className = "buzzer-btn buzzer-active relative rounded-full border-[8px] border-emerald-400 flex flex-col items-center justify-center";
                             body.classList.add('state-steal-open');
-                        }
+                        } 
                         else {
                             // รอสตาฟสั่งเริ่ม
                             statusText.innerText = "READY TO STEAL";
@@ -594,6 +600,7 @@
                             text.innerText = "GET READY";
                             btn.disabled = false;
                             btn.classList.add('bg-indigo-950', 'border-indigo-800');
+                            f1Outer.classList.add('hidden');
                         }
                     }
                 }
@@ -727,25 +734,32 @@
             const outer = document.getElementById('f1-lights-outer');
             if (!container || !gs.steal_start_ts) return;
 
+            // คำนวณเวลาที่ผ่านไป (ms)
             const elapsed = Date.now() - gs.steal_start_ts;
-            const activeCount = Math.floor(elapsed / 800);
+
+            // คำนวณจำนวนไฟ (1 ดวงทุก 0.8 วินาที)
+            // ใช้ Math.max(0, ...) กันค่าติดลบกรณี Clock เครื่องน้องช้ากว่า Server
+            const activeCount = Math.floor(Math.max(0, elapsed) / 800);
             const lights = [1, 2, 3, 4, 5];
 
-            outer.classList.remove('hidden'); // แสดงแผงไฟ
+            outer.classList.remove('hidden');
 
             container.innerHTML = lights.map(i => {
                 const isOn = activeCount >= i;
+                // ถ้าวิ่งเกิน 5 ให้ดับไฟแดงรอ (เพื่อรอจังหวะ random delay ของไฟเขียว)
+                const isRed = isOn && activeCount <= 5;
+
                 return `
             <div class="w-10 h-10 rounded-full border-4 border-slate-800 shadow-inner transition-all duration-150
-                ${isOn ? 'bg-red-600 shadow-[0_0_20px_#dc2626]' : 'bg-slate-900'}">
+                ${isRed ? 'bg-red-600 shadow-[0_0_20px_#dc2626]' : 'bg-slate-900'}">
             </div>
         `;
             }).join('');
 
             const statusTxt = document.getElementById('f1-status-text');
             if (activeCount >= 5) {
-                statusTxt.innerText = "HOLD IT!!!";
-                statusTxt.className = "text-sm font-black text-red-500 tracking-[0.3em] animate-bounce";
+                statusTxt.innerText = "READY... HOLD!";
+                statusTxt.className = "text-sm font-black text-amber-500 tracking-[0.3em] animate-pulse";
             } else {
                 statusTxt.innerText = "WAIT FOR LIGHTS...";
                 statusTxt.className = "text-xs font-bold text-slate-500 tracking-widest";
