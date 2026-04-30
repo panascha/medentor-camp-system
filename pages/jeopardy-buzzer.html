@@ -433,6 +433,7 @@
 
                 // ใส่ตัวเลือก (ถ้ามี)
                 if (qData.options && qData.options.trim() !== "") {
+                    optionsGrid.classList.remove('hidden'); 
                     const choices = qData.options.split(/\r?\n|\\n/).filter(line => line.trim() !== "");
                     const labels = ['A', 'B', 'C', 'D'];
                     const wrongAnswers = gs.wrong_answers || []; // <--- ดึงรายการข้อที่ผิดจาก Firebase
@@ -458,6 +459,7 @@
                     }).join('');
                 } else {
                     optionsGrid.classList.add('hidden');
+                    optionsGrid.innerHTML = ""; 
                 }
             } else {
                 qArea.classList.add('hidden');
