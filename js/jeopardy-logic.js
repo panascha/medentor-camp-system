@@ -62,8 +62,10 @@ onValue(ref(db, 'jeopardy'), (snapshot) => {
         const newForceClose = gs.force_close_banner_ts || 0;
 
 
-        if (newForceClose > lastForceClose) {
-            isBannerManuallyClosed = true; // สั่งปิด Banner ในเครื่อง Board นี้ทันที
+        if (newForceClose === 0) {
+            isBannerManuallyClosed = false; // ถ้า Admin เริ่มรอบใหม่ (ค่าเป็น 0) ให้ยอมให้ Banner ขึ้นได้อีกครั้ง
+        } else {
+            isBannerManuallyClosed = true; // ถ้ามีค่า Timestamp ส่งมา (Admin สั่งปิด) ให้ซ่อน Banner
         }
 
         // ถ้ามีการกดตัดสินใหม่ และมีคำถามเปิดอยู่จริง ถึงจะโชว์ Banner
@@ -854,6 +856,10 @@ window.executeOpenQuestion = async function (qId) {
 
     await saveUndoState();
 
+    if (typeof isBannerManuallyClosed !== 'undefined') {
+        isBannerManuallyClosed = false;
+    }
+
     // อัปเดตข้อมูลทั้งหมดพร้อมกัน และล้าง pending_question_id ออก
     const updates = {};
     updates[`jeopardy/questions/${qId}/is_opened`] = true;
@@ -862,6 +868,7 @@ window.executeOpenQuestion = async function (qId) {
         status: 'QUESTION',
         active_question_id: qId,
         pending_question_id: null, // สำคัญ: ล้างค่าเพื่อให้ Popup ปิด
+        force_close_banner_ts: 0,
         selected_answer: null,
         wrong_answers: [],
         manual_result: null,
@@ -1052,7 +1059,8 @@ window.openStealBuzzer = async function () {
         'jeopardy/game_state/steal_start_ts': startTime,
         'jeopardy/game_state/steal_random_delay': randomGreenDelay, // บันทึกค่าสุ่มลง DB เพื่อให้ทุกเครื่องตรงกัน
         'jeopardy/game_state/countdown_active': true,
-        'jeopardy/game_state/status': 'STEAL_WAIT'
+        'jeopardy/game_state/status': 'STEAL_WAIT',
+        'jeopardy/game_state/force_close_banner_ts': 0 
     });
 
     // ระบบจะเปิดเขียวอัตโนมัติเมื่อครบเวลา (4วินาทีไฟแดง + เวลาสุ่ม)
@@ -1246,6 +1254,36 @@ window.finishJeopardyGame = async function () {
 
     } catch (e) {
         Swal.fire('Error', 'ไม่สามารถส่งคะแนนได้: ' + e.message, 'error');
+    }
+};
+
+// --- [ฟังก์ชันสำหรับ Admin สั่งเปิดหน้าเฉลยละเอียดบน Board] ---
+window.adminRevealDetailedAnswer = async function() {
+    const gs = state.game_state;
+    if (!gs.active_question_id) return;
+
+    try {
+        await update(ref(db, 'jeopardy/game_state'), {
+            reveal_detailed_answer: true // ส่งสัญญาณให้บอร์ดเปิดหน้าเฉลย
+        });
+        showToast("สั่งแสดงเฉลยบนบอร์ดแล้ว", "success");
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+// --- [ฟังก์ชันสำหรับ Admin สั่งปิด Steal Banner/Countdown บน Board] ---
+window.adminForceCloseSteal = async function () {
+    try {
+        // อัปเดตสถานะใน Firebase เพื่อสั่งให้ Board ทุกเครื่องรับทราบ
+        await update(ref(db, 'jeopardy/game_state'), {
+            // is_steal_open: false, // ปิดสถานะการขโมย (ถ้าต้องการให้ระบบหยุดรับคนกดด้วย)
+            // countdown_active: false,
+            force_close_banner_ts: Date.now() // ส่งสัญญาณ Timestamp เพื่อสั่งให้บอร์ดปิด Banner ทันที
+        });
+        showToast("สั่งปิดหน้าจอ Steal บนบอร์ดแล้ว", "info");
+    } catch (e) {
+        console.error(e);
     }
 };
 
@@ -2029,6 +2067,19 @@ function updateBoardGameState() {
             window.autoRevealTimeout = null;
         }
         window.closeAnswerBanner(); // ปิดหน้าต่างเฉลยละเอียดถ้ามี
+    }
+
+    // --- [10] ฟีเจอร์ใหม่: Admin สั่งปิด Banner กลางจอ (เช่น กรณีข้อมีตัวเลือก แต่ Admin ไม่อยากให้โชว์ตัวเลือกบนบอร์ด) ---
+    if (gs.force_close_banner_ts > (state.last_local_close_ts || 0)) {
+        window.closeStealBanner(); // ฟังก์ชันปิด UI Banner บนบอร์ด
+        state.last_local_close_ts = gs.force_close_banner_ts; // จำไว้ว่าปิดไปแล้วของรอบนี้
+    }
+
+    // --- [11] ฟีเจอร์ใหม่: Admin สั่งเปิดเฉลยละเอียดทันที (ใช้ในกรณีข้อเขียนที่ไม่มีตัวเลือก หรือ Admin อยากให้โชว์เฉลยเลย) ---
+    if (gs.reveal_detailed_answer === true) {
+        window.revealAnswerOnBoard(true); // ฟังก์ชันเปิด Overlay เฉลยละเอียด
+    } else {
+        window.closeAnswerBanner(); // ปิดถ้า Admin ยังไม่สั่ง หรือเริ่มข้อใหม่
     }
 }
 
