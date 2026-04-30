@@ -1381,12 +1381,17 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
             houseScores: houseScoresCleaned || {}
         };
 
-        fetch(CONFIG.appscriptUrl, {
+        const response = await fetch(CONFIG.appscriptUrl, {
             method: 'POST',
-            mode: 'no-cors',
-            headers: { "Content-Type": "text/plain" },
+            headers: { "Content-Type": "text/plain" }, // GAS รับ JSON ผ่าน text/plain ใน doPost
             body: JSON.stringify(syncPayload)
         });
+
+        const result = await response.json(); // อ่านค่า JSON ที่ส่งกลับมา
+
+        if (result.status === "error") {
+            throw new Error(result.message || "GAS บันทึกล้มเหลว");
+        }
 
         // 6. ล้างข้อมูลใน Firebase
         await Promise.all([
@@ -1395,7 +1400,7 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
             remove(ref(db, `responses/${roomToClear}`)),
             remove(ref(db, `classroom_scores/${roomToClear}`)),
             remove(ref(db, `private_questions/${roomToClear}`)),
-            remove(ref(db, `speak_requests/${roomToClear}`)) // เพิ่มการลบคำขอพูดด้วย
+            remove(ref(db, `speak_requests/${roomToClear}`))
         ]);
 
         // 7. เคลียร์สถานะในเครื่อง
@@ -1421,8 +1426,9 @@ window.finishSession = async function (isAuto = false, roomOverride = null) {
         window.isClosingProcessActive = false;
         Swal.fire({
             icon: 'error',
-            title: 'เกิดข้อผิดพลาด',
-            text: 'ไม่สามารถปิดห้องเรียนได้อย่างสมบูรณ์ กรุณาแจ้งฝ่าย Academic'
+            title: 'บันทึกคะแนนไม่สำเร็จ',
+            text: 'เกิดข้อผิดพลาด: ' + e.message + ' กรุณากด "จบคลาส" ใหม่อีกครั้ง หรือแจ้งฝ่าย Academic',
+            confirmButtonText: 'รับทราบ'
         });
     }
 };

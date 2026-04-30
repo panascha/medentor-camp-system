@@ -1,6 +1,6 @@
 const CONFIG = {
     firebaseURL: "https://medentor-response-project-default-rtdb.asia-southeast1.firebasedatabase.app/",
-    appscriptUrl: "https://script.google.com/macros/s/AKfycbwf4RuabWhNzgENqtD1L-J7CHcRiq0q9Z_Gm-Qgyiz0yX8LSHK23MOcNXZyX0XCzwPc/exec",
+    appscriptUrl: "https://script.google.com/macros/s/AKfycbzN1KMH2fstxv7oQUyA2P85imJPz3QLVb0SpS5bccy3dGYf0zhPZU6GkHoRKGbNPpfH/exec",
     campYear: "2026",
     // รหัสลับสำหรับยืนยันตัวตนกับ Apps Script
     syncKey: "MEDENTOR_SECRET_2026",
