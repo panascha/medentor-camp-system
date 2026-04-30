@@ -818,6 +818,7 @@ window.selectQuestion = async function (qId) {
         is_judged: false,
         selected_answer: null,
         wrong_answers: [],
+        manual_result: null,
         answering_house: state.game_state.active_house,
         is_timer_running: true,
         timer_duration: durationMs,
@@ -1919,14 +1920,21 @@ function updateBoardGameState() {
             optionsContainer.innerHTML = choices.slice(0, 4).map((choice, index) => {
                 let cleanChoice = choice.trim().replace(/^[A-D][.:]\s*/i, "");
                 const isSelected = gs.selected_answer === index;
-                const isWrong = wrongAnswers.includes(index);
-                
+                const isWrong = gs.wrong_answers?.includes(index);
+
+                // --- เพิ่มเงื่อนไขตรวจสอบว่าข้อนี้คือข้อที่ตอบถูกหรือไม่ ---
+                const isCorrect = gs.is_judged && gs.manual_result === true && gs.selected_answer === index;
+
                 return `
-            <div onclick="${isWrong ? '' : `window.selectJeopardyAnswer(${index})`}" 
-        class="kahoot-option opt-${index} ${isSelected ? 'is-selected' : ''} ${isWrong ? 'is-disabled' : 'cursor-pointer'}">
-        <span class="kahoot-letter">${labels[index]}</span>
-        <span class="kahoot-text">${cleanChoice} ${isWrong ? ' (✖)' : ''}</span>
-    </div>`;
+        <div onclick="${(isWrong || gs.is_judged) ? '' : `window.selectJeopardyAnswer(${index})`}" 
+            class="kahoot-option opt-${index} 
+            ${isSelected ? 'is-selected' : ''} 
+            ${isWrong ? 'is-disabled' : ''} 
+            ${isCorrect ? 'is-correct' : ''} 
+            ${(gs.is_judged && !isCorrect) ? 'opacity-40 grayscale-[0.5]' : ''}">
+            <span class="kahoot-letter">${isCorrect ? '✓' : labels[index]}</span>
+            <span class="kahoot-text">${cleanChoice} ${isWrong ? ' (✖)' : ''}</span>
+        </div>`;
             }).join('');
 
             optionsContainer.className = "kahoot-grid revealed";
