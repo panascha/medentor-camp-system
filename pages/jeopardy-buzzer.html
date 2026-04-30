@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-<meta name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
+
     <title>Jeopardy Buzzer - Medentor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -19,7 +19,7 @@
         body {
             font-family: 'Prompt', sans-serif;
     overflow-y: auto; 
-            touch-action: manipulation;
+touch-action: pan-x pan-y pinch-zoom;
             transition: background-color 0.3s ease;
     min-height: 100dvh;
     display: flex;
@@ -149,6 +149,7 @@ footer {
 
 /* สไตล์ตัวเลือกในมือถือน้อง */
 .buzzer-opt {
+    touch-action: manipulation; 
     display: flex;
     align-items: center;
     gap: 10px;
@@ -827,25 +828,25 @@ footer {
                 statusTxt.className = "text-xs font-bold text-slate-500 tracking-widest";
             }
         }
-        document.addEventListener('touchstart', function (event) {
+        // 1. อนุญาตให้ใช้ 2 นิ้วซูมได้ (ลบ preventDefault ของเก่าออก)
+            document.addEventListener('touchstart', function (event) {
                 if (event.touches.length > 1) {
-                    event.preventDefault(); // ป้องกันการใช้ 2 นิ้วขยายหน้าจอ
+                    // ไม่ต้องทำอะไร ปล่อยให้ Browser จัดการการซูมด้วย 2 นิ้วเอง
                 }
-            }, { passive: false });
+            }, { passive: true }); // เปลี่ยนเป็น passive: true เพื่อให้การ Scroll ลื่นไหล
 
+            // 2. ป้องกันเฉพาะการซูมเมื่อกดย้ำ (Double-tap) ในเครื่อง iOS บางรุ่นที่ CSS เอาไม่อยู่
             let lastTouchEnd = 0;
             document.addEventListener('touchend', function (event) {
                 const now = (new Date()).getTime();
                 if (now - lastTouchEnd <= 300) {
-                    event.preventDefault(); // ป้องกัน Double-tap to zoom
+                    // ตรวจสอบว่าถ้าจุดที่กดเป็นปุ่ม Buzzer หรือ Option ให้บล็อกการซูม
+                    if (event.target.closest('.buzzer-btn') || event.target.closest('.buzzer-opt')) {
+                        event.preventDefault();
+                    }
                 }
                 lastTouchEnd = now;
             }, false);
-
-            // สำหรับ iOS เฉพาะทาง (ห้ามขยายด้วย Gesture)
-            document.addEventListener('gesturestart', function (event) {
-                event.preventDefault();
-            });
         </script>
 
     
