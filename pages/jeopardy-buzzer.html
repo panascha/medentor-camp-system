@@ -576,6 +576,8 @@ footer {
                     const f1Outer = document.getElementById('f1-lights-outer');
                     const elapsed = Date.now() - (gs.steal_start_ts || Date.now());
                     const sequenceFinished = elapsed >= 4000; // ไฟ 5 ดวง ดวงละ 0.8s = 4000ms
+                    const timeSinceWinner = buzzerData.timestamp ? (Date.now() - buzzerData.timestamp) : 0;
+                    const isWindowOpen = timeSinceWinner < 5000; // 5 วินาทียังไม่หมด
 
                     // --- [กรณีที่ 1: ถ้าเราเป็นเจ้าของข้อ] ---
                     if (isOwner) {
@@ -611,13 +613,26 @@ footer {
                             f1Outer.classList.add('hidden');
                         }
                         else if (someoneElseWon) {
-                            // บ้านอื่นกดติดไปแล้ว
-                            statusText.innerText = "TOO LATE!";
-                            questionInfo.innerText = `บ้าน ${buzzerData.winner} ได้สิทธิ์ไปแล้ว`;
-                            icon.innerText = "💨";
-                            text.innerText = "LOCKED";
-                            btn.disabled = true;
-                            btn.classList.add('bg-red-950', 'border-red-900');
+                            // --- [จุดสำคัญ: ถ้าคนอื่นชนะ แต่ยังอยู่ใน 5 วินาที] ---
+                            if (isWindowOpen) {
+                                statusText.innerText = "ALMOST THERE!";
+                                statusText.classList.add('text-orange-400');
+                                questionInfo.innerText = `บ้าน ${buzzerData.winner} กดคนแรกไปแล้ว!`;
+                                icon.innerText = "⏱️";
+                                text.innerText = "PRESS FOR RANK!";
+                                btn.disabled = false; // <--- ต้องเป็น FALSE เพื่อให้คนอื่นกดบันทึกอันดับได้
+                                btn.className = "buzzer-btn relative rounded-full bg-orange-600 border-[8px] border-orange-400 flex flex-col items-center justify-center animate-pulse";
+
+                                // สั่งให้ UI รีเฟรชตัวเองบ่อยๆ เพื่อให้ปุ่มกลายเป็น Locked เมื่อครบ 5 วินาที
+                                setTimeout(() => updateUI(gameState), 200);
+                            } else {
+                                statusText.innerText = "TOO LATE / LOCKED";
+                                questionInfo.innerText = "หมดเวลาการบันทึกอันดับ";
+                                icon.innerText = "💨";
+                                text.innerText = "LOCKED";
+                                btn.disabled = true;
+                                btn.className = "buzzer-btn relative rounded-full bg-slate-900 border-[8px] border-slate-800 flex flex-col items-center justify-center opacity-50";
+                            }
                             f1Outer.classList.add('hidden');
                         }
                         else if (gs.countdown_active || (gs.is_steal_open && !sequenceFinished)) {
@@ -764,6 +779,7 @@ footer {
                         showToast("บันทึกเวลาอันดับของคุณแล้ว!", "info");
                     }
                 };        
+                
                 // ฟังก์ชันแสดง Alert เวลาคนกดก่อนไฟเหลือง
     function showEarlyAlert() {
         const container = document.getElementById('early-msg-container');
