@@ -814,6 +814,8 @@ window.selectQuestion = async function (qId) {
     await update(ref(db, 'jeopardy/game_state'), {
         status: 'QUESTION',
         active_question_id: qId,
+        reveal_detailed_answer: false, // รีเซ็ตสถานะเฉลย
+        is_judged: false,
         selected_answer: null,
         wrong_answers: [],
         answering_house: state.game_state.active_house,
@@ -952,6 +954,9 @@ async function processNextTurn(winnerHouseId = null, points = 0, isPenalty = fal
 }
 
 window.judgeOwner = async function (isCorrect) {
+    // เช็คว่าตัดสินไปแล้วหรือยัง เพื่อกันการบวกคะแนนซ้ำ
+    if (state.game_state.is_judged) return;
+
     await saveUndoState();
     const gs = state.game_state;
     const q = state.questions[gs.active_question_id];
@@ -966,18 +971,17 @@ window.judgeOwner = async function (isCorrect) {
             [`jeopardy/houses/${houseId}/correct_points`]: newCorrect,
             [`jeopardy/houses/${houseId}/jeopardy_score`]: newScore,
             [`jeopardy/questions/${gs.active_question_id}/winner_house`]: houseId,
-            [`jeopardy/game_state/is_judged`]: true // บันทึกว่าตัดสินแล้ว
+            [`jeopardy/game_state/is_judged`]: true
         });
-        showToast(`บวกคะแนนให้บ้าน ${houseId} เรียบร้อย`, "success");
     } else {
+        // กรณีตอบผิด (Owner)
         await update(ref(db, 'jeopardy/game_state'), {
             status: 'STEAL_WAIT',
             is_steal_open: false,
             is_timer_running: false,
-            is_judged: false, // ยังไม่จบ เพราะต้องรอ Steal
-            selected_answer: null
+            is_judged: false,
+            selected_answer: null // ล้างเพื่อให้คนขโมยกดใหม่
         });
-        showToast("เจ้าของข้อตอบผิด! เตรียมตัว STEAL", "warning");
     }
 };
 
@@ -1604,56 +1608,56 @@ window.triggerManualResult = async function (isCorrect) {
 };
 
 // --- ฟังก์ชันตรวจสอบคำตอบที่ Admin เลือก และสั่งให้ขึ้น Banner (ใช้กับข้อมีตัวเลือก) ---
-window.checkCurrentOption = function () {
+window.checkCurrentOption = async function () {
     const gs = state?.game_state;
     const q = state?.questions?.[gs?.active_question_id];
 
-    // 1. ตรวจสอบเบื้องต้นว่ามีข้อมูลครบไหม
-    if (!gs || !q) {
-        console.warn("Check failed: Missing game state or question data.");
-        return;
-    }
-
-    // 2. ถ้ายังไม่มีใครเลือกข้อไหนเลย
+    if (!gs || !q) return;
     if (gs.selected_answer === null || gs.selected_answer === undefined) {
         if (typeof showToast === 'function') showToast("น้องยังไม่ได้เลือกคำตอบ", "warning");
         return;
     }
 
     const labels = ['A', 'B', 'C', 'D'];
-
-    // 3. จัดการตัวเลือก (ตรวจสอบว่ามีตัวเลือกจริงไหม)
-    const optionsRaw = q.options || "";
-    const choices = optionsRaw.split(/\r?\n|\\n/).filter(line => line.trim() !== "");
-
-    // 4. ตรวจสอบว่า Index ที่เลือก มีข้อมูลใน Array จริงๆ หรือไม่ (ป้องกัน Error toLowerCase)
+    const choices = (q.options || "").split(/\r?\n|\\n/).filter(line => line.trim() !== "");
     const rawSelectedChoice = choices[gs.selected_answer];
-    if (!rawSelectedChoice) {
-        console.error("Selected choice is undefined at index:", gs.selected_answer);
-        return;
-    }
+    if (!rawSelectedChoice) return;
 
-    // 5. ทำความสะอาดข้อมูลก่อนเปรียบเทียบ
+    // --- ตรวจสอบความถูกต้อง ---
     const correctText = (q.answer_text || "").trim().toLowerCase();
     const selectedLabel = labels[gs.selected_answer].toLowerCase();
     const selectedFullText = rawSelectedChoice.trim().toLowerCase().replace(/^[A-D][.:]\s*/i, "");
 
-    // 6. Logic ตรวจสอบ: ถูกถ้าเฉลยขึ้นต้นด้วย Label (เช่น 'a') หรือในเฉลยมีข้อความคำตอบนั้นอยู่
+    // ถูกถ้าเฉลยขึ้นต้นด้วย Label หรือมีข้อความคำตอบนั้นอยู่
     const isCorrect = correctText.startsWith(selectedLabel) || correctText.includes(selectedFullText);
 
-    if (!isCorrect) {
+    // 1. ส่งคำสั่งโชว์ Banner (ถูก/ผิด) ไปที่บอร์ด
+    await window.triggerManualResult(isCorrect);
+
+    // 2. ตัดสินคะแนนอัตโนมัติ
+    if (gs.status === 'QUESTION') {
+        // คิวเจ้าของข้อ
+        await window.judgeOwner(isCorrect);
+    } else if (gs.status === 'STEAL_WAIT' && state.buzzers?.winner) {
+        // คิวคนขโมย
+        await window.judgeSteal(isCorrect);
+    }
+
+    // 3. ถ้าตอบถูก ให้สั่งเปิดเฉลยละเอียดบนบอร์ดทันที
+    if (isCorrect) {
+        await update(ref(db, 'jeopardy/game_state'), {
+            reveal_detailed_answer: true // ส่งสัญญาณให้บอร์ดเปิดหน้าเฉลย
+        });
+    } else {
+        // ถ้าตอบผิด ให้บันทึกลง wrong_answers (ถ้ายังไม่มี)
         let wrongList = gs.wrong_answers || [];
         if (!wrongList.includes(gs.selected_answer)) {
             wrongList.push(gs.selected_answer);
-            // อัปเดตรายการข้อที่ผิดลง Firebase
-            update(ref(db, 'jeopardy/game_state'), {
+            await update(ref(db, 'jeopardy/game_state'), {
                 wrong_answers: wrongList
             });
         }
     }
-
-    // สั่งขึ้น Banner
-    window.triggerManualResult(isCorrect);
 };
 
 // --- ฟังก์ชันแสดง Banner (ย้ายมาเป็นฟังก์ชันกลางเพื่อให้เรียกใช้ซ้ำได้) ---
@@ -1944,6 +1948,24 @@ function updateBoardGameState() {
         const mins = Math.floor(secTotal / 60);
         const secs = secTotal % 60;
         safeSetText('overlay-timer', `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`);
+    }
+
+    // --- [9] จัดการการเปิดเฉลยอัตโนมัติหลังตอบถูก ---
+    if (gs.reveal_detailed_answer === true) {
+        // หน่วงเวลาให้ Banner (ถูก/ผิด) แสดงจบก่อน (ประมาณ 2.5 วินาที) แล้วค่อยเปิดเฉลยละเอียด
+        if (!window.autoRevealTimeout) {
+            window.autoRevealTimeout = setTimeout(() => {
+                window.revealAnswerOnBoard(true);
+                window.autoRevealTimeout = null;
+            }, 2600);
+        }
+    } else {
+        // ถ้าสถานะไม่ใช่ให้เปิดเฉลย ให้ล้างหน้าจอเฉลยและ timeout
+        if (window.autoRevealTimeout) {
+            clearTimeout(window.autoRevealTimeout);
+            window.autoRevealTimeout = null;
+        }
+        window.closeAnswerBanner(); // ปิดหน้าต่างเฉลยละเอียดถ้ามี
     }
 }
 
