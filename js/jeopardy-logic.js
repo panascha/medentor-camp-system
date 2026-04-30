@@ -75,6 +75,14 @@ onValue(ref(db, 'jeopardy'), (snapshot) => {
     // 3. [สำคัญ] อัปเดตข้อมูลลงตัวแปร state หลัก ก่อนจะเริ่ม Render ส่วนอื่นๆ
     state = data;
 
+    const pendingId = data.game_state.pending_question_id;
+    if (pendingId) {
+        handlePendingQuestionPopup(pendingId);
+    } else {
+        // ถ้าใน Firebase เคลียร์ค่า pending แล้ว ให้ปิด Swal (ถ้ามีเปิดอยู่)
+        if (Swal.isVisible()) Swal.close();
+    }
+
     // 4. จัดการปุ่ม Toggle (เฉพาะหน้า Admin)
     const btnToggle = document.getElementById('btn-toggle-game');
     if (btnToggle && state.config) {
@@ -438,7 +446,7 @@ function renderQuestionGrid() {
         const cClass = colorMap[q.level] || 'bg-slate-50 border-slate-200 text-slate-600';
 
         return `
-        <button onclick="selectQuestion('${q.id}')" ${isPlayed ? 'disabled' : ''} 
+        <button onclick="selectQuestion('${q.id}')" ${isPlayed ? 'disabled' : ''}
             class="p-3 rounded-xl border-2 text-center transition-all ${isPlayed ? 'bg-slate-100 border-slate-200 text-slate-300 opacity-60 cursor-not-allowed' : `${cClass} hover:shadow-md hover:scale-105 active:scale-95`}">
             <span class="absolute top-1 left-1.5 text-[8px] font-black opacity-40">#${index + 1}</span>
             <p class="text-[9px] font-black uppercase tracking-widest opacity-70 truncate">${q.category}</p>
@@ -527,7 +535,7 @@ function renderBoard() {
         const isOpened = q.is_opened;
 
         return `
-        <button onclick="confirmOpenQuestion('${q.id}')"
+        <button onclick="selectQuestion('${q.id}')"
             ${isOpened ? 'disabled aria-disabled="true"' : ''}
             class="jeopardy-card border-2 rounded-2xl flex flex-col items-center justify-center shadow-sm transition-all relative
             ${isOpened
@@ -795,48 +803,95 @@ window.undoLastAction = async function () {
         showToast("ไม่มีข้อมูลให้ย้อนกลับ", "error");
     }
 }
-
-// ปรับปรุงฟังก์ชัน selectQuestion ในหน้า Admin/Board
-window.selectQuestion = async function (qId) {
-    if (state.game_state.status !== 'BOARD') return;
-
+async function handlePendingQuestionPopup(qId) {
     const q = state.questions[qId];
-    // ดึงเวลาจาก config.timer_tiers ตามระดับความยาก
+    if (!q) return;
+
+    // ตรวจสอบว่ามี Popup เปิดอยู่แล้วหรือยัง เพื่อไม่ให้มันเด้งซ้ำซ้อน (Loop)
+    if (Swal.isVisible() && Swal.getTitle()?.innerText.includes('ยืนยัน')) return;
+
+    if (window.isBoardPage) {
+        // --- กรณีหน้าจอ Board (Projector) ---
+        Swal.fire({
+            title: 'เปิดแผ่นป้ายใหม่?',
+            html: `
+                <div class="p-4">
+                    <p class="text-3xl font-black text-blue-600 mb-2">${q.category}</p>
+                    <p class="text-6xl font-black text-slate-800">${q.points} PTS</p>
+                    <p class="text-xl font-bold text-slate-400 mt-6 animate-pulse">กำลังรอพี่สตาฟยืนยัน...</p>
+                </div>
+            `,
+            showConfirmButton: false, // บอร์ดกดเองไม่ได้
+            allowOutsideClick: false,
+            width: '600px'
+        });
+    } else {
+        // --- กรณีหน้าจอ Admin ---
+        const result = await Swal.fire({
+            title: 'ยืนยันการเปิดคำถาม?',
+            html: `หมวด <b>${q.category}</b> มูลค่า <b>${q.points} PTS</b>`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'เปิดแผ่นป้าย',
+            cancelButtonText: 'ยกเลิก (Cancel)',
+            confirmButtonColor: '#3b82f6',
+            allowOutsideClick: false
+        });
+
+        if (result.isConfirmed) {
+            // ถ้าตกลง -> เรียกฟังก์ชันรันเกมจริง
+            window.executeOpenQuestion(qId);
+        } else {
+            // ถ้ากดยกเลิก -> ล้างค่า pending ใน Firebase เพื่อให้ Popup ทุกจอปิดลง
+            await update(ref(db, 'jeopardy/game_state'), { pending_question_id: null });
+        }
+    }
+}
+window.executeOpenQuestion = async function (qId) {
+    const q = state.questions[qId];
     const seconds = state.config.timer_tiers[q.level] || 90;
     const durationMs = seconds * 1000;
 
     await saveUndoState();
 
-    // อัปเดตสถานะคำถาม
-    await update(ref(db, `jeopardy/questions/${qId}`), { is_opened: true });
-
-    // อัปเดต Game State ตาม Schema ใหม่
-    await update(ref(db, 'jeopardy/game_state'), {
+    // อัปเดตข้อมูลทั้งหมดพร้อมกัน และล้าง pending_question_id ออก
+    const updates = {};
+    updates[`jeopardy/questions/${qId}/is_opened`] = true;
+    updates['jeopardy/game_state'] = {
+        ...state.game_state,
         status: 'QUESTION',
         active_question_id: qId,
-        reveal_detailed_answer: false, // รีเซ็ตสถานะเฉลย
-        is_judged: false,
+        pending_question_id: null, // สำคัญ: ล้างค่าเพื่อให้ Popup ปิด
         selected_answer: null,
         wrong_answers: [],
         manual_result: null,
+        is_judged: false,
+        reveal_detailed_answer: false,
         answering_house: state.game_state.active_house,
         is_timer_running: true,
         timer_duration: durationMs,
         timer_remaining: durationMs,
         timer_start_ts: Date.now(),
-        options_revealed: true,
-        last_action_log: `House ${state.game_state.active_house} selected ${q.category} ${q.points}`
-    });
+        options_revealed: true
+    };
 
-    // ล้าง Buzzer และรีเซ็ตสิทธิ์ Steal ของทุกบ้านในข้อนี้
-    const housesUpdate = {};
-    for (let i = 1; i <= 8; i++) {
-        housesUpdate[`jeopardy/houses/${i}/can_steal`] = true;
+    await update(ref(db), updates);
+    await set(ref(db, 'jeopardy/buzzers'), { is_locked: false, winner: null, attempts: {} });
+
+    showToast("เปิดคำถามแล้ว");
+};
+// ปรับปรุงฟังก์ชัน selectQuestion ในหน้า Admin/Board
+window.selectQuestion = async function (qId) {
+    if (state.game_state.status !== 'BOARD') return;
+
+    // แทนที่จะเปิด Swal ที่นี่ เราส่ง ID ของข้อที่จะเปิดเข้าไปในกิ่งใหม่ของ Firebase
+    try {
+        await update(ref(db, 'jeopardy/game_state'), {
+            pending_question_id: qId // ส่ง ID ข้อที่เลือกไปพักไว้
+        });
+    } catch (e) {
+        console.error(e);
     }
-    await update(ref(db), {
-        ...housesUpdate,
-        'jeopardy/buzzers': { is_locked: false, winner: null, attempts: {} }
-    });
 };
 
 window.selectJeopardyAnswer = async function (answerIndex) {
