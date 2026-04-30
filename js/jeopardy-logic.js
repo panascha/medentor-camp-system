@@ -1171,7 +1171,13 @@ window.finalizeQuestion = async function () {
     updates[`jeopardy/game_state/is_judged`] = false; // Reset สถานะการตัดสิน
     updates[`jeopardy/game_state/selected_answer`] = null;
     updates[`jeopardy/game_state/wrong_answers`] = [];
+    updates[`jeopardy/game_state/reveal_detailed_answer`] = false;
+    updates[`jeopardy/game_state/manual_result`] = null;
+    updates[`jeopardy/game_state/is_steal_open`] = false;
+    updates[`jeopardy/game_state/countdown_active`] = false;
+    updates[`jeopardy/game_state/force_close_banner_ts`] = 0;
 
+    await set(ref(db, 'jeopardy/buzzers'), { is_locked: false, winner: null, attempts: {} });
     await update(ref(db), updates);
     showToast("จบคำถามและเปลี่ยนเทิร์นแล้ว");
 };
@@ -1185,7 +1191,14 @@ window.resetCurrentQuestion = async function () {
         updates[`jeopardy/questions/${state.game_state.active_question_id}/is_opened`] = false;
         updates[`jeopardy/game_state/active_question_id`] = null;
         updates[`jeopardy/game_state/is_timer_running`] = false;
+        updates[`jeopardy/game_state/reveal_detailed_answer`] = false;
+        updates[`jeopardy/game_state/selected_answer`] = null;
+        updates[`jeopardy/game_state/is_steal_open`] = false;
+        updates[`jeopardy/game_state/countdown_active`] = false;
+        updates[`jeopardy/game_state/force_close_banner_ts`] = 0;
         await update(ref(db), updates);
+        await set(ref(db, 'jeopardy/buzzers'), { is_locked: false, winner: null, attempts: {} });
+
     }
 }
 
@@ -1813,15 +1826,23 @@ function updateBoardGameState() {
     // --- [1] สถานะกลับสู่บอร์ดหลัก (Reset ทุกอย่าง) ---
     if (gs.status === 'BOARD') {
         overlay.classList.add('hidden');
-        isBannerManuallyClosed = false;
-        document.getElementById('answer-reveal-area')?.classList.add('hidden');
-        document.getElementById('link-explanation')?.classList.add('hidden');
+
+        // 1. สั่งปิดป้าย Steal บนหน้าจอทันที
         if (stealAlert) {
             stealAlert.classList.add('hidden');
-            stealAlert.innerHTML = "";
+            stealAlert.innerHTML = ""; // ล้างเนื้อหาข้างใน (ไฟ/ชื่อ)
         }
-        if (countdownInterval) clearInterval(countdownInterval);
-        stopBoardTimer();
+
+        // 2. ปิดป้ายเฉลยละเอียด
+        window.closeAnswerBanner();
+
+        // 3. รีเซ็ตตัวแปรคุมการปิด Manual
+        isBannerManuallyClosed = false;
+
+        // ล้างค่า Interval ต่างๆ
+        if (window.countdownInterval) clearInterval(window.countdownInterval);
+        if (window.autoRevealTimeout) clearTimeout(window.autoRevealTimeout);
+
         return;
     }
 
