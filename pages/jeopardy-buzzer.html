@@ -533,6 +533,16 @@
                         btn.className = "buzzer-btn relative rounded-full bg-slate-900 border-[8px] border-slate-800 flex flex-col items-center justify-center opacity-50";
                         f1Outer.classList.add('hidden'); // ซ่อนไฟ F1 สำหรับเจ้าของ
                     }
+                    else if (isStunned) {
+                        statusText.innerText = "STUNNED / LOCKED";
+                        statusText.classList.add('text-red-500');
+                        questionInfo.innerHTML = `<p class="text-red-500 font-black text-xl animate-pulse">กดเร็วไป! ปุ่มล็อค 5 วินาที</p>`;
+                        icon.innerText = "😵";
+                        text.innerText = "WAITING...";
+                        btn.disabled = true;
+                        btn.className = "buzzer-btn relative rounded-full bg-red-900 border-[10px] border-red-500 flex flex-col items-center justify-center shadow-[0_0_50px_rgba(239,68,68,0.5)]";
+                        f1Outer.classList.add('hidden'); // ซ่อนไฟวิ่งไปก่อนเพื่อให้เห็นว่าโดนทำโทษ
+                    }
                     // --- [กรณีที่ 2: ถ้าเราไม่ใช่เจ้าของ (มีสิทธิ์ขโมย)] ---
                     else {
                         if (isWinner) {
@@ -629,8 +639,7 @@
                     const randomDelay = gs.steal_random_delay || 1000;
                 const greenStartTime = gs.steal_start_ts + 4000 + randomDelay; // คำนวณหาเวลาที่ไฟเขียวควรติดจริง
 
-                    if (isStunned || now - lastClickTime < 5000) return;
-                    lastClickTime = now;
+                    if (isStunned) return;
 
                     // เช็คว่าเคยกดไปแล้วหรือยัง (ป้องกันการส่งซ้ำในข้อเดิม)
                     if (buzz?.attempts && buzz.attempts[myHouseId]) return;
@@ -641,20 +650,25 @@
                     }
 
                     // --- [ระบบ STUN: กดก่อนเวลา] ---
-                    if (!gs?.is_steal_open || now < greenStartTime) {
-                        if (gs?.status === 'STEAL_WAIT') {
-                            isStunned = true;
-                            const btn = document.getElementById('main-buzzer');
-                            btn.classList.remove('bg-indigo-950', 'border-indigo-800');
-                            btn.classList.add('bg-red-600', 'border-red-400', 'animate-pulse');
-                            showEarlyAlert();
-                            setTimeout(() => {
-                                isStunned = false;
-                                updateUI(gameState);
-                            }, 5000);
-                        }
-                        return;
+                if (!gs?.is_steal_open || gs?.countdown_active || now < greenStartTime) {
+                    if (gs?.status === 'STEAL_WAIT') {
+                        isStunned = true; // เปิดสถานะโดนทำโทษ
+
+                        // สั่นและแจ้งเตือน
+                        if ("vibrate" in navigator) navigator.vibrate(500);
+                        showEarlyAlert();
+
+                        // สั่งอัปเดต UI ทันทีเพื่อให้ปุ่มกลายเป็นสีแดงมึนงง
+                        updateUI(gameState);
+
+                        // ปลดล็อคหลังจาก 5 วินาที
+                        setTimeout(() => {
+                            isStunned = false;
+                            updateUI(gameState); // อัปเดตกลับเป็นสถานะปัจจุบันของเกม
+                        }, 5000);
                     }
+                    return;
+                }
 
                     // --- [ระบบบันทึกเวลา] ---
                     // ถ้ามีคนชนะแล้ว ให้เช็คว่าเกิน 5 วิหรือยัง ถ้าเกินแล้วไม่ต้องทำอะไร
