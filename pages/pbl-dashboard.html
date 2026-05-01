@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PBL Evaluation Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700;800&family=Kanit:wght@400;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f8f7f4;
+            --card: #ffffff;
+            --primary: #1a56db;
+            --primary-light: #eff6ff;
+            --accent: #f59e0b;
+            --accent-light: #fffbeb;
+            --success: #10b981;
+            --success-light: #ecfdf5;
+            --danger: #ef4444;
+            --danger-light: #fef2f2;
+            --warn: #f97316;
+            --warn-light: #fff7ed;
+            --text: #1e293b;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --subtle: #f1f5f9;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Sarabun', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        h1,
+        h2,
+        h3,
+        .font-display {
+            font-family: 'Kanit', sans-serif;
+        }
+
+        /* Nav */
+        .topnav {
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .topnav a {
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+        }
+
+        .topnav-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brand-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .brand-title {
+            font-size: 17px;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .brand-sub {
+            font-size: 10px;
+            color: var(--muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Live badge */
+        .live-dot {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--success-light);
+            color: var(--success);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        .live-dot::before {
+            content: '';
+            width: 7px;
+            height: 7px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(1.4);
+            }
+        }
+
+        main {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 28px 20px 80px;
+        }
+
+        /* Page title */
+        .page-header {
+            margin-bottom: 28px;
+        }
+
+        .page-header h1 {
+            font-size: 26px;
+            font-weight: 900;
+            margin: 0 0 4px;
+        }
+
+        .page-header p {
+            font-size: 14px;
+            color: var(--muted);
+            margin: 0;
+        }
+
+        /* Insight Banner */
+        .insight-banner {
+            border-radius: 18px;
+            padding: 20px 24px;
+            margin-bottom: 28px;
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            border: 1.5px solid transparent;
+        }
+
+        .insight-banner.good {
+            background: var(--success-light);
+            border-color: #6ee7b7;
+        }
+
+        .insight-banner.warn {
+            background: var(--warn-light);
+            border-color: #fdba74;
+        }
+
+        .insight-banner.danger {
+            background: var(--danger-light);
+            border-color: #fca5a5;
+        }
+
+        .insight-banner .icon {
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+
+        .insight-banner .title {
+            font-size: 16px;
+            font-weight: 800;
+            font-family: 'Kanit', sans-serif;
+        }
+
+        .insight-banner .desc {
+            font-size: 13px;
+            margin-top: 3px;
+            line-height: 1.6;
+        }
+
+        /* Stats row */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .stat-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card.highlight {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+        }
+
+        .stat-card.highlight .stat-label {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .stat-value {
+            font-size: 38px;
+            font-weight: 900;
+            font-family: 'Kanit', sans-serif;
+            line-height: 1.1;
+            margin: 4px 0 2px;
+        }
+
+        .stat-sub {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .stat-card.highlight .stat-sub {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .stat-badge {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            font-size: 24px;
+            opacity: 0.15;
+        }
+
+        .stat-card.highlight .stat-badge {
+            opacity: 0.3;
+        }
+
+        /* Progress bar */
+        .prog-track {
+            background: var(--border);
+            height: 6px;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .prog-fill {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 1s cubic-bezier(.22, .68, 0, 1.2);
+        }
+
+        /* Filter bar */
+        .filter-bar {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+        }
+
+        .filter-bar h3 {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--muted);
+            margin: 0 0 14px;
+            text-transform: uppercase;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            flex: 1;
+            min-width: 180px;
+        }
+
+        .filter-group label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            display: block;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }
+
+        .filter-group select {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--subtle);
+            border: 1.5px solid transparent;
+            border-radius: 10px;
+            font-family: 'Sarabun', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            outline: none;
+            cursor: pointer;
+            transition: border-color .2s;
+        }
+
+        .filter-group select:focus {
+            border-color: var(--primary);
+        }
+
+        /* Section title */
+        .section-title {
+            font-size: 12px;
+            font-weight: 800;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0 0 14px;
+        }
+
+        /* Main grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 360px;
+            gap: 24px;
+        }
+
+        @media (max-width: 900px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .main-grid.fullwidth {
+            grid-template-columns: 1fr;
+        }
+
+        /* House cards */
+        .house-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .house-grid.fullwidth {
+            grid-template-columns: 1fr;
+        }
+
+        .house-card {
+            background: var(--card);
+            border: 1.5px solid var(--border);
+            border-radius: 20px;
+            padding: 22px;
+            transition: box-shadow .2s, transform .2s;
+            animation: fadeUp .4s ease forwards;
+        }
+
+        .house-card:hover {
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+            transform: translateY(-2px);
+        }
+
+        .house-card.focused {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(26, 86, 219, 0.08);
+        }
+
+        .house-card.empty {
+            opacity: 0.45;
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .house-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 18px;
+        }
+
+        .house-name {
+            font-size: 22px;
+            font-weight: 900;
+        }
+
+        .house-room {
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        .house-badge {
+            background: var(--primary-light);
+            color: var(--primary);
+            font-size: 11px;
+            font-weight: 800;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        /* Score pill (overall) */
+        .score-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 30px;
+            font-size: 15px;
+            font-weight: 800;
+        }
+
+        .score-pill.great {
+            background: var(--success-light);
+            color: var(--success);
+        }
+
+        .score-pill.ok {
+            background: var(--accent-light);
+            color: #d97706;
+        }
+
+        .score-pill.poor {
+            background: var(--danger-light);
+            color: var(--danger);
+        }
+
+        /* Rating rows */
+        .rating-section {
+            margin-bottom: 16px;
+        }
+
+        .rating-row {
+            margin-bottom: 10px;
+        }
+
+        .rating-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .rating-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .role-icon {
+            font-size: 14px;
+        }
+
+        .rating-score {
+            font-size: 13px;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        /* Star dist */
+        .dist-section {
+            background: var(--subtle);
+            border-radius: 12px;
+            padding: 14px;
+        }
+
+        .dist-section h4 {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin: 0 0 10px;
+        }
+
+        .dist-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 7px;
+        }
+
+        .dist-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--muted);
+            width: 28px;
+            text-align: right;
+        }
+
+        .dist-track {
+            flex: 1;
+            background: var(--border);
+            height: 8px;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .dist-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 1s ease;
+        }
+
+        .dist-count {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            width: 36px;
+            text-align: right;
+        }
+
+        /* Status label chip */
+        .status-chip {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 20px;
+            margin-top: 4px;
+        }
+
+        .status-chip.excellent {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-chip.good {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-chip.average {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-chip.needs-attention {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        /* Comments column */
+        .comment-col {}
+
+        .comment-feed {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 900px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .comment-feed::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .comment-feed::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 10px;
+        }
+
+        .comment-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px;
+            animation: fadeUp .3s ease;
+        }
+
+        .comment-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .comment-tags {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .comment-house-tag {
+            background: var(--primary-light);
+            color: var(--primary);
+            font-size: 10px;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 8px;
+        }
+
+        .comment-stars {
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .comment-time {
+            font-size: 10px;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .comment-text {
+            font-size: 13px;
+            line-height: 1.7;
+            color: #334155;
+            font-weight: 400;
+        }
+
+        .comment-text::before {
+            content: '"';
+            color: var(--primary);
+            font-size: 20px;
+            font-weight: 900;
+            line-height: 0;
+            vertical-align: -4px;
+            margin-right: 2px;
+        }
+
+        .comment-text::after {
+            content: '"';
+            color: var(--primary);
+            font-size: 20px;
+            font-weight: 900;
+            line-height: 0;
+            vertical-align: -4px;
+            margin-left: 2px;
+        }
+
+        .comment-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+            background: var(--card);
+            border: 1.5px dashed var(--border);
+            border-radius: 14px;
+        }
+
+        /* Focused comments section */
+        .focused-comment-section {
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1.5px solid var(--border);
+        }
+
+        .focused-comment-section h4 {
+            font-size: 15px;
+            font-weight: 800;
+            margin: 0 0 14px;
+        }
+
+        /* Helper: star color scale */
+        .s5 {
+            background: #059669;
+        }
+
+        .s4 {
+            background: #34d399;
+        }
+
+        .s3 {
+            background: var(--accent);
+        }
+
+        .s2 {
+            background: var(--warn);
+        }
+
+        .s1 {
+            background: var(--danger);
+        }
+
+        .prog-great {
+            background: var(--success);
+        }
+
+        .prog-ok {
+            background: var(--accent);
+        }
+
+        .prog-warn {
+            background: var(--warn);
+        }
+
+        .prog-danger {
+            background: var(--danger);
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .stats-row {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .stat-value {
+                font-size: 30px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Navbar -->
+    <nav class="topnav">
+        <a href="../index.html">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                    d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" />
+            </svg>
+            กลับหน้าหลัก
+        </a>
+        <div class="topnav-brand">
+            <div class="brand-icon">🎓</div>
+            <div>
+                <div class="brand-title">PBL Dashboard</div>
+                <div class="brand-sub">Academic Division · Staff Only</div>
+            </div>
+        </div>
+        <span class="live-dot">อัปเดตอัตโนมัติ</span>
+    </nav>
+
+    <main>
+        <!-- Page Title -->
+        <div class="page-header">
+            <h1>ภาพรวมผลการประเมิน PBL</h1>
+            <p>ดูผลคะแนนและความคิดเห็นจากน้องๆ แบบ Real-time · กรองตามบ้านหรือระดับดาวได้ทันที</p>
+        </div>
+
+        <!-- Insight Banner (dynamic) -->
+        <div id="insight-banner" class="insight-banner good" style="display:none;">
+            <span class="icon" id="insight-icon">✅</span>
+            <div>
+                <div class="title" id="insight-title">กำลังโหลดข้อมูล...</div>
+                <div class="desc" id="insight-desc"></div>
+            </div>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="stats-row">
+            <div class="stat-card highlight">
+                <div class="stat-label">ผู้ประเมินทั้งหมด</div>
+                <div class="stat-value" id="total-responses">0</div>
+                <div class="stat-sub">น้องที่ส่งแบบประเมิน</div>
+                <div class="stat-badge">👥</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">คะแนนภาพรวมเฉลี่ย</div>
+                <div class="stat-value" id="avg-overall">—</div>
+                <div class="prog-track">
+                    <div class="prog-fill prog-great" id="bar-overall" style="width:0%"></div>
+                </div>
+                <div class="stat-sub" style="margin-top:6px;" id="avg-label">จากคะแนนเต็ม 5.0</div>
+                <div class="stat-badge">⭐</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">บ้านที่คะแนนดีที่สุด</div>
+                <div class="stat-value" id="best-house" style="font-size:28px;">—</div>
+                <div class="stat-sub" id="best-house-score">—</div>
+                <div class="stat-badge">🏆</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">ต้องให้ความสนใจ</div>
+                <div class="stat-value" id="low-count" style="font-size:38px;">0</div>
+                <div class="stat-sub">ประเมิน 1–2 ดาว</div>
+                <div class="stat-badge">⚠️</div>
+            </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+            <h3>🔍 กรองข้อมูล</h3>
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label>เลือกบ้าน</label>
+                    <select id="filter-house" onchange="updateDashboard()">
+                        <option value="all">📋 ทุกบ้าน</option>
+                        <option value="1">🏠 บ้าน 1</option>
+                        <option value="2">🏠 บ้าน 2</option>
+                        <option value="3">🏠 บ้าน 3</option>
+                        <option value="4">🏠 บ้าน 4</option>
+                        <option value="5">🏠 บ้าน 5</option>
+                        <option value="6">🏠 บ้าน 6</option>
+                        <option value="7">🏠 บ้าน 7</option>
+                        <option value="8">🏠 บ้าน 8</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>กรองตามดาว</label>
+                    <select id="filter-stars" onchange="updateDashboard()">
+                        <option value="all">⭐ ทุกระดับดาว</option>
+                        <option value="5">⭐⭐⭐⭐⭐ ยอดเยี่ยม (5 ดาว)</option>
+                        <option value="4">⭐⭐⭐⭐ ดี (4 ดาว)</option>
+                        <option value="3">⭐⭐⭐ ปานกลาง (3 ดาว)</option>
+                        <option value="2">⭐⭐ ควรปรับปรุง (2 ดาว)</option>
+                        <option value="1">⭐ ต้องแก้ไขด่วน (1 ดาว)</option>
+                        <option value="low">⚠️ ดาวน้อย (1–2 ดาว รวม)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="main-layout" class="main-grid">
+            <!-- Left: Houses -->
+            <div id="house-section">
+                <div class="section-title">ผลการประเมินรายบ้าน</div>
+                <div id="house-grid" class="house-grid">
+                    <div style="grid-column:1/-1;padding:60px 0;text-align:center;color:var(--muted);">
+                        <div style="font-size:32px;margin-bottom:10px;">⏳</div>
+                        <div style="font-weight:600;">กำลังเชื่อมต่อข้อมูล...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Comments -->
+            <div id="comment-section">
+                <div class="section-title">💬 ความคิดเห็นล่าสุด</div>
+                <div id="comment-feed" class="comment-feed">
+                    <div class="comment-empty">ยังไม่มีความคิดเห็น</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="importmap">
+    { "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js",
+        "firebase/database": "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js"
+    }}
+</script>
+    <script src="../js/firebase-config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script type="module">
+        import { initializeApp } from "firebase/app";
+        import { getDatabase, ref, onValue } from "firebase/database";
+
+        const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
+        const db = getDatabase(app);
+        const user = checkAuth();
+        if (!user || user.userType !== 'staff') window.location.href = 'login.html';
+
+        let rawLogs = [];
+
+        onValue(ref(db, 'pbl_reports'), (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+                document.getElementById('house-grid').innerHTML = `
+                <div style="grid-column:1/-1;padding:60px 0;text-align:center;color:var(--muted);">
+                    <div style="font-size:32px;margin-bottom:10px;">📭</div>
+                    <div style="font-weight:600;">ยังไม่พบข้อมูลในระบบ</div>
+                    <div style="font-size:13px;margin-top:4px;">กิ่ง pbl_reports ยังไม่มีข้อมูล</div>
+                </div>`;
+                return;
+            }
+
+            rawLogs = Object.entries(data).map(([key, log]) => ({
+                house: (log.house || log.House || 0).toString(),
+                room: log.room || log.Room || '-',
+                chair: parseInt(log.ratings?.chair || log.Rating_Chairman || 0),
+                vice: parseInt(log.ratings?.vice || log.Rating_Vice || 0),
+                scribe: parseInt(log.ratings?.scribe || log.Rating_Secretary || 0),
+                p_case: parseInt(log.ratings?.p_case || log.Rating_Case || 0),
+                overall: parseInt(log.ratings?.overall || log.Rating_Overall || 0),
+                comment: log.comment || log.Comment || "",
+                timestamp: log.timestamp || log.Timestamp || new Date().toISOString()
+            }));
+
+            updateDashboard();
+        });
+
+        window.updateDashboard = function () {
+            const houseFilter = document.getElementById('filter-house').value;
+            const starFilter = document.getElementById('filter-stars').value;
+            const houseSection = document.getElementById('house-section');
+            const commentSection = document.getElementById('comment-section');
+            const mainLayout = document.getElementById('main-layout');
+
+            // Filter
+            let filtered = rawLogs;
+            if (starFilter === 'low') {
+                filtered = rawLogs.filter(l => l.overall <= 2);
+            } else if (starFilter !== 'all') {
+                filtered = rawLogs.filter(l => l.overall === parseInt(starFilter));
+            }
+            if (houseFilter !== 'all') {
+                filtered = filtered.filter(l => l.house === houseFilter);
+                mainLayout.classList.add('fullwidth');
+                commentSection.style.display = 'none';
+            } else {
+                mainLayout.classList.remove('fullwidth');
+                commentSection.style.display = '';
+            }
+
+            updateStats(filtered);
+            renderInsight(filtered, houseFilter);
+            renderHouseGrid(filtered, houseFilter);
+            renderComments(filtered, houseFilter !== 'all');
+        };
+
+        function updateStats(filtered) {
+            const total = filtered.length;
+            document.getElementById('total-responses').innerText = total;
+
+            const lowCount = filtered.filter(l => l.overall <= 2).length;
+            document.getElementById('low-count').innerText = lowCount;
+
+            if (total > 0) {
+                const avg = (filtered.reduce((a, b) => a + b.overall, 0) / total);
+                const avgStr = avg.toFixed(1);
+                document.getElementById('avg-overall').innerText = avgStr;
+                document.getElementById('bar-overall').style.width = (avg / 5 * 100) + '%';
+
+                // Color the bar
+                const bar = document.getElementById('bar-overall');
+                bar.className = 'prog-fill ' + (avg >= 4 ? 'prog-great' : avg >= 3 ? 'prog-ok' : avg >= 2 ? 'prog-warn' : 'prog-danger');
+
+                document.getElementById('avg-label').innerText = getScoreLabel(avg) + ' · จากคะแนนเต็ม 5.0';
+
+                // Best house
+                const houseAvgs = {};
+                for (let i = 1; i <= 8; i++) {
+                    const logs = filtered.filter(l => l.house === i.toString());
+                    if (logs.length > 0) houseAvgs[i] = logs.reduce((a, b) => a + b.overall, 0) / logs.length;
+                }
+                const sorted = Object.entries(houseAvgs).sort((a, b) => b[1] - a[1]);
+                if (sorted.length > 0) {
+                    document.getElementById('best-house').innerText = 'บ้าน ' + sorted[0][0];
+                    document.getElementById('best-house-score').innerText = '⭐ ' + sorted[0][1].toFixed(1) + ' / 5.0';
+                }
+            } else {
+                document.getElementById('avg-overall').innerText = '—';
+                document.getElementById('bar-overall').style.width = '0%';
+                document.getElementById('avg-label').innerText = 'จากคะแนนเต็ม 5.0';
+                document.getElementById('best-house').innerText = '—';
+                document.getElementById('best-house-score').innerText = '—';
+            }
+        }
+
+        function getScoreLabel(score) {
+            if (score >= 4.5) return '🌟 ยอดเยี่ยมมาก';
+            if (score >= 4.0) return '✅ ดีมาก';
+            if (score >= 3.0) return '👍 ปานกลาง';
+            if (score >= 2.0) return '⚠️ ควรปรับปรุง';
+            return '🚨 ต้องดูแลด่วน';
+        }
+
+        function getScoreClass(score) {
+            if (score >= 4.0) return 'great';
+            if (score >= 3.0) return 'ok';
+            return 'poor';
+        }
+
+        function getStatusChip(score) {
+            if (score >= 4.5) return { cls: 'excellent', label: '🌟 ยอดเยี่ยม' };
+            if (score >= 4.0) return { cls: 'good', label: '✅ ดีมาก' };
+            if (score >= 3.0) return { cls: 'average', label: '👍 ปานกลาง' };
+            return { cls: 'needs-attention', label: '⚠️ ต้องดูแล' };
+        }
+
+        function renderInsight(filtered, houseFilter) {
+            const banner = document.getElementById('insight-banner');
+            if (filtered.length === 0) { banner.style.display = 'none'; return; }
+            banner.style.display = 'flex';
+
+            const avg = filtered.reduce((a, b) => a + b.overall, 0) / filtered.length;
+            const lowCount = filtered.filter(l => l.overall <= 2).length;
+            const lowPct = Math.round(lowCount / filtered.length * 100);
+            const prefix = houseFilter !== 'all' ? `บ้าน ${houseFilter}` : 'ภาพรวมทุกบ้าน';
+
+            if (avg >= 4.0 && lowCount === 0) {
+                banner.className = 'insight-banner good';
+                document.getElementById('insight-icon').innerText = '🎉';
+                document.getElementById('insight-title').innerText = `${prefix} — ผลดีเยี่ยม!`;
+                document.getElementById('insight-desc').innerText = `คะแนนเฉลี่ย ${avg.toFixed(1)}/5.0 และยังไม่มีการประเมินดาวน้อย แสดงว่าน้องๆ พึงพอใจในระดับสูง`;
+            } else if (lowCount > 0 && lowPct >= 30) {
+                banner.className = 'insight-banner danger';
+                document.getElementById('insight-icon').innerText = '🚨';
+                document.getElementById('insight-title').innerText = `${prefix} — มีสัญญาณที่ควรติดตาม`;
+                document.getElementById('insight-desc').innerText = `มีการประเมิน 1–2 ดาวถึง ${lowCount} ครั้ง (${lowPct}%) ควรลงไปพูดคุยกับน้องๆ และทีมผู้นำบ้านโดยเร็ว`;
+            } else if (avg < 3.0) {
+                banner.className = 'insight-banner danger';
+                document.getElementById('insight-icon').innerText = '⚠️';
+                document.getElementById('insight-title').innerText = `${prefix} — คะแนนต่ำกว่าเกณฑ์`;
+                document.getElementById('insight-desc').innerText = `คะแนนเฉลี่ย ${avg.toFixed(1)}/5.0 ซึ่งต่ำกว่า 3.0 ควรตรวจสอบความคิดเห็นของน้องๆ เพื่อหาจุดที่ต้องปรับปรุง`;
+            } else if (lowCount > 0) {
+                banner.className = 'insight-banner warn';
+                document.getElementById('insight-icon').innerText = '📋';
+                document.getElementById('insight-title').innerText = `${prefix} — ผลโดยรวมดี มีบางส่วนที่ควรติดตาม`;
+                document.getElementById('insight-desc').innerText = `คะแนนเฉลี่ย ${avg.toFixed(1)}/5.0 แต่มี ${lowCount} ครั้ง ที่ประเมิน 1–2 ดาว ลองอ่านความคิดเห็นเพิ่มเติมด้านล่าง`;
+            } else {
+                banner.className = 'insight-banner good';
+                document.getElementById('insight-icon').innerText = '✅';
+                document.getElementById('insight-title').innerText = `${prefix} — ผลดี`;
+                document.getElementById('insight-desc').innerText = `คะแนนเฉลี่ย ${avg.toFixed(1)}/5.0 จากผู้ประเมิน ${filtered.length} คน ดูรายละเอียดรายบ้านด้านล่าง`;
+            }
+        }
+
+        function renderHouseGrid(filteredLogs, houseFilter) {
+            const grid = document.getElementById('house-grid');
+            grid.innerHTML = '';
+
+            if (houseFilter !== 'all') {
+                grid.className = 'house-grid fullwidth';
+            } else {
+                grid.className = 'house-grid';
+            }
+
+            const houseStats = {};
+            for (let i = 1; i <= 8; i++) {
+                houseStats[i] = { count: 0, chair: 0, vice: 0, scribe: 0, p_case: 0, overall: 0, room: '-', dist: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
+            }
+
+            rawLogs.forEach(log => {
+                const h = parseInt(log.house);
+                if (houseStats[h]) {
+                    houseStats[h].count++;
+                    houseStats[h].chair += log.chair;
+                    houseStats[h].vice += log.vice;
+                    houseStats[h].scribe += log.scribe;
+                    houseStats[h].p_case += log.p_case;
+                    houseStats[h].overall += log.overall;
+                    houseStats[h].room = log.room;
+                    houseStats[h].dist[log.overall] = (houseStats[h].dist[log.overall] || 0) + 1;
+                }
+            });
+
+            Object.entries(houseStats).forEach(([hId, data]) => {
+                if (houseFilter !== 'all' && hId !== houseFilter) return;
+
+                if (data.count === 0) {
+                    if (houseFilter === 'all') {
+                        grid.innerHTML += `
+                        <div class="house-card empty">
+                            <div class="house-header">
+                                <div>
+                                    <div class="house-name" style="color:var(--muted);">บ้าน ${hId}</div>
+                                    <div class="house-room">ยังไม่มีข้อมูล</div>
+                                </div>
+                            </div>
+                            <div style="font-size:13px;color:var(--muted);text-align:center;padding:20px 0;">📭 รอการประเมิน</div>
+                        </div>`;
+                    }
+                    return;
+                }
+
+                const ga = (key) => (data[key] / data.count).toFixed(1);
+                const overallAvg = data.overall / data.count;
+                const isFocused = houseFilter !== 'all';
+                const status = getStatusChip(overallAvg);
+
+                const ratingRows = [
+                    { label: 'ประธาน', key: 'chair', icon: '👑' },
+                    { label: 'รองประธาน', key: 'vice', icon: '🤝' },
+                    { label: 'เลขานุการ', key: 'scribe', icon: '📝' },
+                    { label: 'เคสกิจกรรม', key: 'p_case', icon: '🎯' },
+                ].map(r => {
+                    const score = parseFloat(ga(r.key));
+                    const pct = score / 5 * 100;
+                    const barClass = score >= 4 ? 'prog-great' : score >= 3 ? 'prog-ok' : score >= 2 ? 'prog-warn' : 'prog-danger';
+                    return `
+                    <div class="rating-row">
+                        <div class="rating-meta">
+                            <span class="rating-label"><span class="role-icon">${r.icon}</span>${r.label}</span>
+                            <span class="rating-score">${score} / 5</span>
+                        </div>
+                        <div class="prog-track"><div class="prog-fill ${barClass}" style="width:${pct}%"></div></div>
+                    </div>`;
+                }).join('');
+
+                const distRows = [5, 4, 3, 2, 1].map(star => {
+                    const count = data.dist[star] || 0;
+                    const pct = data.count > 0 ? (count / data.count * 100) : 0;
+                    const colorMap = { 5: 's5', 4: 's4', 3: 's3', 2: 's2', 1: 's1' };
+                    return `
+                    <div class="dist-row">
+                        <span class="dist-label">${star}⭐</span>
+                        <div class="dist-track"><div class="dist-fill ${colorMap[star]}" style="width:${pct}%"></div></div>
+                        <span class="dist-count">${count} คน</span>
+                    </div>`;
+                }).join('');
+
+                grid.innerHTML += `
+                <div class="house-card ${isFocused ? 'focused' : ''}">
+                    <div class="house-header">
+                        <div>
+                            <div class="house-name">บ้าน ${hId}</div>
+                            <div class="house-room">ห้องเรียน: ${data.room}</div>
+                            <span class="status-chip ${status.cls}">${status.label}</span>
+                        </div>
+                        <div style="text-align:right;">
+                            <div class="house-badge">${data.count} คน</div>
+                            <div class="score-pill ${getScoreClass(overallAvg)}" style="margin-top:8px;">
+                                ⭐ ${overallAvg.toFixed(1)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:${isFocused ? '1fr 1fr' : '1fr'};gap:20px;">
+                        <div class="rating-section">
+                            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:10px;">คะแนนรายตำแหน่ง</div>
+                            ${ratingRows}
+                        </div>
+                        <div>
+                            <div class="dist-section">
+                                <h4>การกระจายระดับดาว</h4>
+                                ${distRows}
+                            </div>
+                        </div>
+                    </div>
+
+                    ${isFocused ? '<div id="focused-comments" class="focused-comment-section"><h4>💬 ความคิดเห็นจากน้องๆ บ้าน ' + hId + '</h4><div id="focused-feed" class="comment-feed"></div></div>' : ''}
+                </div>`;
+            });
+
+            if (grid.innerHTML === '') {
+                grid.innerHTML = `<div style="grid-column:1/-1;padding:60px;text-align:center;color:var(--muted);">
+                <div style="font-size:32px;margin-bottom:10px;">🔍</div>
+                <div style="font-weight:600;">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</div>
+                <div style="font-size:13px;margin-top:4px;">ลองเปลี่ยนตัวกรองด้านบน</div>
+            </div>`;
+            }
+        }
+
+        function renderComments(logs, isFocused) {
+            const targetId = isFocused ? 'focused-feed' : 'comment-feed';
+            const container = document.getElementById(targetId);
+            if (!container) return;
+
+            const comments = logs.filter(l => l.comment && l.comment.trim() !== '').reverse();
+
+            if (comments.length === 0) {
+                container.innerHTML = '<div class="comment-empty">📭 ไม่มีความคิดเห็นในชุดข้อมูลนี้</div>';
+                return;
+            }
+
+            container.innerHTML = comments.map(log => `
+            <div class="comment-card">
+                <div class="comment-meta">
+                    <div class="comment-tags">
+                        <span class="comment-house-tag">บ้าน ${log.house}</span>
+                        <span class="comment-stars">${'⭐'.repeat(log.overall)}</span>
+                    </div>
+                    <span class="comment-time">${new Date(log.timestamp).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                </div>
+                <div class="comment-text">${log.comment}</div>
+            </div>
+        `).join('');
+        }
+    </script>
+</body>
+
+</html>

@@ -278,6 +278,20 @@
                                     <p class="text-xs text-slate-500">ลงคะแนน Pre-test/Post-test รายวิชา</p>
                 </a>
 
+                <!-- Card: PBL Dashboard [เพิ่มใหม่สำหรับ Staff ทุกคน] -->
+                <a href="pages/pbl-dashboard.html"
+                    class="glass-card group p-6 rounded-2xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div
+                        class="w-12 h-12 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">ผลประเมิน PBL</h3>
+                    <p class="text-xs text-slate-500">ดูสถิติคะแนนและคอมเม้นรายห้อง (Anonymous)</p>
+                </a>
+
                                 <!-- Card: Quota Management (Admin Only) -->
                 <div id="card-quota" onclick="openQuotaModal()"
                                     class="hidden glass-card admin-border group p-6 rounded-2xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer bg-blue-50/50">
@@ -573,12 +587,150 @@
     </script>
     
     <script type="module">
-        import { initializeApp } from "firebase/app";
-        import { getDatabase, ref, onValue, remove  } from "firebase/database";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getDatabase, ref, onValue, remove  } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
         const app = initializeApp({ databaseURL: CONFIG.firebaseURL });
         const db = getDatabase(app);
 
+        function checkPBLEvalStatus(studentID) {
+                // ใช้ db ที่ถุกประกาศไว้ใน utils.js
+                const db = window.db;
+                if (!db) return;
+
+                const evalRef = ref(db, `pbl_evaluations/${studentID}`);
+
+                onValue(evalRef, (snapshot) => {
+                    // ถ้าใน Firebase ยังไม่มีข้อมูล (snapshot.exists() เป็น false)
+                    if (!snapshot.exists()) {
+
+                        // หน่วงเวลานิดนึงเพื่อให้หน้าหลักโหลดเสร็จ และเช็คว่าไม่มี Popup อื่นเปิดอยู่
+                        setTimeout(() => {
+                            if (Swal.isVisible()) return;
+
+                            Swal.fire({
+                                title: '📢 น้องๆ อย่าลืม!',
+                                text: 'น้องยังไม่ได้ประเมินกิจกรรม PBL รบกวนสละเวลาประเมินให้พี่ๆ สักครู่นะครับ/ค่ะ',
+                                icon: 'warning',
+                                confirmButtonText: 'ประเมินตอนนี้ ➔',
+                                confirmButtonColor: '#2563eb',
+                                allowOutsideClick: false,
+                                allowEscapeKey: false
+                            }).then((result) => {
+                                if (result.isConfirmed) {
+                                    if (typeof window.openPBLEvaluation === 'function') {
+                                        window.openPBLEvaluation();
+                                    }
+                                }
+                            });
+                        }, 2500);
+                    }
+                });
+            }
+            document.addEventListener('DOMContentLoaded', () => {
+                const user = typeof checkAuth === 'function' ? checkAuth() : null;
+                if (!user) {
+                    console.log("[System] No user session found.");
+                    return;
+                }
+                if (user.userType === 'student') {
+                    // สำคัญ: นักเรียนในระบบคุณใช้ user.id (เช็คจาก auth.js)
+                    const studentID = user.id;
+                    if (studentID) {
+                        checkPBLEvalStatus(studentID);
+                    } else {
+                        console.error("[PBL System] Student ID missing in session data!");
+                    }
+                }
+            });
+            // 3. ฟังก์ชันเปิดฟอร์มประเมิน (ประกาศไว้ที่ window เพื่อให้ปุ่มอื่นๆ เรียกใช้ได้)
+            window.openPBLEvaluation = async function () {
+                    const user = checkAuth();
+                    if (!user || !user.house) return;
+
+                    // ดึงข้อมูลทีมจาก CONFIG
+                    const team = CONFIG.PBL_TEAMS[user.house];
+                    if (!team) return Swal.fire("Error", "ไม่พบข้อมูลกลุ่ม PBL", "error");
+
+                    const { value: formValues } = await Swal.fire({
+                        title: `แบบประเมิน PBL - บ้าน ${user.house}`,
+                        html: `
+            <div class="text-left space-y-4 max-h-[60vh] overflow-y-auto px-1 custom-scrollbar">
+                <div class="bg-blue-50 p-3 rounded-2xl border border-blue-100 text-center mb-4">
+                    <p class="text-[10px] font-black text-blue-500 uppercase">ห้องเรียน: ${team.room}</p>
+                    <p class="text-xs text-slate-600 font-bold">ประธาน: พี่${team.chair} | รองประธาน: พี่${team.vice} | คนจดกระดาน: พี่${team.scribe}</p>
+                </div>
+
+                ${[
+                                { label: `ประธาน (พี่${team.chair})`, id: 'chair' },
+                                { label: `รองประธาน (พี่${team.vice})`, id: 'vice' },
+                                { label: `เลขานุการ (พี่${team.scribe})`, id: 'scribe' },
+                                { label: `เนื้อหาเคสกิจกรรม`, id: 'p_case' },
+                                { label: `ภาพรวมกิจกรรม`, id: 'overall' }
+                            ].map((item, i) => `
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <label class="block text-[11px] font-black text-slate-500 uppercase mb-2">${i + 1}. ${item.label}</label>
+                        <select id="pbl-${item.id}" class="w-full p-2 rounded-lg border bg-white font-bold text-sm">
+                            <option value="5">⭐⭐⭐⭐⭐ (ดีมาก)</option>
+                            <option value="4">⭐⭐⭐⭐ (ดี)</option>
+                            <option value="3">⭐⭐⭐ (ปานกลาง)</option>
+                            <option value="2">⭐⭐ (พอใช้)</option>
+                            <option value="1">⭐ (ควรปรับปรุง)</option>
+                        </select>
+                    </div>
+                `).join('')}
+
+                <div class="mt-4">
+                    <label class="block text-xs font-black text-red-500 uppercase mb-2">ข้อเสนอแนะเพิ่มเติม (ต้องระบุ)</label>
+                    <textarea id="pbl-comment" rows="3" class="w-full p-3 border-2 border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500" placeholder="แชร์ความประทับใจหรือสิ่งที่อยากให้พี่ๆ ปรับปรุง..."></textarea>
+                </div>
+            </div>
+        `,
+                        confirmButtonText: 'ส่งผลการประเมิน',
+                        showCancelButton: true,
+                        cancelButtonText: 'ไว้ทีหลัง',
+                        confirmButtonColor: '#2563eb',
+                        allowOutsideClick: false,
+                        preConfirm: () => {
+                            const comment = document.getElementById('pbl-comment').value.trim();
+                            if (!comment) return Swal.showValidationMessage('กรุณาพิมพ์คอมเม้นก่อนส่งครับ/ค่ะ');
+
+                            return {
+                                ratings: {
+                                    chair: document.getElementById('pbl-chair').value,
+                                    vice: document.getElementById('pbl-vice').value,
+                                    scribe: document.getElementById('pbl-scribe').value,
+                                    p_case: document.getElementById('pbl-p_case').value,
+                                    overall: document.getElementById('pbl-overall').value
+                                },
+                                comment: comment
+                            }
+                        }
+                    });
+
+                    if (formValues) {
+                        Swal.fire({ title: 'กำลังบันทึก...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                        try {
+                            await fetch(CONFIG.appscriptUrl, {
+                                method: 'POST',
+                                mode: 'no-cors',
+                                headers: { "Content-Type": "text/plain" },
+                                body: JSON.stringify({
+                                    action: "submitPBLRating",
+                                    key: CONFIG.syncKey,
+                                    studentID: user.id,
+                                    house: user.house,
+                                    room: team.room,
+                                    ratings: formValues.ratings,
+                                    comment: formValues.comment
+                                })
+                            });
+                            await Swal.fire({ icon: 'success', title: 'ขอบคุณที่ร่วมประเมิน!', timer: 2000, showConfirmButton: false });
+                        } catch (e) {
+                            Swal.fire('Error', 'เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+                        }
+                    }
+                };
         window.clearAllSessions = async function () {
                 const user = checkAuth();
                 if (!user || user.role !== 'Admin') return;
@@ -646,7 +798,8 @@
                     }
                 });
 
-        document.addEventListener('DOMContentLoaded', () => {
+        
+            document.addEventListener('DOMContentLoaded', () => {
             const user = checkAuth();
             if (!user) return;
 
