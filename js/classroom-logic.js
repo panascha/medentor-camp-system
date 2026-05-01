@@ -1917,7 +1917,8 @@ window.openHistoryEditor = async function () {
                     <table class="w-full text-left text-[10px]">
                         <thead class="bg-slate-50 border-b text-slate-500 font-bold uppercase">
                             <tr class="text-center">
-                                <th class="p-2 w-8">บ.</th>
+                                <th class="p-2 w-8">บ้าน</th>
+                                <th class="p-2 text-left w-16">ID</th>
                                 <th class="p-2 text-left">ชื่อ</th>
                                 <th class="p-2">Score</th><th class="p-2">Speak</th><th class="p-2">Resp</th><th class="p-2 w-10"></th>
                             </tr>
@@ -1928,6 +1929,7 @@ window.openHistoryEditor = async function () {
                 return `
                                 <tr class="border-b ${houseClass}" id="row-${sessionId}-${row.targetId}">
                                     <td class="p-2 text-center font-black">${row.house}</td>
+                                    <td class="p-2 text-left font-mono text-blue-600 font-bold">${row.targetId}</td> 
                                     <td class="p-2 font-bold text-slate-700 std-nickname">${row.targetName}</td>
                                     <td class="p-2 text-center font-black" id="v-score-${sessionId}-${row.targetId}">${row.score}</td>
                                     <td class="p-2 text-center font-bold" id="v-speak-${sessionId}-${row.targetId}">${row.speakCount}</td>
