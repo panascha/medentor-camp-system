@@ -126,9 +126,9 @@ async function initializeGameStructure() {
             current_round: 1,
             max_turns_per_house: 2,
             timer_tiers: {
-                "easy": 90,
-                "medium": 120,
-                "hard": 150
+                "easy": 60,
+                "medium": 90,
+                "hard": 120
             },
             picking_house_order: [1, 2, 3, 4, 5, 6, 7, 8]
         },
@@ -851,7 +851,7 @@ async function handlePendingQuestionPopup(qId) {
 }
 window.executeOpenQuestion = async function (qId) {
     const q = state.questions[qId];
-    const seconds = state.config.timer_tiers[q.level] || 90;
+    const seconds = state.config.timer_tiers[q.level] || 60;
     const durationMs = seconds * 1000;
 
     await saveUndoState();
