@@ -9,6 +9,8 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Plotly.js สำหรับกราฟ -->
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
     <!-- Fuse.js สำหรับ Fuzzy Search -->
     <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600&display=swap" rel="stylesheet">
@@ -123,6 +125,72 @@
                 บันทึกคะแนนลงระบบ
             </button>
         </div>
+
+<!-- ส่วน Analysis Card -->
+<div class="max-w-4xl mx-auto p-4 md:p-8">
+    <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 mb-6">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h2 class="font-black text-slate-800 uppercase tracking-widest text-sm">📊 Score Distribution & Analysis
+                </h2>
+                <p class="text-[10px] text-slate-400 font-bold uppercase">เปรียบเทียบพัฒนาการ Pre-test และ Post-test</p>
+            </div>
+
+            <!-- ปุ่มสุ่มคะแนนสำหรับ DEV (จะแสดงเฉพาะสตาฟ) -->
+            <button onclick="devGeneratePostTest()"
+                class="bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold text-[10px] border border-red-100 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm">
+                <span>🎲</span> Random Post-test (Debug)
+            </button>
+        </div>
+
+        <!-- พื้นที่แสดง Boxplot -->
+        <div id="boxplot-container" class="bg-slate-50 rounded-2xl border border-slate-100"
+            style="width:100%; height:350px;"></div>
+
+        <div class="mt-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <!-- 1. Median -->
+            <div class="p-3 bg-slate-900 text-white rounded-2xl border border-slate-700">
+                <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Median Post</p>
+                <div class="flex justify-between items-end">
+                    <p id="stat-median" class="text-2xl font-black text-blue-400">-</p>
+                    <span class="text-lg opacity-40">📏</span>
+                </div>
+            </div>
+        
+            <!-- 2. Pass Rate -->
+            <div class="p-3 bg-slate-900 text-white rounded-2xl border border-slate-700">
+                <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">อัตราส่วนคนที่มีพัฒนาการ</p>
+                <div class="flex justify-between items-end">
+                    <p id="stat-pass-rate" class="text-xl font-black text-emerald-400">-</p>
+                    <span class="text-lg opacity-40">📈</span>
+                </div>
+            </div>
+        
+            <!-- 3. Total Pass -->
+            <div class="p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
+                <p class="text-[9px] font-black text-emerald-600 uppercase tracking-tighter">ผ่านเกณฑ์รวม</p>
+                <p id="summary-pass-total" class="text-2xl font-black text-slate-800">0</p>
+            </div>
+        
+            <!-- 4. Growth Pass -->
+            <div class="p-3 bg-blue-50 rounded-2xl border border-blue-100">
+                <p class="text-[9px] font-black text-blue-600 uppercase tracking-tighter">Growth (≥20%)</p>
+                <p id="summary-pass-growth" class="text-2xl font-black text-slate-800">0</p>
+            </div>
+        
+            <!-- 5. Above Median -->
+            <div class="p-3 bg-amber-50 rounded-2xl border border-amber-100">
+                <p class="text-[9px] font-black text-amber-600 uppercase tracking-tighter">Above Median</p>
+                <p id="summary-pass-median" class="text-2xl font-black text-slate-800">0</p>
+            </div>
+        
+            <!-- 6. Declined -->
+            <div class="p-3 bg-red-50 rounded-2xl border border-red-100">
+                <p class="text-[9px] font-black text-red-600 uppercase tracking-tighter">Declined (ดรอป)</p>
+                <p id="summary-declined" class="text-2xl font-black text-red-600">0</p>
+            </div>
+    </div>
+</div>
 
         <!-- Live Scoreboard -->
         <div class="max-w-4xl mx-auto p-4 md:p-8 mt-4">

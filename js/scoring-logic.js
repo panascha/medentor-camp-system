@@ -96,19 +96,52 @@ function updateLiveBoard() {
 
     const user = checkAuth();
 
-    // 1. Filter: กรองเอาเฉพาะคนที่มีคะแนนใน "Mode ปัจจุบัน"
+    // 1. เตรียมข้อมูลพื้นฐานสำหรับการวิเคราะห์
+    let countTotalPass = 0;
+    let countGrowthPass = 0;
+    let countMedianPass = 0;
+    let countDeclined = 0;
+    let totalEligibleForGrowth = 0;
+
+    // คำนวณ Median ของ Post-test ทั้งหมดที่มีในระบบ
+    const allPostScores = allStudents.map(s => s.posttest?.total).filter(v => v != null);
+    const medianPost = calculateMedian(allPostScores);
+
+    // 2. กรองรายชื่อน้องที่มีคะแนนในโหมดปัจจุบัน
     let displayData = allStudents.filter(s =>
         s[currentMode] && (s[currentMode].recordedBy || s[currentMode].total > 0)
     );
 
-    // 2. Sort: เรียงลำดับตาม Key และ Direction ที่เลือก
+    // 3. จัดเรียงลำดับ (Multi-level Sort)
     displayData.sort((a, b) => {
+        // --- ส่วนที่ 1: แยกกลุ่ม "ผ่านเกณฑ์" ไว้ด้านบน (เฉพาะโหมด Post-test) ---
+        if (currentMode === 'posttest') {
+            const checkPassStatus = (s) => {
+                const pre = s.pretest?.total || 0;
+                const post = s.posttest?.total || 0;
+                const growth = pre > 0 ? (post - pre) / pre : (post > 0 ? 1 : 0);
+
+                const isImproved = growth >= IMPROVEMENT_THRESHOLD;
+                const isMedianPass = post >= medianPost;
+                const isDeclined = pre > 0 && growth <= DECLINE_THRESHOLD;
+
+                // นิยามคำว่า "ผ่าน": (พัฒนาขึ้น OR เกินค่ากลาง) และต้องไม่ดรอปลงรุนแรง
+                return (isImproved || isMedianPass) && !isDeclined;
+            };
+
+            const isPassA = checkPassStatus(a);
+            const isPassB = checkPassStatus(b);
+
+            if (isPassA && !isPassB) return -1; // A อยู่บน
+            if (!isPassA && isPassB) return 1;  // B อยู่บน
+        }
+
+        // --- ส่วนที่ 2: จัดเรียงตามปุ่มที่เลือก (Score หรือ ID) ---
         let valA, valB;
         if (currentSortKey === 'score') {
             valA = a[currentMode]?.total || 0;
             valB = b[currentMode]?.total || 0;
         } else {
-            // เรียงตาม ID (แปลงเป็นตัวเลขเพื่อความถูกต้อง)
             valA = parseInt(a.id);
             valB = parseInt(b.id);
         }
@@ -117,49 +150,116 @@ function updateLiveBoard() {
         return valB - valA;
     });
 
-    // แสดงผลข้อมูล (เอาแค่ 10-20 คน หรือทั้งหมดก็ได้ตามต้องการ ในที่นี้เอาทั้งหมดที่กรองได้)
-    if (displayData.length === 0) {
-        board.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 italic">ยังไม่มีข้อมูลในโหมด ${currentMode.toUpperCase()}</td></tr>`;
-        return;
-    }
-
-    // อัปเดตไอคอนใน Header (ถ้ามี) - เราจะไปแก้ HTML ในขั้นต่อไป
     updateSortIcons();
 
-    board.innerHTML = displayData.map(s => {
-        const data = s[currentMode];
-        const isOwner = data.recordedBy === (user.nickname || user.fullName);
-        const isAdmin = user.role === 'Admin';
+    // 4. วาดตาราง (Rendering)
+    if (displayData.length === 0) {
+        board.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 italic">ยังไม่มีข้อมูลในโหมด ${currentMode.toUpperCase()}</td></tr>`;
+    } else {
+        board.innerHTML = displayData.map(s => {
+            const data = s[currentMode];
+            const isOwner = data.recordedBy === (user.nickname || user.fullName);
+            const isAdmin = user.role === 'Admin';
 
-        return `
-            <tr class="hover:bg-slate-50 transition-colors border-b">
-                <td class="p-4 font-mono font-bold text-blue-600">${s.id}</td>
-                <td class="p-4">
-                    <div class="font-bold text-slate-700">${s.fullName}</div>
-                    <div class="text-[10px] text-slate-400 uppercase">บ้าน ${s.house}</div>
-                </td>
-                <td class="p-4">
-                    <span class="px-2 py-1 rounded-md text-[10px] font-bold ${currentMode === 'pretest' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}">
-                        ${currentMode.toUpperCase()}
-                    </span>
-                </td>
-                <td class="p-4 text-center font-black text-lg">${data.total}</td>
-                <td class="p-4 text-xs text-slate-500">
-                    <div>${data.recordedBy || '<span class="text-slate-300 italic">System</span>'}</div>
-                    <div class="text-[9px] opacity-50">${data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : ''}</div>
-                </td>
-                <td class="p-4 text-right">
-                    ${(isAdmin || isOwner || !data.recordedBy) ? `
-                        <button onclick="window.deleteScore('${s.id}', '${currentMode}')" class="text-red-400 hover:text-red-600 p-2 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                        </button>
-                    ` : '<span class="text-slate-200">🔒</span>'}
-                </td>
-            </tr>
-        `;
-    }).join('');
+            const pre = s.pretest?.total || 0;
+            const post = s.posttest?.total || 0;
+            const growthValue = pre > 0 ? (post - pre) / pre : (post > 0 ? 1 : 0);
+            const growthPercent = (growthValue * 100).toFixed(1);
+
+            const isImproved = growthValue >= IMPROVEMENT_THRESHOLD;
+            const isMedianPass = post >= medianPost;
+            const isDeclined = pre > 0 && growthValue <= DECLINE_THRESHOLD;
+            const isOverallPass = (isImproved || isMedianPass) && !isDeclined;
+
+            // นับจำนวนสถิติ
+            if (currentMode === 'posttest') {
+                if (pre > 0 || post > 0) totalEligibleForGrowth++;
+                if (isImproved) countGrowthPass++;
+                if (isMedianPass) countMedianPass++;
+                if (isDeclined) countDeclined++;
+                if (isOverallPass) countTotalPass++;
+            }
+
+            let statusBadges = "";
+            let growthInfo = "";
+            let rowClass = "hover:bg-slate-50 transition-colors border-b";
+
+            if (currentMode === 'posttest') {
+                if (isDeclined) {
+                    rowClass += " bg-red-50/60";
+                    statusBadges += `<span class="ml-1 bg-red-600 text-white text-[8px] px-1.5 py-0.5 rounded font-black shadow-sm">📉 DECLINED</span>`;
+                    growthInfo = `<span class="text-[10px] text-red-600 font-bold block mt-0.5">(Pre: ${pre} → Post: ${post} | Drop: ${growthPercent}%)</span>`;
+                }
+                else if (isOverallPass) {
+                    rowClass += " bg-emerald-50/40";
+                    if (isImproved) statusBadges += `<span class="ml-1 bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black shadow-sm">📈 IMPROVED</span>`;
+                    if (isMedianPass) statusBadges += `<span class="ml-1 bg-blue-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black shadow-sm">🏆 TOP HALF</span>`;
+                    growthInfo = `<span class="text-[10px] text-emerald-600 font-bold block mt-0.5">(Pre: ${pre} → Post: ${post} | Growth: +${growthPercent}%)</span>`;
+                }
+                else {
+                    rowClass += " opacity-70";
+                    statusBadges += `<span class="ml-1 bg-slate-400 text-white text-[8px] px-1.5 py-0.5 rounded font-black shadow-sm">⚠️ NOT PASS</span>`;
+                    growthInfo = `<span class="text-[10px] text-slate-500 font-bold block mt-0.5">(Pre: ${pre} → Post: ${post} | Growth: ${growthPercent}%)</span>`;
+                }
+            }
+
+            return `
+                <tr class="${rowClass}">
+                    <td class="p-4 font-mono font-bold text-blue-600">${s.id}</td>
+                    <td class="p-4">
+                        <div class="font-bold text-slate-700 flex items-center flex-wrap">
+                            ${s.fullName} ${statusBadges}
+                        </div>
+                        <div class="text-[10px] text-slate-400 uppercase font-bold">บ้าน ${s.house}</div>
+                        ${growthInfo}
+                    </td>
+                    <td class="p-4 text-center">
+                        <span class="px-2 py-1 rounded-md text-[10px] font-bold ${currentMode === 'pretest' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}">
+                            ${currentMode.toUpperCase()}
+                        </span>
+                    </td>
+                    <td class="p-4 text-center font-black text-lg">${data.total}</td>
+                    <td class="p-4 text-xs text-slate-500">
+                        <div class="font-bold">${data.recordedBy || 'System'}</div>
+                    </td>
+                    <td class="p-4 text-right">
+                        ${(isAdmin || isOwner || !data.recordedBy) ? `
+                            <button onclick="window.deleteScore('${s.id}', '${currentMode}')" class="text-red-300 hover:text-red-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        ` : '🔒'}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // 5. ส่งข้อมูลสถิติไปยัง Analysis Dashboard
+    if (currentMode === 'posttest') {
+        // ข้อมูลจำนวนคน (Counts)
+        updateElementText('summary-pass-total', countTotalPass);
+        updateElementText('summary-pass-growth', countGrowthPass);
+        updateElementText('summary-pass-median', countMedianPass);
+        updateElementText('summary-declined', countDeclined);
+
+        // ข้อมูลสถิติค่ากลางและเปอร์เซ็นต์ (Stats)
+        updateElementText('stat-median', medianPost.toFixed(1));
+
+        const rate = totalEligibleForGrowth > 0 ? Math.round((countGrowthPass / totalEligibleForGrowth) * 100) : 0;
+        updateElementText('stat-pass-rate', `${rate}% (${countGrowthPass}/${totalEligibleForGrowth} คน)`);
+    } else {
+        // ล้างค่าหากเป็นโหมด Pre-test
+        ['summary-pass-total', 'summary-pass-growth', 'summary-pass-median', 'summary-declined'].forEach(id => updateElementText(id, "-"));
+        updateElementText('stat-median', "-");
+        updateElementText('stat-pass-rate', "N/A");
+    }
+
+    renderBoxPlot();
+}
+
+function updateElementText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.innerText = text;
 }
 
 function updateSortIcons() {
@@ -570,3 +670,111 @@ scoreInputIds.forEach((id, index) => {
         }
     });
 });
+
+const IMPROVEMENT_THRESHOLD = 0.2; 
+const DECLINE_THRESHOLD = -0.11;
+
+// --- [ฟังก์ชันคำนวณ Median] ---
+function calculateMedian(arr) {
+    if (!arr || arr.length === 0) return 0;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// --- [ฟังก์ชันวาด Boxplot ด้วย Plotly] ---
+window.renderBoxPlot = function () {
+    const container = document.getElementById('boxplot-container');
+    if (!container) return;
+
+    // ดึงคะแนน Total ทั้งหมดที่มีอยู่จริง
+    const preTotals = allStudents.map(s => s.pretest?.total).filter(v => v !== null && v !== undefined);
+    const postTotals = allStudents.map(s => s.posttest?.total).filter(v => v !== null && v !== undefined);
+
+    const tracePre = {
+        y: preTotals,
+        type: 'box',
+        name: 'Pre-test',
+        marker: { color: '#94a3b8' }, // สีเทา
+        boxpoints: 'all',
+        jitter: 0.3
+    };
+
+    const tracePost = {
+        y: postTotals,
+        type: 'box',
+        name: 'Post-test',
+        marker: { color: '#3b82f6' }, // สีน้ำเงิน
+        boxpoints: 'all',
+        jitter: 0.3
+    };
+
+    const layout = {
+        title: { text: 'คะแนน Pre-test vs Post-test', font: { family: 'Prompt', size: 16 } },
+        yaxis: { title: 'คะแนน (เต็ม 60)', range: [0, 65] },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { t: 40, b: 40, l: 40, r: 20 },
+        font: { family: 'Prompt' },
+        showlegend: false
+    };
+
+    Plotly.newPlot('boxplot-container', [tracePre, tracePost], layout, { responsive: true, displayModeBar: false });
+
+    // อัปเดตตัวเลขสถิติในหน้าจอ (ถ้ามี Element รองรับ)
+    const medianPost = calculateMedian(postTotals);
+    if (document.getElementById('stat-median')) document.getElementById('stat-median').innerText = medianPost.toFixed(1);
+
+    // คำนวณ Pass Rate (Development >= 20%)
+    const studentsWithBoth = allStudents.filter(s => s.pretest?.total != null && s.posttest?.total != null);
+    const passers = studentsWithBoth.filter(s => {
+        const pre = s.pretest.total;
+        const post = s.posttest.total;
+        return pre > 0 ? ((post - pre) / pre) >= IMPROVEMENT_THRESHOLD : (post > 0);
+    });
+    const rate = studentsWithBoth.length > 0 ? Math.round((passers.length / studentsWithBoth.length) * 100) : 0;
+    if (document.getElementById('stat-pass-rate')) document.getElementById('stat-pass-rate').innerText = `${rate}% (${passers.length}/${studentsWithBoth.length} คน)`;
+};
+
+
+
+
+
+
+window.devGeneratePostTest = async function () {
+    const confirm = await Swal.fire({
+        title: 'สุ่มคะแนน Post-test?',
+        text: "ระบบจะสร้างคะแนน Post-test สุ่ม (30-60 คะแนน) ให้เด็กทุกคนเพื่อทดสอบระบบวิเคราะห์",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'เริ่มสุ่ม'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({ title: 'กำลังสุ่มคะแนน...', didOpen: () => Swal.showLoading() });
+
+    try {
+        const { ref, set } = await import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js");
+
+        for (const s of allStudents) {
+            const p = Math.floor(Math.random() * 16);
+            const c = Math.floor(Math.random() * 16);
+            const b = Math.floor(Math.random() * 7);
+            const d = Math.floor(Math.random() * 13);
+            const m = Math.floor(Math.random() * 13);
+            const total = p + c + b + d + m;
+
+            const scoreData = {
+                physic: p, chemistry: c, biology: b, introdent: d, intromed: m, total: total,
+                recordedBy: "Dev System",
+                timestamp: new Date().toISOString()
+            };
+
+            await set(ref(window.db, `scores/${s.id}/posttest`), scoreData);
+        }
+        Swal.fire('สำเร็จ!', 'สุ่มคะแนนเรียบร้อย กราฟจะอัปเดตอัตโนมัติ', 'success');
+    } catch (e) {
+        Swal.fire('Error', e.message, 'error');
+    }
+}
