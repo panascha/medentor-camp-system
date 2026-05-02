@@ -103,7 +103,6 @@ function updateLiveBoard() {
     let countDeclined = 0;
     let totalEligibleForGrowth = 0;
 
-    // คำนวณ Median ของ Post-test ทั้งหมดที่มีในระบบ
     const allPostScores = allStudents.map(s => s.posttest?.total).filter(v => v != null);
     const medianPost = calculateMedian(allPostScores);
 
@@ -112,38 +111,33 @@ function updateLiveBoard() {
         s[currentMode] && (s[currentMode].recordedBy || s[currentMode].total > 0)
     );
 
-    // 3. จัดเรียงลำดับ (Multi-level Sort)
+    // 3. จัดเรียงลำดับตาม currentSortKey (ID, Total, หรือรายวิชา)
     displayData.sort((a, b) => {
-        // --- ส่วนที่ 1: แยกกลุ่ม "ผ่านเกณฑ์" ไว้ด้านบน (เฉพาะโหมด Post-test) ---
         if (currentMode === 'posttest') {
             const checkPassStatus = (s) => {
                 const pre = s.pretest?.total || 0;
                 const post = s.posttest?.total || 0;
                 const growth = pre > 0 ? (post - pre) / pre : (post > 0 ? 1 : 0);
-
                 const isImproved = growth >= IMPROVEMENT_THRESHOLD;
                 const isMedianPass = post >= medianPost;
                 const isDeclined = pre > 0 && growth <= DECLINE_THRESHOLD;
-
-                // นิยามคำว่า "ผ่าน": (พัฒนาขึ้น OR เกินค่ากลาง) และต้องไม่ดรอปลงรุนแรง
                 return (isImproved || isMedianPass) && !isDeclined;
             };
-
             const isPassA = checkPassStatus(a);
             const isPassB = checkPassStatus(b);
-
-            if (isPassA && !isPassB) return -1; // A อยู่บน
-            if (!isPassA && isPassB) return 1;  // B อยู่บน
+            if (isPassA && !isPassB) return -1;
+            if (!isPassA && isPassB) return 1;
         }
 
-        // --- ส่วนที่ 2: จัดเรียงตามปุ่มที่เลือก (Score หรือ ID) ---
         let valA, valB;
-        if (currentSortKey === 'score') {
-            valA = a[currentMode]?.total || 0;
-            valB = b[currentMode]?.total || 0;
-        } else {
+        if (currentSortKey === 'id') {
             valA = parseInt(a.id);
             valB = parseInt(b.id);
+        } else {
+            // รองรับ 'total', 'physic', 'chemistry', 'biology', 'introdent', 'intromed'
+            const field = currentSortKey === 'score' ? 'total' : currentSortKey;
+            valA = a[currentMode]?.[field] || 0;
+            valB = b[currentMode]?.[field] || 0;
         }
 
         if (currentSortDir === 'asc') return valA - valB;
@@ -152,9 +146,9 @@ function updateLiveBoard() {
 
     updateSortIcons();
 
-    // 4. วาดตาราง (Rendering)
+    // 4. วาดตาราง (Rendering) - ปรับจำนวน TD ให้ตรงกับ Header 11 Column
     if (displayData.length === 0) {
-        board.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 italic">ยังไม่มีข้อมูลในโหมด ${currentMode.toUpperCase()}</td></tr>`;
+        board.innerHTML = `<tr><td colspan="11" class="p-8 text-center text-slate-400 italic">ยังไม่มีข้อมูลในโหมด ${currentMode.toUpperCase()}</td></tr>`;
     } else {
         board.innerHTML = displayData.map(s => {
             const data = s[currentMode];
@@ -171,7 +165,6 @@ function updateLiveBoard() {
             const isDeclined = pre > 0 && growthValue <= DECLINE_THRESHOLD;
             const isOverallPass = (isImproved || isMedianPass) && !isDeclined;
 
-            // นับจำนวนสถิติ
             if (currentMode === 'posttest') {
                 if (pre > 0 || post > 0) totalEligibleForGrowth++;
                 if (isImproved) countGrowthPass++;
@@ -189,14 +182,12 @@ function updateLiveBoard() {
                     rowClass += " bg-red-50/60";
                     statusBadges += `<span class="ml-1 bg-red-600 text-white text-[8px] px-1.5 py-0.5 rounded font-black shadow-sm">📉 DECLINED</span>`;
                     growthInfo = `<span class="text-[10px] text-red-600 font-bold block mt-0.5">(Pre: ${pre} → Post: ${post} | Drop: ${growthPercent}%)</span>`;
-                }
-                else if (isOverallPass) {
+                } else if (isOverallPass) {
                     rowClass += " bg-emerald-50/40";
                     if (isImproved) statusBadges += `<span class="ml-1 bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black shadow-sm">📈 IMPROVED</span>`;
                     if (isMedianPass) statusBadges += `<span class="ml-1 bg-blue-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black shadow-sm">🏆 TOP HALF</span>`;
                     growthInfo = `<span class="text-[10px] text-emerald-600 font-bold block mt-0.5">(Pre: ${pre} → Post: ${post} | Growth: +${growthPercent}%)</span>`;
-                }
-                else {
+                } else {
                     rowClass += " opacity-70";
                     statusBadges += `<span class="ml-1 bg-slate-400 text-white text-[8px] px-1.5 py-0.5 rounded font-black shadow-sm">⚠️ NOT PASS</span>`;
                     growthInfo = `<span class="text-[10px] text-slate-500 font-bold block mt-0.5">(Pre: ${pre} → Post: ${post} | Growth: ${growthPercent}%)</span>`;
@@ -204,7 +195,7 @@ function updateLiveBoard() {
             }
 
             return `
-                <tr class="${rowClass}">
+                <tr class="${rowClass} text-[13px]">
                     <td class="p-4 font-mono font-bold text-blue-600">${s.id}</td>
                     <td class="p-4">
                         <div class="font-bold text-slate-700 flex items-center flex-wrap">
@@ -213,42 +204,44 @@ function updateLiveBoard() {
                         <div class="text-[10px] text-slate-400 uppercase font-bold">บ้าน ${s.house}</div>
                         ${growthInfo}
                     </td>
-                    <td class="p-4 text-center">
+                    <td class="p-4 text-center justify-center">
                         <span class="px-2 py-1 rounded-md text-[10px] font-bold ${currentMode === 'pretest' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}">
                             ${currentMode.toUpperCase()}
                         </span>
                     </td>
-                    <td class="p-4 text-center font-black text-lg">${data.total}</td>
+                    <!-- คะแนนแยกรายวิชา -->
+                    <td class="p-4 text-center font-medium text-slate-600">${data.physic || 0}</td>
+                    <td class="p-4 text-center font-medium text-slate-600">${data.chemistry || 0}</td>
+                    <td class="p-4 text-center font-medium text-slate-600">${data.biology || 0}</td>
+                    <td class="p-4 text-center font-medium text-slate-600">${data.introdent || 0}</td>
+                    <td class="p-4 text-center font-medium text-slate-600">${data.intromed || 0}</td>
+                    
+                    <td class="p-4 text-center font-black text-lg text-blue-700">${data.total}</td>
                     <td class="p-4 text-xs text-slate-500">
                         <div class="font-bold">${data.recordedBy || 'System'}</div>
                     </td>
                     <td class="p-4 text-right">
                         ${(isAdmin || isOwner || !data.recordedBy) ? `
-                            <button onclick="window.deleteScore('${s.id}', '${currentMode}')" class="text-red-300 hover:text-red-600">
+                            <button onclick="window.deleteScore('${s.id}', '${currentMode}')" class="text-red-300 hover:text-red-600 transition-colors">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
-                        ` : '🔒'}
+                        ` : '<span title="Locked">🔒</span>'}
                     </td>
                 </tr>
             `;
         }).join('');
     }
 
-    // 5. ส่งข้อมูลสถิติไปยัง Analysis Dashboard
+    // 5. ส่งข้อมูลสถิติไปยัง Analysis Dashboard (คงเดิม)
     if (currentMode === 'posttest') {
-        // ข้อมูลจำนวนคน (Counts)
         updateElementText('summary-pass-total', countTotalPass);
         updateElementText('summary-pass-growth', countGrowthPass);
         updateElementText('summary-pass-median', countMedianPass);
         updateElementText('summary-declined', countDeclined);
-
-        // ข้อมูลสถิติค่ากลางและเปอร์เซ็นต์ (Stats)
         updateElementText('stat-median', medianPost.toFixed(1));
-
         const rate = totalEligibleForGrowth > 0 ? Math.round((countGrowthPass / totalEligibleForGrowth) * 100) : 0;
         updateElementText('stat-pass-rate', `${rate}% (${countGrowthPass}/${totalEligibleForGrowth} คน)`);
     } else {
-        // ล้างค่าหากเป็นโหมด Pre-test
         ['summary-pass-total', 'summary-pass-growth', 'summary-pass-median', 'summary-declined'].forEach(id => updateElementText(id, "-"));
         updateElementText('stat-median', "-");
         updateElementText('stat-pass-rate', "N/A");
@@ -263,12 +256,20 @@ function updateElementText(id, text) {
 }
 
 function updateSortIcons() {
-    const idIcon = document.getElementById('sort-icon-id');
-    const scoreIcon = document.getElementById('sort-icon-score');
-    if (!idIcon || !scoreIcon) return;
+    const keys = ['id', 'physic', 'chemistry', 'biology', 'introdent', 'intromed', 'total'];
 
-    idIcon.innerText = currentSortKey === 'id' ? (currentSortDir === 'asc' ? '🔼' : '🔽') : '↕️';
-    scoreIcon.innerText = currentSortKey === 'score' ? (currentSortDir === 'asc' ? '🔼' : '🔽') : '↕️';
+    keys.forEach(key => {
+        const icon = document.getElementById(`sort-icon-${key}`);
+        if (icon) {
+            if (currentSortKey === key) {
+                icon.innerText = currentSortDir === 'asc' ? '🔼' : '🔽';
+                icon.className = "ml-1 text-blue-600 font-bold";
+            } else {
+                icon.innerText = '↕️';
+                icon.className = "ml-1 text-slate-300";
+            }
+        }
+    });
 }
 
 // [2] ฟังก์ชันลบคะแนน (เรียกใช้โดย Admin หรือ เจ้าของ)

@@ -22,7 +22,7 @@
 </head>
 
 <body class="bg-slate-50 min-h-screen">
-    <div class="max-w-4xl mx-auto p-4 md:p-8">
+    <div class="max-w-8xl mx-auto p-4 md:p-8">
         <div class="flex items-center justify-between mb-8">
             <a href="../index.html" class="text-blue-600 flex items-center gap-1 font-semibold hover:underline">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -127,7 +127,7 @@
         </div>
 
 <!-- ส่วน Analysis Card -->
-<div class="max-w-4xl mx-auto p-4 md:p-8">
+<div class="max-w-8xl mx-auto p-4 md:p-8">
     <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 mb-6">
         <div class="flex justify-between items-center mb-6">
             <div>
@@ -193,7 +193,7 @@
 </div>
 
         <!-- Live Scoreboard -->
-        <div class="max-w-4xl mx-auto p-4 md:p-8 mt-4">
+        <div class="max-w-8xl mx-auto p-4 md:p-8 mt-4">
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-800 p-4 flex justify-between items-center text-white">
                     <h2 class="font-bold flex items-center gap-2">
@@ -208,16 +208,37 @@
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
-                        <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-bold">
+                        <thead class="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold">
                             <tr>
                                 <th class="p-4 border-b cursor-pointer hover:bg-slate-100 transition-colors" onclick="toggleSort('id')">
-                                    ID <span id="sort-icon-id" class="ml-1 text-[10px]">↕️</span>
+                                    ID <span id="sort-icon-id" class="ml-1">↕️</span>
                                 </th>
                                 <th class="p-4 border-b">ชื่อนักเรียน</th>
-                                <th class="p-4 border-b text-center">โหมด</th>
+                                <th class="p-4 border-b">Pre/Post</th>
+                                <!-- เพิ่มวิชาย่อยตรงนี้ -->
                                 <th class="p-4 border-b text-center cursor-pointer hover:bg-slate-100 transition-colors"
-                                    onclick="toggleSort('score')">
-                                    คะแนนรวม <span id="sort-icon-score" class="ml-1 text-[10px]">↕️</span>
+                                    onclick="toggleSort('physic')">
+                                    Phy <span id="sort-icon-physic" class="ml-1">↕️</span>
+                                </th>
+                                <th class="p-4 border-b text-center cursor-pointer hover:bg-slate-100 transition-colors"
+                                    onclick="toggleSort('chemistry')">
+                                    Chem <span id="sort-icon-chemistry" class="ml-1">↕️</span>
+                                </th>
+                                <th class="p-4 border-b text-center cursor-pointer hover:bg-slate-100 transition-colors"
+                                    onclick="toggleSort('biology')">
+                                    Bio <span id="sort-icon-biology" class="ml-1">↕️</span>
+                                </th>
+                                <th class="p-4 border-b text-center cursor-pointer hover:bg-slate-100 transition-colors"
+                                    onclick="toggleSort('introdent')">
+                                    Dent <span id="sort-icon-introdent" class="ml-1">↕️</span>
+                                </th>
+                                <th class="p-4 border-b text-center cursor-pointer hover:bg-slate-100 transition-colors"
+                                    onclick="toggleSort('intromed')">
+                                    Med <span id="sort-icon-intromed" class="ml-1">↕️</span>
+                                </th>
+                                <th class="p-4 border-b text-center cursor-pointer hover:bg-slate-100 transition-colors"
+                                    onclick="toggleSort('total')">
+                                    Total <span id="sort-icon-total" class="ml-1">↕️</span>
                                 </th>
                                 <th class="p-4 border-b">ผู้บันทึก</th>
                                 <th class="p-4 border-b text-right">จัดการ</th>
