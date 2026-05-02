@@ -199,7 +199,7 @@ function updateLiveBoard() {
                     <td class="p-4 font-mono font-bold text-blue-600">${s.id}</td>
                     <td class="p-4">
                         <div class="font-bold text-slate-700 flex items-center flex-wrap">
-                            ${s.fullName} ${statusBadges}
+                            ${s.fullName} (${s.nickname}) ${statusBadges}
                         </div>
                         <div class="text-[10px] text-slate-400 uppercase font-bold">บ้าน ${s.house}</div>
                         ${growthInfo}
@@ -245,6 +245,32 @@ function updateLiveBoard() {
         ['summary-pass-total', 'summary-pass-growth', 'summary-pass-median', 'summary-declined'].forEach(id => updateElementText(id, "-"));
         updateElementText('stat-median', "-");
         updateElementText('stat-pass-rate', "N/A");
+    }
+
+    if (currentMode === 'posttest') {
+        // 1. กรองเฉพาะคนที่มีคะแนนทั้งคู่ และ Post > Pre (มีพัฒนาการ)
+        const improvers = allStudents.filter(s =>
+            s.pretest?.total != null &&
+            s.posttest?.total != null &&
+            s.posttest.total > s.pretest.total
+        );
+
+        let impIndex = 0;
+        if (improvers.length > 0 && medianPost > 0) {
+            // 2. รวมผลต่างคะแนน (Post - Pre) ของกลุ่มนี้
+            const totalGain = improvers.reduce((sum, s) => sum + (s.posttest.total - s.pretest.total), 0);
+
+            // 3. หาค่าเฉลี่ยคะแนนที่เพิ่มขึ้นต่อคน
+            const avgGain = totalGain / improvers.length;
+
+            // 4. เข้าสูตร (Average Gain / Median Post) * 100
+            impIndex = (avgGain / medianPost) * 100;
+        }
+
+        // แสดงผลบน UI
+        updateElementText('stat-imp-index', impIndex > 0 ? impIndex.toFixed(1) + '%' : "0.0%");
+    } else {
+        updateElementText('stat-imp-index', "-");
     }
 
     renderBoxPlot();
